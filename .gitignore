@@ -328,6 +328,7 @@ uploads/
 pdfs/
 media/
 static/media/
+backend/thumbnails/
 
 # Database files
 *.db

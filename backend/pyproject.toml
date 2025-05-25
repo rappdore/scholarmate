@@ -12,6 +12,7 @@ dependencies = [
     "pdfplumber>=0.11.6",
     "pillow>=11.2.1",
     "pypdf2>=3.0.1",
+    "pymupdf>=1.25.3",
     "python-dotenv>=1.1.0",
     "python-multipart>=0.0.20",
     "uvicorn>=0.34.2",

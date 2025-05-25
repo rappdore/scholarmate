@@ -51,6 +51,10 @@ export const pdfService = {
     const response = await api.get('/pdf/progress/all');
     return response.data;
   },
+
+  getThumbnailUrl: (filename: string): string => {
+    return `http://localhost:8000/pdf/${encodeURIComponent(filename)}/thumbnail`;
+  },
 };
 
 export const notesService = {

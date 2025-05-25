@@ -1,16 +1,23 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+import io
+import base64
 
 import pdfplumber
 from PyPDF2 import PdfReader
+from PIL import Image
+import fitz  # PyMuPDF
 
 
 class PDFService:
     def __init__(self, pdf_dir: str = "pdfs"):
         self.pdf_dir = Path(pdf_dir)
+        self.thumbnails_dir = Path("thumbnails")
         if not self.pdf_dir.exists():
             self.pdf_dir.mkdir(exist_ok=True)
+        if not self.thumbnails_dir.exists():
+            self.thumbnails_dir.mkdir(exist_ok=True)
 
     def list_pdfs(self) -> List[Dict[str, Any]]:
         """
@@ -154,3 +161,75 @@ class PDFService:
                 raise Exception(
                     f"Failed to extract text with both pdfplumber and PyPDF2: {str(e)}, {str(fallback_error)}"
                 )
+
+    def generate_thumbnail(self, filename: str, width: int = 200, height: int = 280) -> Path:
+        """
+        Generate a thumbnail image of the first page of the PDF
+        Returns the path to the generated thumbnail
+        """
+        file_path = self.get_pdf_path(filename)
+        
+        # Create thumbnail filename
+        thumbnail_filename = f"{file_path.stem}_thumb.png"
+        thumbnail_path = self.thumbnails_dir / thumbnail_filename
+        
+        # Check if thumbnail already exists and is newer than the PDF
+        if thumbnail_path.exists():
+            pdf_mtime = file_path.stat().st_mtime
+            thumb_mtime = thumbnail_path.stat().st_mtime
+            if thumb_mtime > pdf_mtime:
+                return thumbnail_path
+        
+        try:
+            # Open PDF with PyMuPDF
+            doc = fitz.open(str(file_path))
+            
+            # Get first page
+            page = doc[0]
+            
+            # Create a matrix for scaling to desired size
+            # Get page dimensions
+            rect = page.rect
+            scale_x = width / rect.width
+            scale_y = height / rect.height
+            scale = min(scale_x, scale_y)  # Maintain aspect ratio
+            
+            mat = fitz.Matrix(scale, scale)
+            
+            # Render page to pixmap
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Convert to PIL Image
+            img_data = pix.tobytes("png")
+            image = Image.open(io.BytesIO(img_data))
+            
+            # Create a white background image with exact dimensions
+            final_image = Image.new('RGB', (width, height), 'white')
+            
+            # Center the PDF page on the white background
+            x_offset = (width - image.width) // 2
+            y_offset = (height - image.height) // 2
+            final_image.paste(image, (x_offset, y_offset))
+            
+            # Save thumbnail
+            final_image.save(thumbnail_path, "PNG", optimize=True)
+            
+            doc.close()
+            
+            return thumbnail_path
+            
+        except Exception as e:
+            # If thumbnail generation fails, create a placeholder
+            placeholder = Image.new('RGB', (width, height), '#f1f5f9')
+            
+            # You could add some text or icon here
+            final_image = placeholder
+            final_image.save(thumbnail_path, "PNG")
+            
+            return thumbnail_path
+
+    def get_thumbnail_path(self, filename: str) -> Path:
+        """
+        Get the path to a PDF thumbnail, generating it if it doesn't exist
+        """
+        return self.generate_thumbnail(filename)

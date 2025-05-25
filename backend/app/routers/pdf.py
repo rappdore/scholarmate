@@ -169,6 +169,28 @@ async def get_reading_progress(filename: str) -> Dict[str, Any]:
         )
 
 
+@router.get("/{filename}/thumbnail")
+async def get_pdf_thumbnail(filename: str):
+    """
+    Get a thumbnail image of the first page of the PDF
+    """
+    try:
+        thumbnail_path = pdf_service.get_thumbnail_path(filename)
+        
+        if not thumbnail_path.exists():
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
+        
+        return FileResponse(
+            path=str(thumbnail_path),
+            media_type="image/png",
+            filename=f"{filename}_thumb.png"
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")
+
+
 @router.get("/progress/all")
 async def get_all_reading_progress() -> Dict[str, Any]:
     """
@@ -181,3 +203,25 @@ async def get_all_reading_progress() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=f"Error getting reading progress: {str(e)}"
         )
+
+
+@router.get("/{filename}/thumbnail")
+async def get_pdf_thumbnail(filename: str):
+    """
+    Get a thumbnail image of the first page of the PDF
+    """
+    try:
+        thumbnail_path = pdf_service.get_thumbnail_path(filename)
+        
+        if not thumbnail_path.exists():
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
+        
+        return FileResponse(
+            path=str(thumbnail_path),
+            media_type="image/png",
+            filename=f"{filename}_thumb.png"
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")

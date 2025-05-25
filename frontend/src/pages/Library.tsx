@@ -109,8 +109,18 @@ export default function Library() {
               >
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
-                    <div className="text-purple-400 text-4xl group-hover:scale-110 transition-transform duration-200">
-                      📄
+                    <div className="w-16 h-20 bg-slate-700/50 rounded-lg overflow-hidden group-hover:scale-110 transition-transform duration-200 border border-slate-600/50">
+                      <img
+                        src={pdfService.getThumbnailUrl(pdf.filename)}
+                        alt={`${pdf.title} thumbnail`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Fallback to document emoji if thumbnail fails to load
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-purple-400 text-2xl">📄</div>';
+                        }}
+                      />
                     </div>
                     <div className="flex items-center gap-2">
                       {pdf.notes_info && (
