@@ -1,0 +1,69 @@
+/* Custom KaTeX styles for dark theme */
+.katex {
+  color: #e5e7eb !important;
+  /* text-gray-200 */
+}
+
+.katex .base {
+  color: #e5e7eb !important;
+}
+
+.katex .mord,
+.katex .mrel,
+.katex .mbin,
+.katex .mop,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .minner {
+  color: #e5e7eb !important;
+}
+
+/* Math delimiters */
+.katex .delimsizing,
+.katex .delim-size1,
+.katex .delim-size2,
+.katex .delim-size3,
+.katex .delim-size4 {
+  color: #e5e7eb !important;
+}
+
+/* Fractions */
+.katex .frac-line {
+  border-bottom-color: #e5e7eb !important;
+}
+
+/* Square roots */
+.katex .sqrt > .root {
+  color: #e5e7eb !important;
+}
+
+.katex .sqrt > .sqrt-line {
+  border-top-color: #e5e7eb !important;
+}
+
+/* Accents */
+.katex .accent-body {
+  color: #e5e7eb !important;
+}
+
+/* Matrices and arrays */
+.katex .arraycolsep {
+  color: #e5e7eb !important;
+}
+
+/* Ensure inline math doesn't break layout */
+.katex-display {
+  margin: 0.5em 0 !important;
+  text-align: center;
+}
+
+.katex-inline {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
+/* Override any background colors that might interfere */
+.katex * {
+  background-color: transparent !important;
+}
