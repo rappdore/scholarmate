@@ -1,10 +1,10 @@
-# PDF Learn AI
+# ScholarMate
 
 A full-stack application for AI-powered PDF analysis and learning, built with FastAPI, React, and Ollama.
 
 ## 📋 Table of Contents
 
-- [📚 What is PDF Learn AI?](#-what-is-pdf-learn-ai)
+- [📚 What is ScholarMate?](#-what-is-scholarmate)
   - [Key Features](#key-features)
   - [How It Works](#how-it-works)
 - [🚀 Quick Start with Docker](#-quick-start-with-docker)
@@ -28,9 +28,9 @@ A full-stack application for AI-powered PDF analysis and learning, built with Fa
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
 
-## 📚 What is PDF Learn AI?
+## 📚 What is Scholarmate?
 
-PDF Learn AI is an intelligent study assistant that transforms how you read and understand PDF documents. Instead of opening PDFs in a traditional viewer, this application provides an interactive learning environment where an AI companion helps you comprehend complex content in real-time.
+ScholarMate is an intelligent study assistant that transforms how you read and understand PDF documents. Instead of opening PDFs in a traditional viewer, this application provides an interactive learning environment where an AI companion helps you comprehend complex content in real-time.
 
 ### Key Features
 

@@ -92,12 +92,39 @@ export default function Library() {
         {pdfs.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-slate-600 text-8xl mb-6">📚</div>
-            <h2 className="text-2xl font-bold text-slate-300 mb-3">
-              No PDFs Found
+            <h2 className="text-2xl font-bold text-slate-300 mb-4">
+              Your Library is Empty
             </h2>
-            <p className="text-slate-400 text-lg max-w-md mx-auto">
-              Place some PDF files in the backend/pdfs directory to get started
-            </p>
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 border border-slate-700/50 max-w-2xl mx-auto">
+              <p className="text-slate-300 text-lg mb-4">
+                No PDFs found in your library
+              </p>
+              <div className="text-left space-y-3">
+                <p className="text-slate-400">
+                  <span className="font-semibold text-purple-400">📁 To add PDFs:</span>
+                </p>
+                <ol className="text-slate-400 space-y-2 ml-4">
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 font-bold">1.</span>
+                    <span>Navigate to the <code className="bg-slate-700 px-2 py-1 rounded text-sm font-mono">backend/pdfs</code> directory</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 font-bold">2.</span>
+                    <span>Copy your PDF files into that folder</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-purple-400 font-bold">3.</span>
+                    <span>Refresh this page to see your PDFs</span>
+                  </li>
+                </ol>
+              </div>
+              <button
+                onClick={loadPDFs}
+                className="mt-6 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25"
+              >
+                🔄 Refresh Library
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">

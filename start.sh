@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# PDF Learn AI - Quick Start Script
+# ScholarMate - Quick Start Script
 
-echo "🚀 PDF Learn AI - Starting Application..."
+echo "🚀 ScholarMate - Starting Application..."
 echo ""
 
 # Check if Docker is installed
