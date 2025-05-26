@@ -109,7 +109,7 @@ export default function Reader() {
           >
             ← Back to Library
           </button>
-          <h1 className="text-lg font-semibold text-gray-100">PDF AI Reader</h1>
+          <h1 className="text-lg font-semibold text-gray-100">Scholarmate</h1>
         </div>
       </div>
 
