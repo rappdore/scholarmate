@@ -11,6 +11,10 @@ export interface NotesInfo {
   latest_note_title: string;
 }
 
+export interface HighlightsInfo {
+  highlights_count: number;
+}
+
 export interface PDF {
   filename: string;
   title: string;
@@ -21,6 +25,7 @@ export interface PDF {
   created_date: string;
   reading_progress?: ReadingProgress | null;
   notes_info?: NotesInfo | null;
+  highlights_info?: HighlightsInfo | null;
   error?: string;
 }
 

@@ -6,6 +6,7 @@ import type {
   TextSelection,
   HighlightCoordinates,
   HighlightColor,
+  Highlight,
 } from '../types/highlights';
 import HighlightOverlay from './HighlightOverlay';
 import { useHighlights } from '../hooks/useHighlights';
@@ -62,6 +63,11 @@ export default function PDFViewer({
     selection: null,
   });
 
+  // Selected highlight state for keyboard shortcuts
+  const [selectedHighlight, setSelectedHighlight] = useState<Highlight | null>(
+    null
+  );
+
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Highlight management
@@ -78,6 +84,28 @@ export default function PDFViewer({
       console.warn('Error saving zoom to localStorage:', error);
     }
   }, [scale]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Delete key - delete selected highlight
+      if (event.key === 'Delete' && selectedHighlight) {
+        event.preventDefault();
+        handleHighlightDelete(selectedHighlight.id);
+        setSelectedHighlight(null);
+      }
+
+      // Escape key - clear selection and context menu
+      if (event.key === 'Escape') {
+        setSelectedHighlight(null);
+        setContextMenu(prev => ({ ...prev, visible: false }));
+        window.getSelection()?.removeAllRanges();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedHighlight]);
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
@@ -307,7 +335,17 @@ export default function PDFViewer({
     const success = await deleteHighlight(highlightId);
     if (success) {
       console.log('Highlight deleted:', highlightId);
+      // Clear selection if the deleted highlight was selected
+      if (selectedHighlight?.id === highlightId) {
+        setSelectedHighlight(null);
+      }
     }
+  };
+
+  // Handle highlight click (for selection)
+  const handleHighlightClick = (highlight: Highlight) => {
+    setSelectedHighlight(highlight);
+    console.log('Highlight selected:', highlight.id);
   };
 
   if (!filename) {
@@ -373,11 +411,17 @@ export default function PDFViewer({
               Next
             </button>
 
-            {/* Debug: Show highlight count */}
+            {/* Debug: Show highlight count and selection status */}
             {highlights.length > 0 && (
               <span className="text-xs text-green-400 ml-2">
                 {highlights.filter(h => h.pageNumber === currentPage).length}{' '}
                 highlights
+              </span>
+            )}
+            {selectedHighlight && (
+              <span className="text-xs text-blue-400 ml-2 px-2 py-1 bg-blue-900 rounded">
+                Selected: "{selectedHighlight.selectedText.substring(0, 20)}..."
+                (Press Delete to remove)
               </span>
             )}
           </div>
@@ -420,6 +464,8 @@ export default function PDFViewer({
                 highlights={highlights}
                 pageNumber={currentPage}
                 scale={scale}
+                selectedHighlightId={selectedHighlight?.id}
+                onHighlightClick={handleHighlightClick}
                 onHighlightDelete={handleHighlightDelete}
               />
             </div>

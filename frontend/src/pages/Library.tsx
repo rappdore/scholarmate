@@ -101,12 +101,20 @@ export default function Library() {
               </p>
               <div className="text-left space-y-3">
                 <p className="text-slate-400">
-                  <span className="font-semibold text-purple-400">📁 To add PDFs:</span>
+                  <span className="font-semibold text-purple-400">
+                    📁 To add PDFs:
+                  </span>
                 </p>
                 <ol className="text-slate-400 space-y-2 ml-4">
                   <li className="flex items-start gap-2">
                     <span className="text-purple-400 font-bold">1.</span>
-                    <span>Navigate to the <code className="bg-slate-700 px-2 py-1 rounded text-sm font-mono">backend/pdfs</code> directory</span>
+                    <span>
+                      Navigate to the{' '}
+                      <code className="bg-slate-700 px-2 py-1 rounded text-sm font-mono">
+                        backend/pdfs
+                      </code>{' '}
+                      directory
+                    </span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-purple-400 font-bold">2.</span>
@@ -132,24 +140,31 @@ export default function Library() {
               <div
                 key={pdf.filename}
                 onClick={() => handlePDFClick(pdf.filename)}
-                className="group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105"
+                className="group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105 flex flex-col"
               >
-                <div className="p-6">
+                <div className="p-6 flex-1">
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-16 h-20 bg-slate-700/50 rounded-lg overflow-hidden group-hover:scale-110 transition-transform duration-200 border border-slate-600/50">
                       <img
                         src={pdfService.getThumbnailUrl(pdf.filename)}
                         alt={`${pdf.title} thumbnail`}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
+                        onError={e => {
                           // Fallback to document emoji if thumbnail fails to load
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
-                          target.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-purple-400 text-2xl">📄</div>';
+                          target.parentElement!.innerHTML =
+                            '<div class="w-full h-full flex items-center justify-center text-purple-400 text-2xl">📄</div>';
                         }}
                       />
                     </div>
                     <div className="flex items-center gap-2">
+                      {pdf.highlights_info &&
+                        pdf.highlights_info.highlights_count > 0 && (
+                          <div className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-full flex items-center gap-1">
+                            🖍️ {pdf.highlights_info.highlights_count}
+                          </div>
+                        )}
                       {pdf.notes_info && (
                         <div className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full flex items-center gap-1">
                           📝 {pdf.notes_info.notes_count}
@@ -184,7 +199,7 @@ export default function Library() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span>Modified:</span>
+                      <span>Added:</span>
                       <span className="text-slate-400">
                         {formatDate(pdf.modified_date)}
                       </span>

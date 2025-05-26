@@ -27,8 +27,9 @@ async def list_pdfs() -> List[Dict[str, Any]]:
         pdfs = pdf_service.list_pdfs()
         all_progress = db_service.get_all_reading_progress()
         all_notes = db_service.get_notes_count_by_pdf()
+        all_highlights = db_service.get_highlights_count_by_pdf()
 
-        # Add reading progress and notes info to each PDF
+        # Add reading progress, notes info, and highlights info to each PDF
         for pdf in pdfs:
             filename = pdf.get("filename")
 
@@ -58,6 +59,15 @@ async def list_pdfs() -> List[Dict[str, Any]]:
                 }
             else:
                 pdf["notes_info"] = None
+
+            # Add highlights information
+            if filename and filename in all_highlights:
+                highlights_info = all_highlights[filename]
+                pdf["highlights_info"] = {
+                    "highlights_count": highlights_info["highlights_count"],
+                }
+            else:
+                pdf["highlights_info"] = None
 
         return pdfs
     except Exception as e:
@@ -176,19 +186,21 @@ async def get_pdf_thumbnail(filename: str):
     """
     try:
         thumbnail_path = pdf_service.get_thumbnail_path(filename)
-        
+
         if not thumbnail_path.exists():
             raise HTTPException(status_code=404, detail="Thumbnail not found")
-        
+
         return FileResponse(
             path=str(thumbnail_path),
             media_type="image/png",
-            filename=f"{filename}_thumb.png"
+            filename=f"{filename}_thumb.png",
         )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error generating thumbnail: {str(e)}"
+        )
 
 
 @router.get("/progress/all")
@@ -203,25 +215,3 @@ async def get_all_reading_progress() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=f"Error getting reading progress: {str(e)}"
         )
-
-
-@router.get("/{filename}/thumbnail")
-async def get_pdf_thumbnail(filename: str):
-    """
-    Get a thumbnail image of the first page of the PDF
-    """
-    try:
-        thumbnail_path = pdf_service.get_thumbnail_path(filename)
-        
-        if not thumbnail_path.exists():
-            raise HTTPException(status_code=404, detail="Thumbnail not found")
-        
-        return FileResponse(
-            path=str(thumbnail_path),
-            media_type="image/png",
-            filename=f"{filename}_thumb.png"
-        )
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="PDF not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating thumbnail: {str(e)}")

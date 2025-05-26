@@ -54,6 +54,12 @@ Ask questions, take notes, and engage in conversations about the document conten
 
 ![Notes](docs/images/Notes.png)
 
+**🔍 Highlight Management**
+Easily highlight text within PDFs and manage your highlights with color-coded options. Highlights are saved and can be reviewed or edited later, providing a seamless way to track important information.
+
+![Highlighting](docs/images/Highlighting.png)
+
+
 ### How It Works
 
 1. **Upload or Select PDFs**: Choose from your local PDF collection
