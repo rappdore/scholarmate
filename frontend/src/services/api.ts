@@ -1,5 +1,12 @@
 import axios from 'axios';
 import type { PDF, PDFInfo } from '../types/pdf';
+import type {
+  Highlight,
+  HighlightRequest,
+  HighlightResponse,
+  UpdateColorRequest,
+  HighlightColor,
+} from '../types/highlights';
 
 const api = axios.create({
   baseURL: 'http://localhost:8000',
@@ -261,6 +268,139 @@ export const chatService = {
         `Chat failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  },
+};
+
+// Stubbed Highlight Service - Returns mock data for UI development
+export const highlightService = {
+  // In-memory storage for development
+  _highlights: new Map<string, Highlight[]>(),
+  _nextId: 1,
+
+  createHighlight: async (
+    highlightData: HighlightRequest
+  ): Promise<Highlight> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const highlight: Highlight = {
+      id: `temp-${highlightService._nextId++}`,
+      pdfFilename: highlightData.pdfFilename,
+      pageNumber: highlightData.pageNumber,
+      selectedText: highlightData.selectedText,
+      startOffset: highlightData.startOffset,
+      endOffset: highlightData.endOffset,
+      color: highlightData.color,
+      coordinates: highlightData.coordinates,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const key = `${highlightData.pdfFilename}-${highlightData.pageNumber}`;
+    const existing = highlightService._highlights.get(key) || [];
+    existing.push(highlight);
+    highlightService._highlights.set(key, existing);
+
+    console.log('Created highlight (stubbed):', highlight);
+    return highlight;
+  },
+
+  getHighlightsForPdf: async (
+    filename: string,
+    pageNumber?: number
+  ): Promise<Highlight[]> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    if (pageNumber !== undefined) {
+      const key = `${filename}-${pageNumber}`;
+      const highlights = highlightService._highlights.get(key) || [];
+      console.log(
+        `Retrieved ${highlights.length} highlights for ${filename} page ${pageNumber} (stubbed)`
+      );
+      return highlights;
+    } else {
+      // Return all highlights for the PDF
+      const allHighlights: Highlight[] = [];
+      for (const [key, highlights] of highlightService._highlights.entries()) {
+        if (key.startsWith(filename + '-')) {
+          allHighlights.push(...highlights);
+        }
+      }
+      console.log(
+        `Retrieved ${allHighlights.length} total highlights for ${filename} (stubbed)`
+      );
+      return allHighlights;
+    }
+  },
+
+  getHighlightById: async (highlightId: string): Promise<Highlight | null> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    for (const highlights of highlightService._highlights.values()) {
+      const found = highlights.find((h: Highlight) => h.id === highlightId);
+      if (found) {
+        console.log('Retrieved highlight by ID (stubbed):', found);
+        return found;
+      }
+    }
+    console.log('Highlight not found (stubbed):', highlightId);
+    return null;
+  },
+
+  deleteHighlight: async (highlightId: string): Promise<boolean> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    for (const [key, highlights] of highlightService._highlights.entries()) {
+      const index = highlights.findIndex(
+        (h: Highlight) => h.id === highlightId
+      );
+      if (index !== -1) {
+        highlights.splice(index, 1);
+        highlightService._highlights.set(key, highlights);
+        console.log('Deleted highlight (stubbed):', highlightId);
+        return true;
+      }
+    }
+    console.log('Highlight not found for deletion (stubbed):', highlightId);
+    return false;
+  },
+
+  updateHighlightColor: async (
+    highlightId: string,
+    color: HighlightColor
+  ): Promise<boolean> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    for (const highlights of highlightService._highlights.values()) {
+      const highlight = highlights.find((h: Highlight) => h.id === highlightId);
+      if (highlight) {
+        highlight.color = color;
+        highlight.updatedAt = new Date();
+        console.log('Updated highlight color (stubbed):', highlightId, color);
+        return true;
+      }
+    }
+    console.log('Highlight not found for color update (stubbed):', highlightId);
+    return false;
+  },
+
+  // Utility method to clear all highlights (for development)
+  clearAllHighlights: () => {
+    highlightService._highlights.clear();
+    console.log('Cleared all highlights (stubbed)');
+  },
+
+  // Utility method to get all highlights (for debugging)
+  getAllHighlights: () => {
+    const all: Highlight[] = [];
+    for (const highlights of highlightService._highlights.values()) {
+      all.push(...highlights);
+    }
+    return all;
   },
 };
 

@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import PDFViewer from '../components/PDFViewer';
 import TabbedRightPanel from '../components/TabbedRightPanel';
 import SimpleResizablePanels from '../components/SimpleResizablePanels';
-import { pdfService } from '../services/api';
+import { pdfService, highlightService } from '../services/api';
+import type { TextSelection, HighlightColor } from '../types/highlights';
 
 export default function Reader() {
   const { filename } = useParams<{ filename: string }>();
@@ -99,6 +100,36 @@ export default function Reader() {
     }
   };
 
+  // Handle text selection from PDFViewer
+  const handleTextSelection = async (
+    selection: TextSelection,
+    color: HighlightColor
+  ) => {
+    if (!filename) return;
+
+    try {
+      console.log('Text selected:', selection, 'Color:', color);
+
+      const highlightData = {
+        pdfFilename: filename,
+        pageNumber: selection.pageNumber,
+        selectedText: selection.text,
+        startOffset: selection.startOffset,
+        endOffset: selection.endOffset,
+        color: color,
+        coordinates: selection.coordinates,
+      };
+
+      const createdHighlight =
+        await highlightService.createHighlight(highlightData);
+      console.log('Highlight created:', createdHighlight);
+
+      // TODO: Update local state to show the highlight immediately
+    } catch (error) {
+      console.error('Error creating highlight:', error);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-gray-900">
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
@@ -120,6 +151,7 @@ export default function Reader() {
             currentPage={currentPage}
             onPageChange={handlePageChange}
             onTotalPagesChange={handleTotalPagesChange}
+            onTextSelection={handleTextSelection}
           />
         }
         rightPanel={
