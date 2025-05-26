@@ -19,7 +19,6 @@ interface PDFViewerProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   onTotalPagesChange?: (totalPages: number) => void;
-  onTextSelection?: (selection: TextSelection, color: HighlightColor) => void;
 }
 
 // Helper function to get saved zoom or default
@@ -43,7 +42,6 @@ export default function PDFViewer({
   currentPage,
   onPageChange,
   onTotalPagesChange,
-  onTextSelection,
 }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -319,8 +317,8 @@ export default function PDFViewer({
 
       if (newHighlight) {
         console.log('Highlight created:', newHighlight);
-        // Also call the parent callback if provided
-        onTextSelection?.(contextMenu.selection, color);
+        // Note: Removed onTextSelection callback to prevent duplicate highlight creation
+        // The highlight is now handled entirely by the useHighlights hook
       }
     }
 
