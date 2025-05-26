@@ -76,8 +76,8 @@ The easiest way to run this application is using Docker Compose. This will autom
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
-   cd pdf_learn_ai
+   git clone https://github.com/rappdore/scholarmate
+   cd scholarmate
    ```
 
 2. **Start all services:**
@@ -179,7 +179,7 @@ If you prefer to run the services individually for development:
 ## 📁 Project Structure
 
 ```
-pdf_learn_ai/
+scholarmate/
 ├── backend/                 # FastAPI backend
 │   ├── app/                # Application modules
 │   ├── pdfs/               # PDF storage
