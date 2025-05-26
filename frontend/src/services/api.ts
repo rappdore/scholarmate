@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { PDF, PDFInfo } from '../types/pdf';
 import type {
   Highlight,
+  HighlightCoordinates,
   HighlightRequest,
   HighlightResponse,
   UpdateColorRequest,
@@ -271,136 +272,222 @@ export const chatService = {
   },
 };
 
-// Stubbed Highlight Service - Returns mock data for UI development
+// Real Highlight Service - Connects to backend API
 export const highlightService = {
-  // In-memory storage for development
-  _highlights: new Map<string, Highlight[]>(),
-  _nextId: 1,
+  // Helper function to convert backend response to frontend format
+  _convertBackendHighlight: (backendHighlight: any): Highlight => {
+    let coordinates: HighlightCoordinates[] = [];
+
+    // Parse coordinates from JSON string
+    try {
+      coordinates =
+        typeof backendHighlight.coordinates === 'string'
+          ? JSON.parse(backendHighlight.coordinates)
+          : backendHighlight.coordinates;
+    } catch (error) {
+      console.error('Error parsing highlight coordinates:', error);
+      coordinates = [];
+    }
+
+    return {
+      id: backendHighlight.id.toString(), // Convert number to string for frontend
+      pdfFilename: backendHighlight.pdf_filename,
+      pageNumber: backendHighlight.page_number,
+      selectedText: backendHighlight.selected_text,
+      startOffset: backendHighlight.start_offset,
+      endOffset: backendHighlight.end_offset,
+      color: backendHighlight.color as HighlightColor,
+      coordinates,
+      createdAt: new Date(backendHighlight.created_at),
+      updatedAt: new Date(backendHighlight.updated_at),
+    };
+  },
 
   createHighlight: async (
     highlightData: HighlightRequest
   ): Promise<Highlight> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      const response = await fetch('http://localhost:8000/highlights/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          pdf_filename: highlightData.pdfFilename,
+          page_number: highlightData.pageNumber,
+          selected_text: highlightData.selectedText,
+          start_offset: highlightData.startOffset,
+          end_offset: highlightData.endOffset,
+          color: highlightData.color,
+          coordinates: highlightData.coordinates,
+        }),
+      });
 
-    const highlight: Highlight = {
-      id: `temp-${highlightService._nextId++}`,
-      pdfFilename: highlightData.pdfFilename,
-      pageNumber: highlightData.pageNumber,
-      selectedText: highlightData.selectedText,
-      startOffset: highlightData.startOffset,
-      endOffset: highlightData.endOffset,
-      color: highlightData.color,
-      coordinates: highlightData.coordinates,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-    const key = `${highlightData.pdfFilename}-${highlightData.pageNumber}`;
-    const existing = highlightService._highlights.get(key) || [];
-    existing.push(highlight);
-    highlightService._highlights.set(key, existing);
+      const backendHighlight = await response.json();
+      const highlight =
+        highlightService._convertBackendHighlight(backendHighlight);
 
-    console.log('Created highlight (stubbed):', highlight);
-    return highlight;
+      console.log('Created highlight:', highlight);
+      return highlight;
+    } catch (error) {
+      console.error('Error creating highlight:', error);
+      throw new Error(
+        `Failed to create highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   },
 
   getHighlightsForPdf: async (
     filename: string,
     pageNumber?: number
   ): Promise<Highlight[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      const url =
+        pageNumber !== undefined
+          ? `http://localhost:8000/highlights/${encodeURIComponent(filename)}/page/${pageNumber}`
+          : `http://localhost:8000/highlights/${encodeURIComponent(filename)}`;
 
-    if (pageNumber !== undefined) {
-      const key = `${filename}-${pageNumber}`;
-      const highlights = highlightService._highlights.get(key) || [];
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const backendHighlights = await response.json();
+      const highlights = backendHighlights.map(
+        highlightService._convertBackendHighlight
+      );
+
       console.log(
-        `Retrieved ${highlights.length} highlights for ${filename} page ${pageNumber} (stubbed)`
+        `Retrieved ${highlights.length} highlights for ${filename}${pageNumber !== undefined ? ` page ${pageNumber}` : ''}`
       );
       return highlights;
-    } else {
-      // Return all highlights for the PDF
-      const allHighlights: Highlight[] = [];
-      for (const [key, highlights] of highlightService._highlights.entries()) {
-        if (key.startsWith(filename + '-')) {
-          allHighlights.push(...highlights);
-        }
-      }
-      console.log(
-        `Retrieved ${allHighlights.length} total highlights for ${filename} (stubbed)`
+    } catch (error) {
+      console.error('Error retrieving highlights:', error);
+      throw new Error(
+        `Failed to retrieve highlights: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return allHighlights;
     }
   },
 
   getHighlightById: async (highlightId: string): Promise<Highlight | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      const response = await fetch(
+        `http://localhost:8000/highlights/id/${highlightId}`
+      );
 
-    for (const highlights of highlightService._highlights.values()) {
-      const found = highlights.find((h: Highlight) => h.id === highlightId);
-      if (found) {
-        console.log('Retrieved highlight by ID (stubbed):', found);
-        return found;
+      if (response.status === 404) {
+        console.log('Highlight not found:', highlightId);
+        return null;
       }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const backendHighlight = await response.json();
+      const highlight =
+        highlightService._convertBackendHighlight(backendHighlight);
+
+      console.log('Retrieved highlight by ID:', highlight);
+      return highlight;
+    } catch (error) {
+      console.error('Error retrieving highlight by ID:', error);
+      throw new Error(
+        `Failed to retrieve highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-    console.log('Highlight not found (stubbed):', highlightId);
-    return null;
   },
 
   deleteHighlight: async (highlightId: string): Promise<boolean> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    for (const [key, highlights] of highlightService._highlights.entries()) {
-      const index = highlights.findIndex(
-        (h: Highlight) => h.id === highlightId
+    try {
+      const response = await fetch(
+        `http://localhost:8000/highlights/${highlightId}`,
+        {
+          method: 'DELETE',
+        }
       );
-      if (index !== -1) {
-        highlights.splice(index, 1);
-        highlightService._highlights.set(key, highlights);
-        console.log('Deleted highlight (stubbed):', highlightId);
-        return true;
+
+      if (response.status === 404) {
+        console.log('Highlight not found for deletion:', highlightId);
+        return false;
       }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      console.log('Deleted highlight:', highlightId);
+      return true;
+    } catch (error) {
+      console.error('Error deleting highlight:', error);
+      throw new Error(
+        `Failed to delete highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-    console.log('Highlight not found for deletion (stubbed):', highlightId);
-    return false;
   },
 
   updateHighlightColor: async (
     highlightId: string,
     color: HighlightColor
   ): Promise<boolean> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 150));
+    try {
+      const response = await fetch(
+        `http://localhost:8000/highlights/${highlightId}/color`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            color: color,
+          }),
+        }
+      );
 
-    for (const highlights of highlightService._highlights.values()) {
-      const highlight = highlights.find((h: Highlight) => h.id === highlightId);
-      if (highlight) {
-        highlight.color = color;
-        highlight.updatedAt = new Date();
-        console.log('Updated highlight color (stubbed):', highlightId, color);
-        return true;
+      if (response.status === 404) {
+        console.log('Highlight not found for color update:', highlightId);
+        return false;
       }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      console.log('Updated highlight color:', highlightId, color);
+      return true;
+    } catch (error) {
+      console.error('Error updating highlight color:', error);
+      throw new Error(
+        `Failed to update highlight color: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-    console.log('Highlight not found for color update (stubbed):', highlightId);
-    return false;
   },
 
-  // Utility method to clear all highlights (for development)
-  clearAllHighlights: () => {
-    highlightService._highlights.clear();
-    console.log('Cleared all highlights (stubbed)');
-  },
+  // Get highlight statistics for all PDFs
+  getHighlightStats: async (): Promise<Record<string, any>> => {
+    try {
+      const response = await fetch(
+        'http://localhost:8000/highlights/stats/count'
+      );
 
-  // Utility method to get all highlights (for debugging)
-  getAllHighlights: () => {
-    const all: Highlight[] = [];
-    for (const highlights of highlightService._highlights.values()) {
-      all.push(...highlights);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const stats = await response.json();
+      console.log('Retrieved highlight statistics:', stats);
+      return stats;
+    } catch (error) {
+      console.error('Error retrieving highlight statistics:', error);
+      throw new Error(
+        `Failed to retrieve highlight statistics: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-    return all;
   },
 };
 
