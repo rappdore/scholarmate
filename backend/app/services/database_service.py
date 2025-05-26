@@ -2,20 +2,23 @@
 Database Service Module
 
 This module provides a comprehensive database service for managing reading progress
-and chat notes for PDF documents. It uses SQLite as the backend database and provides
-methods for CRUD operations on reading progress and chat notes.
+and chat notes for PDF documents. It acts as a facade that coordinates specialized
+services for different data domains while maintaining backward compatibility.
 
-The service manages two main entities:
+The service manages three main entities:
 1. Reading Progress - tracks the last page read and total pages for each PDF
 2. Chat Notes - stores conversation notes associated with specific PDF pages
+3. Highlights - stores text highlights with coordinates and metadata
 """
 
-import json
 import logging
 import os
 import sqlite3
-from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from .chat_notes_service import ChatNotesService
+from .highlights_service import HighlightsService
+from .reading_progress_service import ReadingProgressService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -23,24 +26,33 @@ logger = logging.getLogger(__name__)
 
 class DatabaseService:
     """
-    A service class for managing PDF reading progress and chat notes using SQLite.
+    A facade service class for managing PDF reading progress, chat notes, and highlights using SQLite.
 
-    This class provides a complete database abstraction layer for storing and retrieving:
-    - Reading progress for PDF documents (last page read, total pages)
-    - Chat notes associated with specific PDF pages
+    This class coordinates specialized services for different data domains while maintaining
+    the same public API for backward compatibility. It delegates operations to:
+    - ReadingProgressService: for PDF reading progress tracking
+    - ChatNotesService: for conversation notes linked to PDF pages
+    - HighlightsService: for text highlights with coordinates
 
     The database is automatically initialized with the required schema on first use.
     """
 
     def __init__(self, db_path: str = "data/reading_progress.db"):
         """
-        Initialize the database service.
+        Initialize the database service and its specialized services.
 
         Args:
             db_path (str): Path to the SQLite database file. Defaults to "data/reading_progress.db"
                           The directory will be created if it doesn't exist.
         """
         self.db_path = db_path
+
+        # Initialize specialized services
+        self.reading_progress = ReadingProgressService(db_path)
+        self.chat_notes = ChatNotesService(db_path)
+        self.highlights = HighlightsService(db_path)
+
+        # For backward compatibility, also initialize the legacy database
         self._ensure_data_dir()
         self._init_database()
 
@@ -147,24 +159,7 @@ class DatabaseService:
         Returns:
             bool: True if the operation was successful, False otherwise
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO reading_progress
-                    (pdf_filename, last_page, total_pages, last_updated)
-                    VALUES (?, ?, ?, ?)
-                """,
-                    (pdf_filename, last_page, total_pages, datetime.now()),
-                )
-                conn.commit()
-                logger.info(
-                    f"Saved reading progress for {pdf_filename}: page {last_page}"
-                )
-                return True
-        except Exception as e:
-            logger.error(f"Error saving reading progress: {e}")
-            return False
+        return self.reading_progress.save_progress(pdf_filename, last_page, total_pages)
 
     def get_reading_progress(self, pdf_filename: str) -> Optional[Dict[str, Any]]:
         """
@@ -181,31 +176,7 @@ class DatabaseService:
                 - last_updated: Timestamp of last update
             Returns None if no progress is found for the PDF.
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Use Row factory to get dictionary-like access to columns
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute(
-                    """
-                    SELECT pdf_filename, last_page, total_pages, last_updated
-                    FROM reading_progress
-                    WHERE pdf_filename = ?
-                """,
-                    (pdf_filename,),
-                )
-                row = cursor.fetchone()
-
-                if row:
-                    return {
-                        "pdf_filename": row["pdf_filename"],
-                        "last_page": row["last_page"],
-                        "total_pages": row["total_pages"],
-                        "last_updated": row["last_updated"],
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"Error getting reading progress: {e}")
-            return None
+        return self.reading_progress.get_progress(pdf_filename)
 
     def get_all_reading_progress(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -225,26 +196,7 @@ class DatabaseService:
                     }
                 }
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("""
-                    SELECT pdf_filename, last_page, total_pages, last_updated
-                    FROM reading_progress
-                    ORDER BY last_updated DESC
-                """)
-
-                progress = {}
-                for row in cursor.fetchall():
-                    progress[row["pdf_filename"]] = {
-                        "last_page": row["last_page"],
-                        "total_pages": row["total_pages"],
-                        "last_updated": row["last_updated"],
-                    }
-                return progress
-        except Exception as e:
-            logger.error(f"Error getting all reading progress: {e}")
-            return {}
+        return self.reading_progress.get_all_progress()
 
     def save_chat_note(
         self, pdf_filename: str, page_number: int, title: str, chat_content: str
@@ -264,29 +216,7 @@ class DatabaseService:
         Returns:
             Optional[int]: The ID of the newly created note, or None if creation failed
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    """
-                    INSERT INTO chat_notes (pdf_filename, page_number, title, chat_content, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        pdf_filename,
-                        page_number,
-                        title,
-                        chat_content,
-                        datetime.now(),
-                        datetime.now(),
-                    ),
-                )
-                conn.commit()
-                note_id = cursor.lastrowid
-                logger.info(f"Saved chat note for {pdf_filename}, page {page_number}")
-                return note_id
-        except Exception as e:
-            logger.error(f"Error saving chat note: {e}")
-            return None
+        return self.chat_notes.save_note(pdf_filename, page_number, title, chat_content)
 
     def get_chat_notes_for_pdf(
         self, pdf_filename: str, page_number: Optional[int] = None
@@ -312,50 +242,7 @@ class DatabaseService:
                 - created_at: Creation timestamp
                 - updated_at: Last update timestamp
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-
-                if page_number is not None:
-                    # Get notes for a specific page, ordered by creation time (newest first)
-                    cursor = conn.execute(
-                        """
-                        SELECT id, pdf_filename, page_number, title, chat_content, created_at, updated_at
-                        FROM chat_notes
-                        WHERE pdf_filename = ? AND page_number = ?
-                        ORDER BY created_at DESC
-                    """,
-                        (pdf_filename, page_number),
-                    )
-                else:
-                    # Get all notes for the PDF, ordered by page number then creation time
-                    cursor = conn.execute(
-                        """
-                        SELECT id, pdf_filename, page_number, title, chat_content, created_at, updated_at
-                        FROM chat_notes
-                        WHERE pdf_filename = ?
-                        ORDER BY page_number, created_at DESC
-                    """,
-                        (pdf_filename,),
-                    )
-
-                notes = []
-                for row in cursor.fetchall():
-                    notes.append(
-                        {
-                            "id": row["id"],
-                            "pdf_filename": row["pdf_filename"],
-                            "page_number": row["page_number"],
-                            "title": row["title"],
-                            "chat_content": row["chat_content"],
-                            "created_at": row["created_at"],
-                            "updated_at": row["updated_at"],
-                        }
-                    )
-                return notes
-        except Exception as e:
-            logger.error(f"Error getting chat notes: {e}")
-            return []
+        return self.chat_notes.get_notes_for_pdf(pdf_filename, page_number)
 
     def get_chat_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -370,33 +257,7 @@ class DatabaseService:
         Returns:
             Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute(
-                    """
-                    SELECT id, pdf_filename, page_number, title, chat_content, created_at, updated_at
-                    FROM chat_notes
-                    WHERE id = ?
-                """,
-                    (note_id,),
-                )
-                row = cursor.fetchone()
-
-                if row:
-                    return {
-                        "id": row["id"],
-                        "pdf_filename": row["pdf_filename"],
-                        "page_number": row["page_number"],
-                        "title": row["title"],
-                        "chat_content": row["chat_content"],
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"Error getting chat note: {e}")
-            return None
+        return self.chat_notes.get_note_by_id(note_id)
 
     def delete_chat_note(self, note_id: int) -> bool:
         """
@@ -411,17 +272,7 @@ class DatabaseService:
         Returns:
             bool: True if a note was deleted, False if no note was found or deletion failed
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("DELETE FROM chat_notes WHERE id = ?", (note_id,))
-                conn.commit()
-                deleted = cursor.rowcount > 0
-                if deleted:
-                    logger.info(f"Deleted chat note {note_id}")
-                return deleted
-        except Exception as e:
-            logger.error(f"Error deleting chat note: {e}")
-            return False
+        return self.chat_notes.delete_note(note_id)
 
     def get_notes_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -441,51 +292,7 @@ class DatabaseService:
                     }
                 }
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-
-                # First query: Get count and latest note date for each PDF
-                # This is more efficient than trying to get everything in one complex query
-                cursor = conn.execute("""
-                    SELECT
-                        pdf_filename,
-                        COUNT(*) as notes_count,
-                        MAX(created_at) as latest_note_date
-                    FROM chat_notes
-                    GROUP BY pdf_filename
-                """)
-
-                notes_info = {}
-                for row in cursor.fetchall():
-                    # Second query: Get the title of the latest note
-                    # We do this separately to avoid complex SQL and ensure accuracy
-                    title_cursor = conn.execute(
-                        """
-                        SELECT title
-                        FROM chat_notes
-                        WHERE pdf_filename = ? AND created_at = ?
-                        LIMIT 1
-                    """,
-                        (row["pdf_filename"], row["latest_note_date"]),
-                    )
-
-                    title_row = title_cursor.fetchone()
-                    latest_title = title_row["title"] if title_row else "Untitled Note"
-
-                    notes_info[row["pdf_filename"]] = {
-                        "notes_count": row["notes_count"],
-                        "latest_note_date": row["latest_note_date"],
-                        "latest_note_title": latest_title,
-                    }
-
-                logger.info(
-                    f"Found notes for {len(notes_info)} PDFs: {list(notes_info.keys())}"
-                )
-                return notes_info
-        except Exception as e:
-            logger.error(f"Error getting notes count: {e}")
-            return {}
+        return self.chat_notes.get_notes_count_by_pdf()
 
     # ========================================
     # HIGHLIGHT METHODS
@@ -520,38 +327,15 @@ class DatabaseService:
         Returns:
             Optional[int]: The ID of the newly created highlight, or None if creation failed
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Convert coordinates list to JSON string for storage
-                coordinates_json = json.dumps(coordinates)
-
-                cursor = conn.execute(
-                    """
-                    INSERT INTO highlights (
-                        pdf_filename, page_number, selected_text, start_offset, end_offset,
-                        color, coordinates, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        pdf_filename,
-                        page_number,
-                        selected_text,
-                        start_offset,
-                        end_offset,
-                        color,
-                        coordinates_json,
-                        datetime.now(),
-                        datetime.now(),
-                    ),
-                )
-                conn.commit()
-                highlight_id = cursor.lastrowid
-                logger.info(f"Saved highlight for {pdf_filename}, page {page_number}")
-                return highlight_id
-        except Exception as e:
-            logger.error(f"Error saving highlight: {e}")
-            return None
+        return self.highlights.save_highlight(
+            pdf_filename,
+            page_number,
+            selected_text,
+            start_offset,
+            end_offset,
+            color,
+            coordinates,
+        )
 
     def get_highlights_for_pdf(
         self, pdf_filename: str, page_number: Optional[int] = None
@@ -580,64 +364,7 @@ class DatabaseService:
                 - created_at: Creation timestamp
                 - updated_at: Last update timestamp
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-
-                if page_number is not None:
-                    # Get highlights for a specific page, ordered by creation time (newest first)
-                    cursor = conn.execute(
-                        """
-                        SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
-                               color, coordinates, created_at, updated_at
-                        FROM highlights
-                        WHERE pdf_filename = ? AND page_number = ?
-                        ORDER BY created_at DESC
-                    """,
-                        (pdf_filename, page_number),
-                    )
-                else:
-                    # Get all highlights for the PDF, ordered by page number then creation time
-                    cursor = conn.execute(
-                        """
-                        SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
-                               color, coordinates, created_at, updated_at
-                        FROM highlights
-                        WHERE pdf_filename = ?
-                        ORDER BY page_number, created_at DESC
-                    """,
-                        (pdf_filename,),
-                    )
-
-                highlights = []
-                for row in cursor.fetchall():
-                    # Parse coordinates JSON back to Python objects
-                    try:
-                        coordinates_data = json.loads(row["coordinates"])
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(
-                            f"Invalid coordinates JSON for highlight {row['id']}"
-                        )
-                        coordinates_data = []
-
-                    highlights.append(
-                        {
-                            "id": row["id"],
-                            "pdf_filename": row["pdf_filename"],
-                            "page_number": row["page_number"],
-                            "selected_text": row["selected_text"],
-                            "start_offset": row["start_offset"],
-                            "end_offset": row["end_offset"],
-                            "color": row["color"],
-                            "coordinates": coordinates_data,
-                            "created_at": row["created_at"],
-                            "updated_at": row["updated_at"],
-                        }
-                    )
-                return highlights
-        except Exception as e:
-            logger.error(f"Error getting highlights: {e}")
-            return []
+        return self.highlights.get_highlights_for_pdf(pdf_filename, page_number)
 
     def get_highlight_by_id(self, highlight_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -652,46 +379,7 @@ class DatabaseService:
         Returns:
             Optional[Dict[str, Any]]: Highlight dictionary with all fields, or None if not found
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute(
-                    """
-                    SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
-                           color, coordinates, created_at, updated_at
-                    FROM highlights
-                    WHERE id = ?
-                """,
-                    (highlight_id,),
-                )
-                row = cursor.fetchone()
-
-                if row:
-                    # Parse coordinates JSON back to Python objects
-                    try:
-                        coordinates_data = json.loads(row["coordinates"])
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(
-                            f"Invalid coordinates JSON for highlight {highlight_id}"
-                        )
-                        coordinates_data = []
-
-                    return {
-                        "id": row["id"],
-                        "pdf_filename": row["pdf_filename"],
-                        "page_number": row["page_number"],
-                        "selected_text": row["selected_text"],
-                        "start_offset": row["start_offset"],
-                        "end_offset": row["end_offset"],
-                        "color": row["color"],
-                        "coordinates": coordinates_data,
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"Error getting highlight: {e}")
-            return None
+        return self.highlights.get_highlight_by_id(highlight_id)
 
     def delete_highlight(self, highlight_id: int) -> bool:
         """
@@ -706,19 +394,7 @@ class DatabaseService:
         Returns:
             bool: True if a highlight was deleted, False if no highlight was found or deletion failed
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "DELETE FROM highlights WHERE id = ?", (highlight_id,)
-                )
-                conn.commit()
-                deleted = cursor.rowcount > 0
-                if deleted:
-                    logger.info(f"Deleted highlight {highlight_id}")
-                return deleted
-        except Exception as e:
-            logger.error(f"Error deleting highlight: {e}")
-            return False
+        return self.highlights.delete_highlight(highlight_id)
 
     def update_highlight_color(self, highlight_id: int, color: str) -> bool:
         """
@@ -734,24 +410,7 @@ class DatabaseService:
         Returns:
             bool: True if the highlight was updated, False if no highlight was found or update failed
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    """
-                    UPDATE highlights
-                    SET color = ?, updated_at = ?
-                    WHERE id = ?
-                """,
-                    (color, datetime.now(), highlight_id),
-                )
-                conn.commit()
-                updated = cursor.rowcount > 0
-                if updated:
-                    logger.info(f"Updated highlight {highlight_id} color to {color}")
-                return updated
-        except Exception as e:
-            logger.error(f"Error updating highlight color: {e}")
-            return False
+        return self.highlights.update_color(highlight_id, color)
 
     def get_highlights_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -771,54 +430,7 @@ class DatabaseService:
                     }
                 }
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-
-                # First query: Get count and latest highlight date for each PDF
-                cursor = conn.execute("""
-                    SELECT
-                        pdf_filename,
-                        COUNT(*) as highlights_count,
-                        MAX(created_at) as latest_highlight_date
-                    FROM highlights
-                    GROUP BY pdf_filename
-                """)
-
-                highlights_info = {}
-                for row in cursor.fetchall():
-                    # Second query: Get the text of the latest highlight
-                    text_cursor = conn.execute(
-                        """
-                        SELECT selected_text
-                        FROM highlights
-                        WHERE pdf_filename = ? AND created_at = ?
-                        LIMIT 1
-                    """,
-                        (row["pdf_filename"], row["latest_highlight_date"]),
-                    )
-
-                    text_row = text_cursor.fetchone()
-                    # Truncate text for preview (first 50 characters)
-                    latest_text = (
-                        text_row["selected_text"][:50] + "..."
-                        if text_row and len(text_row["selected_text"]) > 50
-                        else (text_row["selected_text"] if text_row else "No text")
-                    )
-
-                    highlights_info[row["pdf_filename"]] = {
-                        "highlights_count": row["highlights_count"],
-                        "latest_highlight_date": row["latest_highlight_date"],
-                        "latest_highlight_text": latest_text,
-                    }
-
-                logger.info(
-                    f"Found highlights for {len(highlights_info)} PDFs: {list(highlights_info.keys())}"
-                )
-                return highlights_info
-        except Exception as e:
-            logger.error(f"Error getting highlights count: {e}")
-            return {}
+        return self.highlights.get_highlights_count_by_pdf()
 
 
 # Global instance
