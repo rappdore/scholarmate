@@ -155,7 +155,11 @@ export default function Reader() {
           />
         }
         rightPanel={
-          <TabbedRightPanel filename={filename} currentPage={currentPage} />
+          <TabbedRightPanel
+            filename={filename}
+            currentPage={currentPage}
+            onPageJump={handlePageChange}
+          />
         }
       />
     </div>

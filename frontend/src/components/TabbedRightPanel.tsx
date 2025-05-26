@@ -2,17 +2,20 @@ import { useState } from 'react';
 import AIPanel from './AIPanel';
 import ChatInterface from './ChatInterface';
 import NotesPanel from './NotesPanel';
+import HighlightsPanel from './HighlightsPanel';
 
 interface TabbedRightPanelProps {
   filename?: string;
   currentPage: number;
+  onPageJump?: (pageNumber: number) => void;
 }
 
-type TabType = 'ai' | 'chat' | 'notes';
+type TabType = 'ai' | 'chat' | 'notes' | 'highlights';
 
 export default function TabbedRightPanel({
   filename,
   currentPage,
+  onPageJump,
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
 
@@ -20,6 +23,7 @@ export default function TabbedRightPanel({
     { id: 'ai' as TabType, label: 'AI Analysis', icon: '🧠' },
     { id: 'chat' as TabType, label: 'Chat', icon: '💬' },
     { id: 'notes' as TabType, label: 'Notes', icon: '📝' },
+    { id: 'highlights' as TabType, label: 'Highlights', icon: '🖍️' },
   ];
 
   return (
@@ -55,6 +59,13 @@ export default function TabbedRightPanel({
         )}
         {activeTab === 'notes' && (
           <NotesPanel filename={filename} currentPage={currentPage} />
+        )}
+        {activeTab === 'highlights' && (
+          <HighlightsPanel
+            filename={filename}
+            currentPage={currentPage}
+            onPageJump={onPageJump}
+          />
         )}
       </div>
     </div>
