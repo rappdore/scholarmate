@@ -312,10 +312,10 @@ export default function ChatInterface({
               className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg text-sm ${
+                className={`px-3 py-2 rounded-lg text-sm ${
                   message.isUser
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-200'
+                    ? 'bg-blue-600 text-white max-w-xs lg:max-w-md'
+                    : 'bg-gray-700 text-gray-200 max-w-full lg:max-w-4xl'
                 }`}
               >
                 {message.isUser ? (
