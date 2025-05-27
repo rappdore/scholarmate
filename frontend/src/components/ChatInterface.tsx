@@ -387,6 +387,12 @@ export default function ChatInterface({
                 type="text"
                 value={noteTitle}
                 onChange={e => setNoteTitle(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !saving) {
+                    e.preventDefault();
+                    saveChatAsNote();
+                  }
+                }}
                 placeholder={`Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`}
                 className="w-full px-3 py-2 border border-gray-600 bg-gray-700 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
