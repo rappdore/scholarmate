@@ -256,19 +256,129 @@ export default function HighlightsPanel({
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            {/* Current Page Highlights */}
-            {highlightsByPage[currentPage] && (
+            {sortBy === 'page' ? (
+              // Page-grouped view (existing logic)
+              <>
+                {/* Current Page Highlights */}
+                {highlightsByPage[currentPage] && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-blue-400 mb-3 uppercase tracking-wider">
+                      Current Page ({currentPage})
+                    </h4>
+                    <div className="space-y-2">
+                      {highlightsByPage[currentPage].map(highlight => (
+                        <HighlightItem
+                          key={highlight.id}
+                          highlight={highlight}
+                          isSelected={selectedHighlightId === highlight.id}
+                          isCurrent={true}
+                          onSelect={() => handleHighlightClick(highlight)}
+                          onDelete={() => handleDeleteHighlight(highlight.id)}
+                          onColorChange={color =>
+                            handleColorChange(highlight.id, color)
+                          }
+                          onJumpToPage={() =>
+                            onPageJump?.(highlight.pageNumber)
+                          }
+                          formatDate={formatDate}
+                          getColorName={getColorName}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Other Pages */}
+                {pageNumbers.filter(page => page !== currentPage).length >
+                  0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
+                      Other Pages
+                    </h4>
+                    <div className="space-y-3">
+                      {pageNumbers
+                        .filter(page => page !== currentPage)
+                        .map(pageNumber => (
+                          <div key={pageNumber}>
+                            <button
+                              onClick={() => togglePageExpansion(pageNumber)}
+                              className="w-full flex items-center justify-between p-2 bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
+                            >
+                              <span className="text-sm text-gray-200">
+                                📄 Page {pageNumber} (
+                                {highlightsByPage[pageNumber].length}{' '}
+                                {highlightsByPage[pageNumber].length === 1
+                                  ? 'highlight'
+                                  : 'highlights'}
+                                )
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-400 transition-transform ${
+                                  expandedPages.has(pageNumber)
+                                    ? 'rotate-180'
+                                    : ''
+                                }`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 9l-7 7-7-7"
+                                />
+                              </svg>
+                            </button>
+
+                            {expandedPages.has(pageNumber) && (
+                              <div className="mt-2 ml-4 space-y-2">
+                                {highlightsByPage[pageNumber].map(highlight => (
+                                  <HighlightItem
+                                    key={highlight.id}
+                                    highlight={highlight}
+                                    isSelected={
+                                      selectedHighlightId === highlight.id
+                                    }
+                                    isCurrent={false}
+                                    onSelect={() =>
+                                      handleHighlightClick(highlight)
+                                    }
+                                    onDelete={() =>
+                                      handleDeleteHighlight(highlight.id)
+                                    }
+                                    onColorChange={color =>
+                                      handleColorChange(highlight.id, color)
+                                    }
+                                    onJumpToPage={() =>
+                                      onPageJump?.(highlight.pageNumber)
+                                    }
+                                    formatDate={formatDate}
+                                    getColorName={getColorName}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              // Chronological view (newest/oldest)
               <div>
-                <h4 className="text-xs font-semibold text-blue-400 mb-3 uppercase tracking-wider">
-                  Current Page ({currentPage})
+                <h4 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
+                  All Highlights (
+                  {sortBy === 'newest' ? 'Newest First' : 'Oldest First'})
                 </h4>
                 <div className="space-y-2">
-                  {highlightsByPage[currentPage].map(highlight => (
+                  {filteredHighlights.map(highlight => (
                     <HighlightItem
                       key={highlight.id}
                       highlight={highlight}
                       isSelected={selectedHighlightId === highlight.id}
-                      isCurrent={true}
+                      isCurrent={highlight.pageNumber === currentPage}
                       onSelect={() => handleHighlightClick(highlight)}
                       onDelete={() => handleDeleteHighlight(highlight.id)}
                       onColorChange={color =>
@@ -279,78 +389,6 @@ export default function HighlightsPanel({
                       getColorName={getColorName}
                     />
                   ))}
-                </div>
-              </div>
-            )}
-
-            {/* Other Pages */}
-            {pageNumbers.filter(page => page !== currentPage).length > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                  Other Pages
-                </h4>
-                <div className="space-y-3">
-                  {pageNumbers
-                    .filter(page => page !== currentPage)
-                    .map(pageNumber => (
-                      <div key={pageNumber}>
-                        <button
-                          onClick={() => togglePageExpansion(pageNumber)}
-                          className="w-full flex items-center justify-between p-2 bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
-                        >
-                          <span className="text-sm text-gray-200">
-                            📄 Page {pageNumber} (
-                            {highlightsByPage[pageNumber].length}{' '}
-                            {highlightsByPage[pageNumber].length === 1
-                              ? 'highlight'
-                              : 'highlights'}
-                            )
-                          </span>
-                          <svg
-                            className={`w-4 h-4 text-gray-400 transition-transform ${
-                              expandedPages.has(pageNumber) ? 'rotate-180' : ''
-                            }`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        </button>
-
-                        {expandedPages.has(pageNumber) && (
-                          <div className="mt-2 ml-4 space-y-2">
-                            {highlightsByPage[pageNumber].map(highlight => (
-                              <HighlightItem
-                                key={highlight.id}
-                                highlight={highlight}
-                                isSelected={
-                                  selectedHighlightId === highlight.id
-                                }
-                                isCurrent={false}
-                                onSelect={() => handleHighlightClick(highlight)}
-                                onDelete={() =>
-                                  handleDeleteHighlight(highlight.id)
-                                }
-                                onColorChange={color =>
-                                  handleColorChange(highlight.id, color)
-                                }
-                                onJumpToPage={() =>
-                                  onPageJump?.(highlight.pageNumber)
-                                }
-                                formatDate={formatDate}
-                                getColorName={getColorName}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
                 </div>
               </div>
             )}
