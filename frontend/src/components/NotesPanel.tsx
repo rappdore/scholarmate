@@ -253,13 +253,23 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                       key={note.id}
                       className="bg-gray-800 border border-purple-500/30 rounded-lg"
                     >
-                      <div className="p-3">
+                      <div
+                        className="p-3 cursor-pointer hover:bg-gray-750 transition-colors"
+                        onClick={() =>
+                          setExpandedNote(
+                            expandedNote === note.id ? null : note.id
+                          )
+                        }
+                      >
                         <div className="flex items-start justify-between mb-2">
                           <h5 className="text-sm font-medium text-gray-200 line-clamp-2">
                             {note.title}
                           </h5>
                           <button
-                            onClick={() => deleteNote(note.id)}
+                            onClick={e => {
+                              e.stopPropagation();
+                              deleteNote(note.id);
+                            }}
                             className="text-gray-400 hover:text-red-400 transition-colors ml-2 flex-shrink-0"
                             title="Delete note"
                           >
@@ -278,22 +288,22 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                             </svg>
                           </button>
                         </div>
-                        <p className="text-xs text-gray-400 mb-3">
-                          {formatDate(note.created_at)}
-                        </p>
-                        <button
-                          onClick={() =>
-                            setExpandedNote(
-                              expandedNote === note.id ? null : note.id
-                            )
-                          }
-                          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                        >
-                          {expandedNote === note.id ? 'Hide' : 'Show'}{' '}
-                          conversation
-                        </button>
-                        {expandedNote === note.id && (
-                          <div className="mt-3 pt-3 border-t border-gray-700">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Page {note.page_number}</span>
+                          <span>{formatDate(note.created_at)}</span>
+                        </div>
+                      </div>
+                      {expandedNote === note.id && (
+                        <div className="px-3 pb-3">
+                          <div className="flex justify-end mb-2">
+                            <button
+                              onClick={() => setExpandedNote(null)}
+                              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                              Hide conversation
+                            </button>
+                          </div>
+                          <div className="pt-2 border-t border-gray-700">
                             <div className="max-w-none text-gray-300">
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm, remarkMath]}
@@ -304,8 +314,8 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                               </ReactMarkdown>
                             </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -330,18 +340,25 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                         key={note.id}
                         className="bg-gray-800 border border-gray-700 rounded-lg"
                       >
-                        <div className="p-3">
+                        <div
+                          className="p-3 cursor-pointer hover:bg-gray-750 transition-colors"
+                          onClick={() =>
+                            setExpandedNote(
+                              expandedNote === note.id ? null : note.id
+                            )
+                          }
+                        >
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <h5 className="text-sm font-medium text-gray-200 line-clamp-2">
                                 {note.title}
                               </h5>
-                              <p className="text-xs text-blue-400 mt-1">
-                                Page {note.page_number}
-                              </p>
                             </div>
                             <button
-                              onClick={() => deleteNote(note.id)}
+                              onClick={e => {
+                                e.stopPropagation();
+                                deleteNote(note.id);
+                              }}
                               className="text-gray-400 hover:text-red-400 transition-colors ml-2 flex-shrink-0"
                               title="Delete note"
                             >
@@ -360,22 +377,24 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                               </svg>
                             </button>
                           </div>
-                          <p className="text-xs text-gray-400 mb-3">
-                            {formatDate(note.created_at)}
-                          </p>
-                          <button
-                            onClick={() =>
-                              setExpandedNote(
-                                expandedNote === note.id ? null : note.id
-                              )
-                            }
-                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                          >
-                            {expandedNote === note.id ? 'Hide' : 'Show'}{' '}
-                            conversation
-                          </button>
-                          {expandedNote === note.id && (
-                            <div className="mt-3 pt-3 border-t border-gray-700">
+                          <div className="flex items-center justify-between text-xs text-gray-400">
+                            <span className="text-blue-400">
+                              Page {note.page_number}
+                            </span>
+                            <span>{formatDate(note.created_at)}</span>
+                          </div>
+                        </div>
+                        {expandedNote === note.id && (
+                          <div className="px-3 pb-3">
+                            <div className="flex justify-end mb-2">
+                              <button
+                                onClick={() => setExpandedNote(null)}
+                                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                              >
+                                Hide conversation
+                              </button>
+                            </div>
+                            <div className="pt-2 border-t border-gray-700">
                               <div className="max-w-none text-gray-300">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm, remarkMath]}
@@ -386,8 +405,8 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                                 </ReactMarkdown>
                               </div>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                 </div>
