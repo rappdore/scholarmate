@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from .chat_notes_service import ChatNotesService
 from .highlights_service import HighlightsService
+from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
 
 # Configure logger for this module
@@ -47,14 +48,17 @@ class DatabaseService:
         """
         self.db_path = db_path
 
+        # For backward compatibility, also initialize the legacy database
+        self._ensure_data_dir()
+        self._init_database()
+
+        # Run any pending migrations
+        self._run_migrations()
+
         # Initialize specialized services
         self.reading_progress = ReadingProgressService(db_path)
         self.chat_notes = ChatNotesService(db_path)
         self.highlights = HighlightsService(db_path)
-
-        # For backward compatibility, also initialize the legacy database
-        self._ensure_data_dir()
-        self._init_database()
 
     def _ensure_data_dir(self):
         """
@@ -66,6 +70,23 @@ class DatabaseService:
         data_dir = os.path.dirname(self.db_path)
         if data_dir and not os.path.exists(data_dir):
             os.makedirs(data_dir)
+
+    def _run_migrations(self):
+        """
+        Run any pending database migrations.
+
+        This method applies schema changes through migration files
+        to keep the database structure up to date.
+        """
+        try:
+            migration_service = MigrationService(self.db_path)
+            success = migration_service.apply_migrations()
+            if success:
+                logger.info("Database migrations completed successfully")
+            else:
+                logger.error("Some database migrations failed")
+        except Exception as e:
+            logger.error(f"Error running migrations: {e}")
 
     def _init_database(self):
         """
