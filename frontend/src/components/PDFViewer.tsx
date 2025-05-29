@@ -9,7 +9,7 @@ import type {
   Highlight,
 } from '../types/highlights';
 import HighlightOverlay from './HighlightOverlay';
-import { useHighlights } from '../hooks/useHighlights';
+import { useHighlightsContext } from '../contexts/HighlightsContext';
 
 // Set up the worker for react-pdf v9
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -37,6 +37,19 @@ const getSavedZoom = (): number => {
   return 1.0; // Default 100% zoom
 };
 
+// Helper function to get saved view mode or default
+const getSavedViewMode = (): 'single' | 'double' => {
+  try {
+    const savedViewMode = localStorage.getItem('pdf-viewer-view-mode');
+    if (savedViewMode === 'double' || savedViewMode === 'single') {
+      return savedViewMode;
+    }
+  } catch (error) {
+    console.warn('Error reading view mode from localStorage:', error);
+  }
+  return 'single'; // Default single page view
+};
+
 export default function PDFViewer({
   filename,
   currentPage,
@@ -47,6 +60,9 @@ export default function PDFViewer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(getSavedZoom()); // Initialize directly from localStorage
+  const [viewMode, setViewMode] = useState<'single' | 'double'>(
+    getSavedViewMode()
+  ); // Add view mode state
 
   // Text selection state
   const [contextMenu, setContextMenu] = useState<{
@@ -68,11 +84,19 @@ export default function PDFViewer({
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
-  // Highlight management
-  const { highlights, createHighlight, deleteHighlight } = useHighlights({
-    filename,
-    pageNumber: currentPage,
-  });
+  // Highlight management - Use shared context
+  const {
+    highlights,
+    createHighlight,
+    deleteHighlight,
+    setCurrentFilename,
+    getHighlightsForPage,
+  } = useHighlightsContext();
+
+  // Set current filename when it changes
+  useEffect(() => {
+    setCurrentFilename(filename || null);
+  }, [filename, setCurrentFilename]);
 
   // Save zoom level to localStorage whenever it changes
   useEffect(() => {
@@ -82,6 +106,15 @@ export default function PDFViewer({
       console.warn('Error saving zoom to localStorage:', error);
     }
   }, [scale]);
+
+  // Save view mode to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('pdf-viewer-view-mode', viewMode);
+    } catch (error) {
+      console.warn('Error saving view mode to localStorage:', error);
+    }
+  }, [viewMode]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -121,14 +154,28 @@ export default function PDFViewer({
   }, []);
 
   const goToPrevPage = () => {
-    if (currentPage > 1) {
-      onPageChange(currentPage - 1);
+    if (viewMode === 'double') {
+      // In double page mode, go back by 2 pages, but ensure we don't go below 1
+      const newPage = Math.max(1, currentPage - 2);
+      onPageChange(newPage);
+    } else {
+      // Single page mode
+      if (currentPage > 1) {
+        onPageChange(currentPage - 1);
+      }
     }
   };
 
   const goToNextPage = () => {
-    if (currentPage < numPages) {
-      onPageChange(currentPage + 1);
+    if (viewMode === 'double') {
+      // In double page mode, go forward by 2 pages, but ensure we don't exceed numPages
+      const newPage = Math.min(numPages, currentPage + 2);
+      onPageChange(newPage);
+    } else {
+      // Single page mode
+      if (currentPage < numPages) {
+        onPageChange(currentPage + 1);
+      }
     }
   };
 
@@ -142,6 +189,25 @@ export default function PDFViewer({
 
   const resetZoom = () => {
     setScale(1.0);
+  };
+
+  // Toggle view mode
+  const toggleViewMode = () => {
+    setViewMode(prev => (prev === 'single' ? 'double' : 'single'));
+  };
+
+  // Helper function to get pages to display
+  const getPagesToDisplay = (): number[] => {
+    if (viewMode === 'single') {
+      return [currentPage];
+    } else {
+      // Double page mode
+      const pages = [currentPage];
+      if (currentPage + 1 <= numPages) {
+        pages.push(currentPage + 1);
+      }
+      return pages;
+    }
   };
 
   // Text selection and coordinate mapping functions
@@ -158,10 +224,41 @@ export default function PDFViewer({
       return null;
     }
 
-    // Get the text layer element
-    const textLayer = pdfContainerRef.current?.querySelector(
-      '.react-pdf__Page__textContent'
-    );
+    // In double page mode, we need to determine which page the selection is on
+    let selectedPageNumber = currentPage;
+    let textLayer: HTMLElement | null = null;
+
+    if (viewMode === 'double') {
+      // Find which page the selection belongs to
+      const startContainer = range.startContainer;
+      const pageElement = (
+        startContainer.nodeType === Node.TEXT_NODE
+          ? startContainer.parentElement
+          : (startContainer as HTMLElement)
+      )?.closest('.react-pdf__Page');
+
+      if (pageElement) {
+        // Check if this is the first or second page in double view
+        const allPages =
+          pdfContainerRef.current?.querySelectorAll('.react-pdf__Page');
+        if (allPages) {
+          const pageIndex = Array.from(allPages).indexOf(pageElement);
+          selectedPageNumber = currentPage + (pageIndex % 2);
+        }
+
+        const foundTextLayer = pageElement.querySelector(
+          '.react-pdf__Page__textContent'
+        );
+        textLayer = foundTextLayer as HTMLElement | null;
+      }
+    } else {
+      // Single page mode - use the current page
+      const foundTextLayer = pdfContainerRef.current?.querySelector(
+        '.react-pdf__Page__textContent'
+      );
+      textLayer = foundTextLayer as HTMLElement | null;
+    }
+
     if (!textLayer) {
       console.warn('Text layer not found');
       return null;
@@ -185,20 +282,19 @@ export default function PDFViewer({
         startOffset,
         endOffset,
         coordinates,
-        pageNumber: currentPage,
+        pageNumber: selectedPageNumber,
       };
     } catch (error) {
       console.error('Error processing text selection:', error);
       return null;
     }
-  }, [currentPage]);
+  }, [currentPage, viewMode]);
 
   const calculateSelectionCoordinates = (
     range: Range,
     textLayer: HTMLElement
   ): HighlightCoordinates[] => {
     const rects = range.getClientRects();
-    const textLayerRect = textLayer.getBoundingClientRect();
     const coordinates: HighlightCoordinates[] = [];
 
     // Get page dimensions for normalization
@@ -209,10 +305,13 @@ export default function PDFViewer({
       throw new Error('Could not find page element');
     }
 
+    // In double page mode, we need to ensure coordinates are relative to the individual page
+    // The pageRect already gives us the correct page boundaries regardless of view mode
+
     for (let i = 0; i < rects.length; i++) {
       const rect = rects[i];
 
-      // Convert to coordinates relative to the page
+      // Convert to coordinates relative to the specific page (not viewport)
       const x = rect.left - pageRect.left;
       const y = rect.top - pageRect.top;
 
@@ -223,7 +322,7 @@ export default function PDFViewer({
         height: rect.height,
         pageWidth: pageRect.width,
         pageHeight: pageRect.height,
-        zoom: scale,
+        zoom: viewMode === 'double' ? scale * 0.8 : scale, // Store the actual scale used for rendering
       });
     }
 
@@ -362,6 +461,32 @@ export default function PDFViewer({
           {filename}
         </h1>
         <div className="flex items-center gap-4">
+          {/* View mode toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleViewMode}
+              className={`px-3 py-1 rounded transition-colors ${
+                viewMode === 'single'
+                  ? 'bg-blue-600 text-white hover:bg-blue-500'
+                  : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+              }`}
+              title="Single page view"
+            >
+              Single
+            </button>
+            <button
+              onClick={toggleViewMode}
+              className={`px-3 py-1 rounded transition-colors ${
+                viewMode === 'double'
+                  ? 'bg-blue-600 text-white hover:bg-blue-500'
+                  : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+              }`}
+              title="Double page view"
+            >
+              Double
+            </button>
+          </div>
+
           {/* Zoom controls */}
           <div className="flex items-center gap-2">
             <button
@@ -399,11 +524,19 @@ export default function PDFViewer({
               Previous
             </button>
             <span className="text-sm text-gray-300">
-              {loading ? '...' : `${currentPage} of ${numPages}`}
+              {loading
+                ? '...'
+                : viewMode === 'double' && currentPage + 1 <= numPages
+                  ? `${currentPage}-${currentPage + 1} of ${numPages}`
+                  : `${currentPage} of ${numPages}`}
             </span>
             <button
               onClick={goToNextPage}
-              disabled={currentPage >= numPages}
+              disabled={
+                viewMode === 'double'
+                  ? currentPage + 1 >= numPages
+                  : currentPage >= numPages
+              }
               className="px-3 py-1 bg-blue-600 text-white rounded disabled:bg-gray-500 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-blue-500 transition-colors"
             >
               Next
@@ -412,7 +545,10 @@ export default function PDFViewer({
             {/* Debug: Show highlight count and selection status */}
             {highlights.length > 0 && (
               <span className="text-xs text-green-400 ml-2">
-                {highlights.filter(h => h.pageNumber === currentPage).length}{' '}
+                {viewMode === 'double'
+                  ? getHighlightsForPage(currentPage).length +
+                    getHighlightsForPage(currentPage + 1).length
+                  : getHighlightsForPage(currentPage).length}{' '}
                 highlights
               </span>
             )}
@@ -437,36 +573,42 @@ export default function PDFViewer({
           </div>
         ) : (
           <div className="flex justify-center p-4 relative">
-            <div className="relative">
-              <Document
-                file={`/api/pdf/${filename}/file`}
-                onLoadSuccess={onDocumentLoadSuccess}
-                onLoadError={onDocumentLoadError}
-                loading={
-                  <div className="flex items-center justify-center h-96">
-                    <div className="text-gray-400">Loading PDF...</div>
-                  </div>
-                }
+            <Document
+              file={`/api/pdf/${filename}/file`}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              loading={
+                <div className="flex items-center justify-center h-96">
+                  <div className="text-gray-400">Loading PDF...</div>
+                </div>
+              }
+            >
+              <div
+                className={`${viewMode === 'double' ? 'flex gap-4 items-start' : ''}`}
               >
-                <Page
-                  pageNumber={currentPage}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  className="shadow-lg"
-                  scale={scale}
-                />
-              </Document>
+                {getPagesToDisplay().map(pageNum => (
+                  <div key={pageNum} className="relative">
+                    <Page
+                      pageNumber={pageNum}
+                      renderTextLayer={true}
+                      renderAnnotationLayer={true}
+                      className="shadow-lg"
+                      scale={viewMode === 'double' ? scale * 0.8 : scale} // Slightly smaller scale for double page view
+                    />
 
-              {/* Highlight Overlay */}
-              <HighlightOverlay
-                highlights={highlights}
-                pageNumber={currentPage}
-                scale={scale}
-                selectedHighlightId={selectedHighlight?.id}
-                onHighlightClick={handleHighlightClick}
-                onHighlightDelete={handleHighlightDelete}
-              />
-            </div>
+                    {/* Highlight Overlay for each page */}
+                    <HighlightOverlay
+                      highlights={getHighlightsForPage(pageNum)}
+                      pageNumber={pageNum}
+                      scale={viewMode === 'double' ? scale * 0.8 : scale}
+                      selectedHighlightId={selectedHighlight?.id}
+                      onHighlightClick={handleHighlightClick}
+                      onHighlightDelete={handleHighlightDelete}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Document>
 
             {/* Context Menu for Text Selection */}
             {contextMenu.visible && contextMenu.selection && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useHighlights } from '../hooks/useHighlights';
+import { useHighlightsContext } from '../contexts/HighlightsContext';
 import type { Highlight } from '../types/highlights';
 import { HighlightColor } from '../types/highlights';
 
@@ -25,17 +25,20 @@ export default function HighlightsPanel({
     new Set([currentPage])
   );
 
-  // Load all highlights for the PDF (not filtered by page)
+  // Use shared context for highlights
   const {
     highlights,
     isLoading,
     error,
     deleteHighlight,
     updateHighlightColor,
-  } = useHighlights({
-    filename,
-    // Don't filter by pageNumber to get all highlights
-  });
+    setCurrentFilename,
+  } = useHighlightsContext();
+
+  // Set current filename when it changes
+  useEffect(() => {
+    setCurrentFilename(filename || null);
+  }, [filename, setCurrentFilename]);
 
   // Auto-expand current page section
   useEffect(() => {
