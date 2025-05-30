@@ -1,8 +1,15 @@
+// Book status type for library management
+export type BookStatus = 'new' | 'reading' | 'finished';
+
 export interface ReadingProgress {
   last_page: number;
   total_pages: number;
   progress_percentage: number;
   last_updated: string;
+  // New status management fields
+  status: BookStatus;
+  status_updated_at: string;
+  manually_set: boolean;
 }
 
 export interface NotesInfo {
@@ -27,6 +34,9 @@ export interface PDF {
   notes_info?: NotesInfo | null;
   highlights_info?: HighlightsInfo | null;
   error?: string;
+  // New status fields for smart categorization
+  computed_status: BookStatus; // Based on progress
+  manual_status?: BookStatus; // User override
 }
 
 export interface PDFInfo extends PDF {

@@ -1,0 +1,8 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+1. Don't assume the obvious.
+2. Trace the data flow completely.
+3. Understand the UI design intent.
