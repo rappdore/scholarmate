@@ -103,19 +103,7 @@ export default function Reader() {
   // entirely within PDFViewer component using the useHighlights hook
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900">
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => navigate('/')}
-            className="px-3 py-1 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded transition-colors"
-          >
-            ← Back to Library
-          </button>
-          <h1 className="text-lg font-semibold text-gray-100">Scholarmate</h1>
-        </div>
-      </div>
-
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-900">
       <SimpleResizablePanels
         leftPanel={
           <PDFViewer
