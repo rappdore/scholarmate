@@ -64,19 +64,41 @@ class ReadingProgressService(BaseDatabaseService):
             bool: True if the operation was successful, False otherwise
         """
         try:
-            query = """
-                INSERT OR REPLACE INTO reading_progress
-                (pdf_filename, last_page, total_pages, last_updated)
-                VALUES (?, ?, ?, ?)
-            """
-            params = (
-                pdf_filename,
-                last_page,
-                total_pages,
-                self.get_current_timestamp(),
-            )
+            # Check if record exists
+            existing = self.get_progress(pdf_filename)
 
-            result = self.execute_insert(query, params)
+            if existing:
+                # Update existing record, preserving status fields
+                query = """
+                    UPDATE reading_progress
+                    SET last_page = ?, total_pages = ?, last_updated = ?
+                    WHERE pdf_filename = ?
+                """
+                params = (
+                    last_page,
+                    total_pages,
+                    self.get_current_timestamp(),
+                    pdf_filename,
+                )
+                result = self.execute_update_delete(query, params)
+            else:
+                # Insert new record with default status values
+                query = """
+                    INSERT INTO reading_progress
+                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                params = (
+                    pdf_filename,
+                    last_page,
+                    total_pages,
+                    self.get_current_timestamp(),
+                    "new",  # Default status for new records
+                    self.get_current_timestamp(),
+                    False,  # Default manually_set for new records
+                )
+                result = self.execute_insert(query, params)
+
             if result is not None:
                 logger.info(
                     f"Saved reading progress for {pdf_filename}: page {last_page}"
