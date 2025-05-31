@@ -201,21 +201,10 @@ class DatabaseService:
 
     def get_all_reading_progress(self) -> Dict[str, Dict[str, Any]]:
         """
-        Retrieve reading progress for all PDF documents.
-
-        Returns a dictionary where keys are PDF filenames and values contain
-        the progress information. Results are ordered by last_updated timestamp
-        in descending order (most recently read first).
+        Retrieve reading progress for all PDFs.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info:
-                {
-                    "filename.pdf": {
-                        "last_page": int,
-                        "total_pages": int,
-                        "last_updated": str
-                    }
-                }
+            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
         """
         return self.reading_progress.get_all_progress()
 
@@ -452,6 +441,105 @@ class DatabaseService:
                 }
         """
         return self.highlights.get_highlights_count_by_pdf()
+
+    # Status management methods (delegated to reading progress service)
+
+    def update_book_status(
+        self, pdf_filename: str, status: str, manual: bool = True
+    ) -> bool:
+        """
+        Update the reading status of a book.
+
+        Args:
+            pdf_filename (str): Name of the PDF file to update status for
+            status (str): New status ('new', 'reading', 'finished')
+            manual (bool): Whether this status was manually set by the user
+
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        return self.reading_progress.update_book_status(pdf_filename, status, manual)
+
+    def get_books_by_status(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get all books filtered by status.
+
+        Args:
+            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+                                   If None, returns all books.
+
+        Returns:
+            List[Dict[str, Any]]: List of books with their progress and status information
+        """
+        return self.reading_progress.get_books_by_status(status)
+
+    def get_status_counts(self) -> Dict[str, int]:
+        """
+        Get count of books for each status.
+
+        Returns:
+            Dict[str, int]: Dictionary with status counts
+        """
+        return self.reading_progress.get_status_counts()
+
+    def delete_reading_progress(self, pdf_filename: str) -> bool:
+        """
+        Delete reading progress record for a specific PDF.
+
+        Args:
+            pdf_filename (str): Name of the PDF file to delete progress for
+
+        Returns:
+            bool: True if the record was deleted successfully, False otherwise
+        """
+        return self.reading_progress.delete_progress(pdf_filename)
+
+    def delete_all_book_data(self, pdf_filename: str) -> Dict[str, bool]:
+        """
+        Delete all database data for a specific book.
+
+        Args:
+            pdf_filename (str): Name of the PDF file to delete all data for
+
+        Returns:
+            Dict[str, bool]: Dictionary indicating success/failure for each data type
+        """
+        results = {}
+
+        # Delete reading progress
+        results["reading_progress"] = self.delete_reading_progress(pdf_filename)
+
+        # Delete notes
+        try:
+            with self.chat_notes.get_connection() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM chat_notes WHERE pdf_filename = ?", (pdf_filename,)
+                )
+                conn.commit()
+                results["notes"] = (
+                    cursor.rowcount >= 0
+                )  # Consider successful even if no rows were deleted
+        except Exception as e:
+            logger.error(f"Error deleting notes for {pdf_filename}: {e}")
+            results["notes"] = False
+
+        # Delete highlights
+        try:
+            with self.highlights.get_connection() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM highlights WHERE pdf_filename = ?", (pdf_filename,)
+                )
+                conn.commit()
+                results["highlights"] = (
+                    cursor.rowcount >= 0
+                )  # Consider successful even if no rows were deleted
+        except Exception as e:
+            logger.error(f"Error deleting highlights for {pdf_filename}: {e}")
+            results["highlights"] = False
+
+        return results
+
+    # Chat notes methods (delegated to chat notes service)
 
 
 # Global instance

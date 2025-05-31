@@ -108,13 +108,13 @@ class ReadingProgressService(BaseDatabaseService):
 
             if row:
                 return {
-                    "pdf_filename": row["pdf_filename"],
-                    "last_page": row["last_page"],
-                    "total_pages": row["total_pages"],
-                    "last_updated": row["last_updated"],
-                    "status": row.get("status", "new"),
-                    "status_updated_at": row.get("status_updated_at"),
-                    "manually_set": bool(row.get("manually_set", False)),
+                    "pdf_filename": row[0],
+                    "last_page": row[1],
+                    "total_pages": row[2],
+                    "last_updated": row[3],
+                    "status": row[4] if row[4] else "new",
+                    "status_updated_at": row[5],
+                    "manually_set": bool(row[6]) if row[6] is not None else False,
                 }
             return None
         except Exception as e:
@@ -140,13 +140,13 @@ class ReadingProgressService(BaseDatabaseService):
             progress = {}
             if rows:
                 for row in rows:
-                    progress[row["pdf_filename"]] = {
-                        "last_page": row["last_page"],
-                        "total_pages": row["total_pages"],
-                        "last_updated": row["last_updated"],
-                        "status": row.get("status", "new"),
-                        "status_updated_at": row.get("status_updated_at"),
-                        "manually_set": bool(row.get("manually_set", False)),
+                    progress[row[0]] = {
+                        "last_page": row[1],
+                        "total_pages": row[2],
+                        "last_updated": row[3],
+                        "status": row[4] if row[4] else "new",
+                        "status_updated_at": row[5],
+                        "manually_set": bool(row[6]) if row[6] is not None else False,
                     }
             return progress
         except Exception as e:
@@ -178,8 +178,13 @@ class ReadingProgressService(BaseDatabaseService):
 
             # Check if record exists, create if not
             existing = self.get_progress(pdf_filename)
+            logger.info(
+                f"Looking for existing record for {pdf_filename}, found: {existing}"
+            )
+
             if not existing:
                 # Create a new record with default values if it doesn't exist
+                logger.info(f"Creating new record for {pdf_filename}")
                 query = """
                     INSERT INTO reading_progress
                     (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set)
@@ -195,8 +200,10 @@ class ReadingProgressService(BaseDatabaseService):
                     manual,
                 )
                 result = self.execute_insert(query, params)
+                logger.info(f"Insert result: {result}")
             else:
                 # Update existing record
+                logger.info(f"Updating existing record for {pdf_filename}")
                 query = """
                     UPDATE reading_progress
                     SET status = ?,
@@ -205,14 +212,20 @@ class ReadingProgressService(BaseDatabaseService):
                     WHERE pdf_filename = ?
                 """
                 params = (status, self.get_current_timestamp(), manual, pdf_filename)
+                logger.info(f"Update query: {query}, params: {params}")
                 result = self.execute_update_delete(query, params)
+                logger.info(f"Update result: {result}")
 
             if result:
                 logger.info(
                     f"Updated status for {pdf_filename} to '{status}' (manual: {manual})"
                 )
                 return True
-            return False
+            else:
+                logger.error(
+                    f"Failed to update status for {pdf_filename} - result was: {result}"
+                )
+                return False
 
         except Exception as e:
             logger.error(f"Error updating book status: {e}")
@@ -265,20 +278,20 @@ class ReadingProgressService(BaseDatabaseService):
                 for row in rows:
                     # Calculate progress percentage
                     progress_percentage = 0
-                    if row["total_pages"] and row["total_pages"] > 0:
-                        progress_percentage = round(
-                            (row["last_page"] / row["total_pages"]) * 100, 1
-                        )
+                    total_pages = row[2]  # total_pages is index 2
+                    last_page = row[1]  # last_page is index 1
+                    if total_pages and total_pages > 0:
+                        progress_percentage = round((last_page / total_pages) * 100, 1)
 
                     book_data = {
-                        "pdf_filename": row["pdf_filename"],
-                        "last_page": row["last_page"],
-                        "total_pages": row["total_pages"],
+                        "pdf_filename": row[0],
+                        "last_page": last_page,
+                        "total_pages": total_pages,
                         "progress_percentage": progress_percentage,
-                        "last_updated": row["last_updated"],
-                        "status": row.get("status", "new"),
-                        "status_updated_at": row.get("status_updated_at"),
-                        "manually_set": bool(row.get("manually_set", False)),
+                        "last_updated": row[3],
+                        "status": row[4] if row[4] else "new",
+                        "status_updated_at": row[5],
+                        "manually_set": bool(row[6]) if row[6] is not None else False,
                     }
                     books.append(book_data)
 
@@ -310,11 +323,13 @@ class ReadingProgressService(BaseDatabaseService):
             # Initialize with all statuses
             counts = {"new": 0, "reading": 0, "finished": 0}
 
-            if rows:
+            if rows is not None:
                 for row in rows:
-                    status = row.get("status", "new")
+                    # Access by index: status is first column (0), count is second column (1)
+                    status = row[0] if row[0] else "new"
+                    count_val = row[1] if row[1] else 0
                     if status in counts:
-                        counts[status] = row["count"]
+                        counts[status] = count_val
 
             # Calculate total
             counts["all"] = sum(counts.values())
@@ -324,3 +339,27 @@ class ReadingProgressService(BaseDatabaseService):
         except Exception as e:
             logger.error(f"Error getting status counts: {e}")
             return {"all": 0, "new": 0, "reading": 0, "finished": 0}
+
+    def delete_progress(self, pdf_filename: str) -> bool:
+        """
+        Delete reading progress record for a specific PDF.
+
+        Args:
+            pdf_filename (str): Name of the PDF file to delete progress for
+
+        Returns:
+            bool: True if the record was deleted successfully, False otherwise
+        """
+        try:
+            query = "DELETE FROM reading_progress WHERE pdf_filename = ?"
+            success = self.execute_update_delete(query, (pdf_filename,))
+
+            if success:
+                logger.info(f"Deleted reading progress for {pdf_filename}")
+            else:
+                logger.warning(f"No reading progress found for {pdf_filename}")
+
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting reading progress: {e}")
+            return False

@@ -130,11 +130,11 @@ class BaseDatabaseService:
             logger.error(f"Database update/delete error: {e}")
             return False
 
-    def get_current_timestamp(self) -> datetime:
+    def get_current_timestamp(self) -> str:
         """
         Get current timestamp for database operations.
 
         Returns:
-            datetime: Current timestamp
+            str: Current timestamp in SQLite format
         """
-        return datetime.now()
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

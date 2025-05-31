@@ -14,8 +14,9 @@ const api = axios.create({
 });
 
 export const pdfService = {
-  listPDFs: async (): Promise<PDF[]> => {
-    const response = await api.get('/pdf/list');
+  listPDFs: async (status?: string): Promise<PDF[]> => {
+    const url = status ? `/pdf/list?status=${status}` : '/pdf/list';
+    const response = await api.get(url);
     return response.data;
   },
 
@@ -57,6 +58,34 @@ export const pdfService = {
     progress: Record<string, any>;
   }> => {
     const response = await api.get('/pdf/progress/all');
+    return response.data;
+  },
+
+  // New status management methods
+  updateBookStatus: async (
+    filename: string,
+    status: string,
+    manually_set: boolean = true
+  ): Promise<any> => {
+    const response = await api.put(`/pdf/${filename}/status`, {
+      status,
+      manually_set,
+    });
+    return response.data;
+  },
+
+  deleteBook: async (filename: string): Promise<any> => {
+    const response = await api.delete(`/pdf/${filename}`);
+    return response.data;
+  },
+
+  getStatusCounts: async (): Promise<{
+    all: number;
+    new: number;
+    reading: number;
+    finished: number;
+  }> => {
+    const response = await api.get('/pdf/status/counts');
     return response.data;
   },
 

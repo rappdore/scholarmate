@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { pdfService } from '../services/api';
-import { mockPdfService, initializeMockData } from '../services/mockApi';
 import type { PDF, BookStatus } from '../types/pdf';
 import {
-  computeBookStatus,
   getBookStatus,
   matchesStatusFilter,
-  calculateStatusCounts,
   shouldPromptFinished,
 } from '../utils/bookStatus';
 import LibraryTabs from '../components/LibraryTabs';
@@ -28,16 +25,9 @@ export default function Library() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Initialize mock data for development
-    initializeMockData();
     loadPDFs();
+    loadStatusCounts();
   }, []);
-
-  useEffect(() => {
-    // Update status counts whenever PDFs change
-    const counts = calculateStatusCounts(pdfs);
-    setStatusCounts(counts);
-  }, [pdfs]);
 
   const loadPDFs = async () => {
     try {
@@ -45,25 +35,18 @@ export default function Library() {
       setError(null);
       const data = await pdfService.listPDFs();
 
-      // Enhance PDFs with computed status information
+      // The backend now provides status information directly in reading_progress
+      // No need for complex status computation - just use what the backend provides
       const enhancedPdfs = data.map(pdf => {
-        const computed_status = computeBookStatus(pdf);
-        const mockStatus = mockPdfService.getBookStatus(pdf.filename);
+        // Get status from reading progress or default to 'new'
+        const status = pdf.reading_progress?.status || 'new';
 
         return {
           ...pdf,
-          computed_status,
-          manual_status: mockStatus?.status,
-          // Update reading_progress with status fields if they exist
-          reading_progress: pdf.reading_progress
-            ? {
-                ...pdf.reading_progress,
-                status: mockStatus?.status || computed_status,
-                status_updated_at:
-                  mockStatus?.updated_at || new Date().toISOString(),
-                manually_set: mockStatus?.manually_set || false,
-              }
-            : null,
+          computed_status: status as BookStatus,
+          manual_status: pdf.reading_progress?.manually_set
+            ? (status as BookStatus)
+            : undefined,
         };
       });
 
@@ -84,10 +67,19 @@ export default function Library() {
     }
   };
 
+  const loadStatusCounts = async () => {
+    try {
+      const counts = await pdfService.getStatusCounts();
+      setStatusCounts(counts);
+    } catch (err) {
+      console.error('Error loading status counts:', err);
+    }
+  };
+
   const handleStatusChange = async (pdf: PDF, newStatus: BookStatus) => {
     try {
-      // Update status via mock API
-      await mockPdfService.updateBookStatus(pdf.filename, newStatus, true);
+      // Update status via real API
+      await pdfService.updateBookStatus(pdf.filename, newStatus, true);
 
       // Update local state
       setPdfs(prevPdfs =>
@@ -95,6 +87,7 @@ export default function Library() {
           p.filename === pdf.filename
             ? {
                 ...p,
+                computed_status: newStatus,
                 manual_status: newStatus,
                 reading_progress: p.reading_progress
                   ? {
@@ -109,6 +102,9 @@ export default function Library() {
         )
       );
 
+      // Reload status counts
+      await loadStatusCounts();
+
       console.log(`Updated "${pdf.title}" status to "${newStatus}"`);
     } catch (err) {
       console.error('Error updating book status:', err);
@@ -117,14 +113,16 @@ export default function Library() {
 
   const handleDeleteBook = async (pdf: PDF) => {
     try {
-      // Delete via mock API
-      await mockPdfService.deleteBook(pdf.filename);
+      // Delete via real API
+      await pdfService.deleteBook(pdf.filename);
 
       // Remove from local state
       setPdfs(prevPdfs => prevPdfs.filter(p => p.filename !== pdf.filename));
 
+      // Reload status counts
+      await loadStatusCounts();
+
       console.log(`Deleted "${pdf.title}"`);
-      // TODO: In Phase 3, this will also delete the actual file and database records
     } catch (err) {
       console.error('Error deleting book:', err);
     }

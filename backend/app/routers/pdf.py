@@ -1,6 +1,6 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -18,13 +18,33 @@ class ReadingProgressRequest(BaseModel):
     total_pages: int
 
 
+class BookStatusRequest(BaseModel):
+    status: str
+    manually_set: bool = True
+
+
 @router.get("/list")
-async def list_pdfs() -> List[Dict[str, Any]]:
+async def list_pdfs(
+    status: Optional[str] = Query(
+        None, description="Filter by book status (new, reading, finished)"
+    ),
+) -> List[Dict[str, Any]]:
     """
-    List all PDFs in the pdfs directory with metadata, reading progress, and notes info
+    List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
+    Optionally filter by book status.
     """
     try:
         pdfs = pdf_service.list_pdfs()
+
+        # Get reading progress with status information
+        if status:
+            # Filter by status using the database service
+            books_by_status = db_service.get_books_by_status(status)
+            # Create a set of filenames that match the status
+            status_filenames = {book["pdf_filename"] for book in books_by_status}
+            # Filter PDFs to only include those with the matching status
+            pdfs = [pdf for pdf in pdfs if pdf.get("filename") in status_filenames]
+
         all_progress = db_service.get_all_reading_progress()
         all_notes = db_service.get_notes_count_by_pdf()
         all_highlights = db_service.get_highlights_count_by_pdf()
@@ -33,7 +53,7 @@ async def list_pdfs() -> List[Dict[str, Any]]:
         for pdf in pdfs:
             filename = pdf.get("filename")
 
-            # Add reading progress
+            # Add reading progress with status information
             if filename and filename in all_progress:
                 progress = all_progress[filename]
                 pdf["reading_progress"] = {
@@ -45,6 +65,9 @@ async def list_pdfs() -> List[Dict[str, Any]]:
                     if progress["total_pages"]
                     else 0,
                     "last_updated": progress["last_updated"],
+                    "status": progress.get("status", "new"),
+                    "status_updated_at": progress.get("status_updated_at"),
+                    "manually_set": progress.get("manually_set", False),
                 }
             else:
                 pdf["reading_progress"] = None
@@ -214,4 +237,108 @@ async def get_all_reading_progress() -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error getting reading progress: {str(e)}"
+        )
+
+
+@router.put("/{filename}/status")
+async def update_book_status(
+    filename: str, status_request: BookStatusRequest
+) -> Dict[str, Any]:
+    """
+    Update the reading status of a book
+    """
+    try:
+        success = db_service.update_book_status(
+            pdf_filename=filename,
+            status=status_request.status,
+            manual=status_request.manually_set,
+        )
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Status updated for {filename}",
+                "filename": filename,
+                "status": status_request.status,
+                "manually_set": status_request.manually_set,
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update book status")
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error updating book status: {str(e)}"
+        )
+
+
+@router.delete("/{filename}")
+async def delete_book(filename: str) -> Dict[str, Any]:
+    """
+    Delete a book and all its associated data (file, thumbnails, progress, notes, highlights)
+    """
+    try:
+        deletion_results = {}
+
+        # Delete the PDF file
+        try:
+            pdf_file_path = pdf_service.get_pdf_path(filename)
+            if pdf_file_path.exists():
+                pdf_file_path.unlink()
+                deletion_results["pdf_file"] = True
+            else:
+                deletion_results["pdf_file"] = False  # File didn't exist
+        except Exception as e:
+            deletion_results["pdf_file"] = False
+            print(f"Warning: Could not delete PDF file {filename}: {e}")
+
+        # Delete thumbnail
+        try:
+            thumbnail_path = pdf_service.get_thumbnail_path(filename)
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+                deletion_results["thumbnail"] = True
+            else:
+                deletion_results["thumbnail"] = False  # File didn't exist
+        except Exception as e:
+            deletion_results["thumbnail"] = False
+            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+
+        # Delete all database data using the proper service method
+        db_deletion_results = db_service.delete_all_book_data(filename)
+        deletion_results.update(db_deletion_results)
+
+        # Check if any critical operations failed
+        critical_failures = []
+        if not deletion_results.get("pdf_file", False):
+            critical_failures.append("PDF file")
+
+        # Database deletions are not critical failures if the records don't exist
+
+        return {
+            "success": True,
+            "message": f"Book {filename} deleted successfully"
+            + (
+                f" (warnings: {', '.join(critical_failures)} not found)"
+                if critical_failures
+                else ""
+            ),
+            "filename": filename,
+            "deletion_details": deletion_results,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
+
+
+@router.get("/status/counts")
+async def get_status_counts() -> Dict[str, int]:
+    """
+    Get count of books for each status
+    """
+    try:
+        counts = db_service.get_status_counts()
+        return counts
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error getting status counts: {str(e)}"
         )
