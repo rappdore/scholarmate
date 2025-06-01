@@ -389,3 +389,5 @@ gcloud-service-key.json
 
 # Netlify
 .netlify/
+
+plans/
