@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cors>=1.0.1",
+    "ebooklib>=0.18",
     "fastapi>=0.115.12",
     "httpx>=0.28.1",
     "openai>=1.82.0",

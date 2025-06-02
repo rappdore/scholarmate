@@ -329,6 +329,7 @@ pdfs/
 media/
 static/media/
 backend/thumbnails/
+epubs/
 
 # Database files
 *.db

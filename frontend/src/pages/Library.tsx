@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { pdfService } from '../services/api';
+import { epubService } from '../services/epubService';
 import type { PDF, BookStatus } from '../types/pdf';
+import type { Document } from '../types/document';
+import {
+  isPDFDocument,
+  isEPUBDocument,
+  getDocumentLength,
+  getDocumentLengthUnit,
+} from '../types/document';
 import {
   getBookStatus,
   matchesStatusFilter,
@@ -11,7 +19,7 @@ import LibraryTabs from '../components/LibraryTabs';
 import BookActionMenu from '../components/BookActionMenu';
 
 export default function Library() {
-  const [pdfs, setPdfs] = useState<PDF[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | BookStatus>('reading');
@@ -25,43 +33,58 @@ export default function Library() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadPDFs();
+    loadDocuments();
     loadStatusCounts();
   }, []);
 
-  const loadPDFs = async () => {
+  const loadDocuments = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await pdfService.listPDFs();
+
+      // Call both services in parallel
+      const [pdfData, epubData] = await Promise.all([
+        pdfService.listPDFs().catch(() => []), // Return empty array if service fails
+        epubService.listEPUBs().catch(() => []), // Return empty array if service fails
+      ]);
+
+      // Convert PDFs to Document format and merge with EPUBs
+      const pdfDocuments: Document[] = pdfData.map(pdf => ({
+        ...pdf,
+        type: 'pdf' as const,
+        num_pages: pdf.num_pages,
+      }));
+
+      const allDocuments: Document[] = [...pdfDocuments, ...epubData];
 
       // The backend now provides status information directly in reading_progress
       // No need for complex status computation - just use what the backend provides
-      const enhancedPdfs = data.map(pdf => {
+      const enhancedDocuments = allDocuments.map(doc => {
         // Get status from reading progress or default to 'new'
-        const status = pdf.reading_progress?.status || 'new';
+        const status = doc.reading_progress?.status || 'new';
 
         return {
-          ...pdf,
+          ...doc,
           computed_status: status as BookStatus,
-          manual_status: pdf.reading_progress?.manually_set
+          manual_status: doc.reading_progress?.manually_set
             ? (status as BookStatus)
             : undefined,
         };
       });
 
-      setPdfs(enhancedPdfs);
+      setDocuments(enhancedDocuments);
 
       // Check for books that should prompt for finished status
-      enhancedPdfs.forEach(pdf => {
-        if (shouldPromptFinished(pdf)) {
-          console.log(`Book "${pdf.title}" is ready to be marked as finished!`);
+      enhancedDocuments.forEach(doc => {
+        if (shouldPromptFinished(doc as any)) {
+          // Use 'as any' for now since shouldPromptFinished expects PDF
+          console.log(`Book "${doc.title}" is ready to be marked as finished!`);
           // TODO: Show notification or prompt in a future enhancement
         }
       });
     } catch (err) {
-      console.error('Error loading PDFs:', err);
-      setError('Failed to load PDFs. Make sure the backend is running.');
+      console.error('Error loading documents:', err);
+      setError('Failed to load documents. Make sure the backend is running.');
     } finally {
       setLoading(false);
     }
@@ -76,59 +99,78 @@ export default function Library() {
     }
   };
 
-  const handleStatusChange = async (pdf: PDF, newStatus: BookStatus) => {
+  const handleStatusChange = async (
+    document: Document,
+    newStatus: BookStatus
+  ) => {
     try {
-      // Update status via real API
-      await pdfService.updateBookStatus(pdf.filename, newStatus, true);
+      // Update status via appropriate API based on document type
+      if (isPDFDocument(document)) {
+        await pdfService.updateBookStatus(document.filename, newStatus, true);
+      } else {
+        // For EPUBs, we'll use the same PDF service for now since status management isn't document-type specific
+        // This will be enhanced in later phases
+        await pdfService.updateBookStatus(document.filename, newStatus, true);
+      }
 
       // Update local state
-      setPdfs(prevPdfs =>
-        prevPdfs.map(p =>
-          p.filename === pdf.filename
+      setDocuments(prevDocs =>
+        prevDocs.map(d =>
+          d.filename === document.filename
             ? {
-                ...p,
+                ...d,
                 computed_status: newStatus,
                 manual_status: newStatus,
-                reading_progress: p.reading_progress
+                reading_progress: d.reading_progress
                   ? {
-                      ...p.reading_progress,
+                      ...d.reading_progress,
                       status: newStatus,
                       status_updated_at: new Date().toISOString(),
                       manually_set: true,
                     }
                   : null,
               }
-            : p
+            : d
         )
       );
 
       // Reload status counts
       await loadStatusCounts();
 
-      console.log(`Updated "${pdf.title}" status to "${newStatus}"`);
+      console.log(`Updated "${document.title}" status to "${newStatus}"`);
     } catch (err) {
       console.error('Error updating book status:', err);
     }
   };
 
-  const handleDeleteBook = async (pdf: PDF) => {
+  const handleDeleteBook = async (document: Document) => {
     try {
-      // Delete via real API
-      await pdfService.deleteBook(pdf.filename);
+      // Delete via appropriate API based on document type
+      if (isPDFDocument(document)) {
+        await pdfService.deleteBook(document.filename);
+      } else {
+        // For EPUBs, we'll use the same PDF service for now since deletion isn't document-type specific
+        // This will be enhanced in later phases
+        await pdfService.deleteBook(document.filename);
+      }
 
       // Remove from local state
-      setPdfs(prevPdfs => prevPdfs.filter(p => p.filename !== pdf.filename));
+      setDocuments(prevDocs =>
+        prevDocs.filter(d => d.filename !== document.filename)
+      );
 
       // Reload status counts
       await loadStatusCounts();
 
-      console.log(`Deleted "${pdf.title}"`);
+      console.log(`Deleted "${document.title}"`);
     } catch (err) {
       console.error('Error deleting book:', err);
     }
   };
 
-  const filteredPdfs = pdfs.filter(pdf => matchesStatusFilter(pdf, activeTab));
+  const filteredDocuments = documents.filter(doc =>
+    matchesStatusFilter(doc as any, activeTab)
+  ); // Use 'as any' for now
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -142,12 +184,22 @@ export default function Library() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const handlePDFClick = (filename: string) => {
+  const handleDocumentClick = (filename: string) => {
     navigate(`/read/${encodeURIComponent(filename)}`);
   };
 
-  const getStatusBadge = (pdf: PDF) => {
-    const status = getBookStatus(pdf);
+  const getDocumentIcon = (document: Document): string => {
+    return isPDFDocument(document) ? '📄' : '📚';
+  };
+
+  const getThumbnailUrl = (document: Document): string => {
+    return isPDFDocument(document)
+      ? pdfService.getThumbnailUrl(document.filename)
+      : epubService.getThumbnailUrl(document.filename);
+  };
+
+  const getStatusBadge = (document: Document) => {
+    const status = getBookStatus(document as any); // Use 'as any' for now
     const statusConfig = {
       new: {
         label: 'New',
@@ -200,7 +252,7 @@ export default function Library() {
           </h2>
           <p className="text-slate-400 mb-6 max-w-md">{error}</p>
           <button
-            onClick={loadPDFs}
+            onClick={loadDocuments}
             className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25"
           >
             Try Again
@@ -212,7 +264,7 @@ export default function Library() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {pdfs.length === 0 ? (
+      {documents.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-slate-600 text-8xl mb-6">📚</div>
           <h2 className="text-2xl font-bold text-slate-300 mb-4">
@@ -250,7 +302,7 @@ export default function Library() {
               </ol>
             </div>
             <button
-              onClick={loadPDFs}
+              onClick={loadDocuments}
               className="mt-6 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25"
             >
               🔄 Refresh Library
@@ -268,56 +320,59 @@ export default function Library() {
 
           {/* Books Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {filteredPdfs.map(pdf => (
+            {filteredDocuments.map(doc => (
               <div
-                key={pdf.filename}
+                key={doc.filename}
                 className="relative group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105 flex flex-col"
-                onMouseEnter={() => setHoveredBook(pdf.filename)}
+                onMouseEnter={() => setHoveredBook(doc.filename)}
                 onMouseLeave={() => setHoveredBook(null)}
               >
                 {/* Book Action Menu */}
                 <BookActionMenu
-                  pdf={pdf}
-                  onStatusChange={status => handleStatusChange(pdf, status)}
-                  onDelete={() => handleDeleteBook(pdf)}
-                  isVisible={hoveredBook === pdf.filename}
+                  pdf={doc as any} // Temporary fix until BookActionMenu is updated to support Document type
+                  onStatusChange={status => handleStatusChange(doc, status)}
+                  onDelete={() => handleDeleteBook(doc)}
+                  isVisible={hoveredBook === doc.filename}
                 />
 
                 <div
                   className="p-6 flex-1"
-                  onClick={() => handlePDFClick(pdf.filename)}
+                  onClick={() => handleDocumentClick(doc.filename)}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-16 h-20 bg-slate-700/50 rounded-lg overflow-hidden group-hover:scale-110 transition-transform duration-200 border border-slate-600/50">
                       <img
-                        src={pdfService.getThumbnailUrl(pdf.filename)}
-                        alt={`${pdf.title} thumbnail`}
+                        src={getThumbnailUrl(doc)}
+                        alt={`${doc.title} thumbnail`}
                         className="w-full h-full object-cover"
                         onError={e => {
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
-                          target.parentElement!.innerHTML =
-                            '<div class="w-full h-full flex items-center justify-center text-purple-400 text-2xl">📄</div>';
+                          target.parentElement!.innerHTML = `
+                            <div class="w-full h-full flex items-center justify-center text-purple-400 text-2xl">
+                              ${getDocumentIcon(doc)}
+                            </div>
+                          `;
                         }}
                       />
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      {getStatusBadge(pdf)}
+                      {getStatusBadge(doc)}
                       <div className="flex items-center gap-2">
-                        {pdf.highlights_info &&
-                          pdf.highlights_info.highlights_count > 0 && (
+                        {doc.highlights_info &&
+                          doc.highlights_info.highlights_count > 0 && (
                             <div className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-full flex items-center gap-1">
-                              🖍️ {pdf.highlights_info.highlights_count}
+                              🖍️ {doc.highlights_info.highlights_count}
                             </div>
                           )}
-                        {pdf.notes_info && (
+                        {doc.notes_info && (
                           <div className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full flex items-center gap-1">
-                            📝 {pdf.notes_info.notes_count}
+                            📝 {doc.notes_info.notes_count}
                           </div>
                         )}
                       </div>
                       <div className="text-sm text-slate-400 bg-slate-700/50 px-3 py-1 rounded-full">
-                        {pdf.num_pages} pages
+                        {getDocumentLength(doc)} {getDocumentLengthUnit(doc)}
                       </div>
                     </div>
                   </div>
@@ -330,54 +385,54 @@ export default function Library() {
                       WebkitBoxOrient: 'vertical',
                     }}
                   >
-                    {pdf.title}
+                    {doc.title}
                   </h3>
 
                   <p className="text-sm text-slate-400 mb-4 font-medium">
-                    by {pdf.author}
+                    by {doc.author}
                   </p>
 
                   <div className="text-xs text-slate-500 space-y-2">
                     <div className="flex items-center justify-between">
                       <span>Size:</span>
                       <span className="text-slate-400">
-                        {formatFileSize(pdf.file_size)}
+                        {formatFileSize(doc.file_size)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Added:</span>
                       <span className="text-slate-400">
-                        {formatDate(pdf.modified_date)}
+                        {formatDate(doc.modified_date)}
                       </span>
                     </div>
                   </div>
 
-                  {pdf.reading_progress && (
+                  {doc.reading_progress && (
                     <div className="mt-4 pt-3 border-t border-slate-600/50">
                       <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
                         <span>Reading Progress</span>
                         <span className="text-purple-400 font-medium">
-                          {pdf.reading_progress.progress_percentage}%
+                          {doc.reading_progress.progress_percentage}%
                         </span>
                       </div>
                       <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
                         <div
                           className="bg-gradient-to-r from-purple-500 to-blue-500 h-full rounded-full transition-all duration-300"
                           style={{
-                            width: `${pdf.reading_progress.progress_percentage}%`,
+                            width: `${doc.reading_progress.progress_percentage}%`,
                           }}
                         ></div>
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        Page {pdf.reading_progress.last_page} of{' '}
-                        {pdf.reading_progress.total_pages}
+                        Page {doc.reading_progress.last_page} of{' '}
+                        {doc.reading_progress.total_pages}
                       </div>
                     </div>
                   )}
 
-                  {pdf.notes_info && (
+                  {doc.notes_info && (
                     <div
-                      className={`${pdf.reading_progress ? 'mt-3' : 'mt-4'} pt-3 border-t border-slate-600/50`}
+                      className={`${doc.reading_progress ? 'mt-3' : 'mt-4'} pt-3 border-t border-slate-600/50`}
                     >
                       <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
                         <div className="flex items-center gap-1">
@@ -385,36 +440,36 @@ export default function Library() {
                           <span>Notes</span>
                         </div>
                         <span className="text-green-400 font-medium">
-                          {pdf.notes_info.notes_count}{' '}
-                          {pdf.notes_info.notes_count === 1 ? 'note' : 'notes'}
+                          {doc.notes_info.notes_count}{' '}
+                          {doc.notes_info.notes_count === 1 ? 'note' : 'notes'}
                         </span>
                       </div>
                       <div className="text-xs text-slate-500">
-                        Latest: {pdf.notes_info.latest_note_title}
+                        Latest: {doc.notes_info.latest_note_title}
                       </div>
                       <div className="text-xs text-slate-600 mt-1">
-                        {formatDate(pdf.notes_info.latest_note_date)}
+                        {formatDate(doc.notes_info.latest_note_date)}
                       </div>
                     </div>
                   )}
 
-                  {pdf.error && (
+                  {doc.error && (
                     <div className="mt-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
-                      ⚠️ {pdf.error}
+                      ⚠️ {doc.error}
                     </div>
                   )}
                 </div>
 
                 <div className="px-6 py-4 bg-slate-700/30 border-t border-slate-600/50">
                   <div className="text-xs text-slate-400 truncate font-mono">
-                    {pdf.filename}
+                    {doc.filename}
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          {filteredPdfs.length === 0 && activeTab !== 'all' && (
+          {filteredDocuments.length === 0 && activeTab !== 'all' && (
             <div className="text-center py-16">
               <div className="text-slate-600 text-6xl mb-4">
                 {activeTab === 'new' && '📚'}
