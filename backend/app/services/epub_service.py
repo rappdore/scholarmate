@@ -172,20 +172,8 @@ class EPUBService:
             # Open EPUB
             book = epub.read_epub(str(file_path))
 
-            # Try to find cover image
-            cover_image = None
-            for item in book.get_items():
-                if item.get_type() == ebooklib.ITEM_IMAGE:
-                    # Check if this might be a cover image
-                    if "cover" in item.get_name().lower():
-                        cover_image = item
-                        break
-
-            # If no cover found, try to get the first image
-            if not cover_image:
-                for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-                    cover_image = item
-                    break
+            # Try to find cover image using EPUB specification methods
+            cover_image = self._find_cover_image(book)
 
             if cover_image:
                 # Convert image data to PIL Image
@@ -221,6 +209,200 @@ class EPUBService:
             thumb = Image.new("RGB", (width, height), "#f0f0f0")
             thumb.save(str(thumbnail_path), "PNG")
             return thumbnail_path
+
+    def _find_cover_image(self, book):
+        """
+        Find cover image using EPUB specification methods:
+        1. Parse OPF directly to find cover metadata and manifest
+        2. Fall back to largest image
+        3. Fall back to first image
+        """
+        import zipfile
+        from xml.etree import ElementTree as ET
+
+        # Method 1: Parse OPF file directly - most reliable
+        try:
+            # Find the EPUB file path by reconstructing from epub_dir
+            epub_path = None
+
+            # Get all EPUB files and find the one we're working with
+            for epub_file in self.epub_dir.glob("*.epub"):
+                try:
+                    # Quick check - compare first item name to see if it matches
+                    test_book = epub.read_epub(str(epub_file))
+                    test_items = list(test_book.get_items())
+                    book_items = list(book.get_items())
+
+                    if (
+                        test_items
+                        and book_items
+                        and len(test_items) == len(book_items)
+                        and test_items[0].get_name() == book_items[0].get_name()
+                    ):
+                        epub_path = str(epub_file)
+                        break
+                except Exception:
+                    continue
+
+            if epub_path:
+                with zipfile.ZipFile(epub_path, "r") as zip_file:
+                    # Read container.xml to find OPF file
+                    container_xml = zip_file.read("META-INF/container.xml").decode(
+                        "utf-8"
+                    )
+                    container_root = ET.fromstring(container_xml)
+
+                    # Find OPF path
+                    opf_path = None
+                    for rootfile in container_root.findall(
+                        ".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile"
+                    ):
+                        opf_path = rootfile.get("full-path")
+                        break
+
+                    if opf_path:
+                        opf_content = zip_file.read(opf_path).decode("utf-8")
+                        opf_root = ET.fromstring(opf_content)
+
+                        # Look for <meta name="cover" content="cover_id"/>
+                        cover_metas = opf_root.findall(
+                            './/{http://www.idpf.org/2007/opf}meta[@name="cover"]'
+                        )
+                        for meta in cover_metas:
+                            cover_id = meta.get("content")
+                            if cover_id:
+                                # First try to find the book item with this ID
+                                for item in book.get_items():
+                                    if (
+                                        item.get_id() == cover_id
+                                        and item.get_type() == ebooklib.ITEM_IMAGE
+                                    ):
+                                        return item
+
+                                # If ebooklib can't provide it, try to create a custom item from ZIP
+                                cover_item = self._create_image_item_from_zip(
+                                    zip_file, opf_root, cover_id, opf_path
+                                )
+                                if cover_item:
+                                    return cover_item
+
+                        # Look for items with properties="cover-image"
+                        manifest_items = opf_root.findall(
+                            ".//{http://www.idpf.org/2007/opf}item"
+                        )
+                        for item_elem in manifest_items:
+                            props = item_elem.get("properties", "")
+                            if "cover-image" in props:
+                                item_id = item_elem.get("id")
+                                # First try ebooklib
+                                for item in book.get_items():
+                                    if (
+                                        item.get_id() == item_id
+                                        and item.get_type() == ebooklib.ITEM_IMAGE
+                                    ):
+                                        return item
+
+                                # If ebooklib can't provide it, try to create from ZIP
+                                cover_item = self._create_image_item_from_zip(
+                                    zip_file, opf_root, item_id, opf_path
+                                )
+                                if cover_item:
+                                    return cover_item
+
+        except Exception as e:
+            print(f"OPF parsing failed: {e}")
+
+        # Method 2: Fall back to largest image (covers are usually largest)
+        largest_image = None
+        largest_size = 0
+
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_IMAGE:
+                try:
+                    content = item.get_content()
+                    size = len(content)
+                    if size > largest_size:
+                        largest_size = size
+                        largest_image = item
+                except Exception:
+                    continue
+
+        # Return largest if it's substantial (> 50KB, likely a cover not a small icon)
+        if largest_image and largest_size > 50000:
+            return largest_image
+
+        # Method 3: Filename-based detection
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_IMAGE:
+                if "cover" in item.get_name().lower():
+                    return item
+
+        # Method 4: Return largest image even if small
+        if largest_image:
+            return largest_image
+
+        # Method 5: Fall back to first image
+        for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+            return item
+
+        return None
+
+    def _create_image_item_from_zip(self, zip_file, opf_root, item_id, opf_path):
+        """
+        Create a custom image item from ZIP file when ebooklib can't provide it
+        """
+        try:
+            # Find the manifest item with this ID
+            manifest_items = opf_root.findall(".//{http://www.idpf.org/2007/opf}item")
+            for item_elem in manifest_items:
+                if item_elem.get("id") == item_id:
+                    href = item_elem.get("href")
+                    media_type = item_elem.get("media-type", "")
+
+                    if href and media_type.startswith("image/"):
+                        # Build full path to the image in ZIP
+                        # OPF path might be OEBPS/content.opf, so image is relative to OEBPS/
+                        opf_dir = "/".join(
+                            opf_path.split("/")[:-1]
+                        )  # Remove content.opf
+                        if opf_dir:
+                            image_path = f"{opf_dir}/{href}"
+                        else:
+                            image_path = href
+
+                        try:
+                            # Try to read the image from ZIP
+                            image_data = zip_file.read(image_path)
+
+                            # Create a custom item-like object
+                            class CustomImageItem:
+                                def __init__(self, id, name, content):
+                                    self._id = id
+                                    self._name = name
+                                    self._content = content
+
+                                def get_id(self):
+                                    return self._id
+
+                                def get_name(self):
+                                    return self._name
+
+                                def get_content(self):
+                                    return self._content
+
+                                def get_type(self):
+                                    return ebooklib.ITEM_IMAGE
+
+                            return CustomImageItem(item_id, href, image_data)
+
+                        except KeyError:
+                            # Image file not found in ZIP
+                            continue
+
+            return None
+
+        except Exception:
+            return None
 
     def get_thumbnail_path(self, filename: str) -> Path:
         """
