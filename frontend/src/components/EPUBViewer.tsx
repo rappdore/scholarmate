@@ -74,7 +74,7 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
     const styleElement = document.createElement('style');
     styleElement.id = 'epub-custom-styles';
 
-    // Combine all EPUB CSS and scope it to the container
+    // Combine all EPUB CSS and scope it to the inner container
     const combinedCSS = epubStyles.styles
       .map(style => {
         // Scope all CSS rules to the epub-content-container
@@ -88,11 +88,25 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
             ) {
               return match;
             }
+
+            // For body/html selectors, replace with container
+            if (selector.trim() === 'body' || selector.trim() === 'html') {
+              return `.epub-content-container { ${rules} }`;
+            }
+
             // Scope the selector to the container
             const scopedSelector = selector
               .split(',')
-              .map((s: string) => `.epub-content-container ${s.trim()}`)
+              .map((s: string) => {
+                const trimmedSelector = s.trim();
+                // Don't double-scope already specific selectors
+                if (trimmedSelector.includes('.epub-content-container')) {
+                  return trimmedSelector;
+                }
+                return `.epub-content-container ${trimmedSelector}`;
+              })
               .join(', ');
+
             return `${scopedSelector} { ${rules} }`;
           }
         );
@@ -477,14 +491,16 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
           </h1>
         </div>
 
-        {/* Chapter Content with EPUB Styling */}
-        <div
-          className="epub-content-container"
-          data-theme={theme}
-          data-font-size={fontSize}
-          data-line-height={lineHeight}
-          dangerouslySetInnerHTML={{ __html: currentContent.content }}
-        />
+        {/* EPUB Content with Two-Container Approach */}
+        <div className="epub-outer-container">
+          <div
+            className="epub-content-container"
+            data-theme={theme}
+            data-font-size={fontSize}
+            data-line-height={lineHeight}
+            dangerouslySetInnerHTML={{ __html: currentContent.content }}
+          />
+        </div>
       </div>
 
       {/* Footer with Progress */}

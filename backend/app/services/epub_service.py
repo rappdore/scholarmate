@@ -633,6 +633,7 @@ class EPUBService:
     def _sanitize_html(self, html_content: str) -> str:
         """
         Sanitize HTML content to remove potentially harmful elements
+        and extract only the body content for proper container styling
         """
         # Remove script tags and their content
         html_content = re.sub(
@@ -657,6 +658,50 @@ class EPUBService:
             html_content,
             flags=re.IGNORECASE,
         )
+
+        # Extract content from body tag if it exists
+        # This prevents EPUB body/html styles from interfering with our container
+        body_match = re.search(
+            r"<body[^>]*>(.*?)</body>", html_content, flags=re.DOTALL | re.IGNORECASE
+        )
+
+        if body_match:
+            # Use only the content inside the body tag
+            html_content = body_match.group(1)
+        else:
+            # If no body tag, remove html and head tags if present
+            # Remove head section entirely
+            html_content = re.sub(
+                r"<head[^>]*>.*?</head>",
+                "",
+                html_content,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+
+            # Remove html and body opening/closing tags but keep content
+            html_content = re.sub(
+                r"</?html[^>]*>",
+                "",
+                html_content,
+                flags=re.IGNORECASE,
+            )
+            html_content = re.sub(
+                r"</?body[^>]*>",
+                "",
+                html_content,
+                flags=re.IGNORECASE,
+            )
+
+        # Remove any remaining doctype declarations
+        html_content = re.sub(
+            r"<!DOCTYPE[^>]*>",
+            "",
+            html_content,
+            flags=re.IGNORECASE,
+        )
+
+        # Clean up extra whitespace
+        html_content = html_content.strip()
 
         return html_content
 

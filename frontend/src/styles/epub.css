@@ -1,36 +1,64 @@
-/* EPUB Content Styling and Theme Isolation */
+/* EPUB Content Styling with Two-Container Approach */
 
+/* Outer container: Controls spacing from viewport edges */
+.epub-outer-container {
+  /* This container controls the margins/padding from screen edges */
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem 1.5rem;
+}
+
+/* Responsive padding for outer container */
+@media (max-width: 768px) {
+  .epub-outer-container {
+    padding: 1.5rem 1rem 2.5rem 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .epub-outer-container {
+    padding: 1rem 0.75rem 2rem 0.75rem;
+  }
+}
+
+/* Inner container: Where EPUB content gets injected */
 .epub-content-container {
-  /* Isolate EPUB styles from app styles */
-  all: initial;
+  /* EPUB content can hit the edges of this container */
+  width: 100%;
 
-  /* Reset to controlled baseline */
+  /* Basic styling and theme support */
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
     Arial, sans-serif;
   color: #e0e0e0;
   background: transparent;
   line-height: 1.6;
-
-  /* Container constraints for optimal reading */
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 2rem;
-
-  /* Typography defaults */
   font-size: 16px;
   word-wrap: break-word;
   hyphens: auto;
+
+  /* Let EPUB content control its own layout within this container */
+  box-sizing: border-box;
 }
 
-/* Reset all child elements to inherit from container */
+/* Reset child elements to inherit from container but don't force specific spacing */
 .epub-content-container * {
   color: inherit;
   font-family: inherit;
   line-height: inherit;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
-/* Typography enhancements */
+/* Only override potentially harmful styles, let EPUB control its layout */
+.epub-content-container img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* Typography enhancements for headings */
 .epub-content-container h1,
 .epub-content-container h2,
 .epub-content-container h3,
@@ -39,8 +67,6 @@
 .epub-content-container h6 {
   color: #ffffff !important;
   font-weight: 600;
-  margin-top: 2rem;
-  margin-bottom: 1rem;
   line-height: 1.3;
 }
 
@@ -58,22 +84,11 @@
   font-size: 1.25rem;
 }
 
-.epub-content-container p {
-  margin-bottom: 1rem;
-  text-align: justify;
-}
-
 .epub-content-container blockquote {
   border-left: 4px solid #7c3aed;
-  margin: 1.5rem 0;
   padding-left: 1rem;
   font-style: italic;
   color: #d1d5db !important;
-}
-
-.epub-content-container em,
-.epub-content-container i {
-  font-style: italic;
 }
 
 .epub-content-container strong,
@@ -97,24 +112,12 @@
   padding: 1rem;
   border-radius: 0.5rem;
   overflow-x: auto;
-  margin: 1rem 0;
   border: 1px solid #374151;
 }
 
 .epub-content-container pre code {
   background: transparent;
   padding: 0;
-}
-
-/* Lists */
-.epub-content-container ul,
-.epub-content-container ol {
-  margin: 1rem 0;
-  padding-left: 2rem;
-}
-
-.epub-content-container li {
-  margin: 0.5rem 0;
 }
 
 /* Links */
@@ -128,20 +131,10 @@
   color: #a78bfa !important;
 }
 
-/* Images */
-.epub-content-container img {
-  max-width: 100%;
-  height: auto;
-  margin: 1rem 0;
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-}
-
 /* Tables */
 .epub-content-container table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
   background: #1f2937;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -163,7 +156,6 @@
 /* Light theme overrides */
 .epub-content-container[data-theme='light'] {
   color: #1f2937 !important;
-  background: #ffffff !important;
 }
 
 .epub-content-container[data-theme='light'] * {
@@ -229,7 +221,6 @@
 /* Sepia theme */
 .epub-content-container[data-theme='sepia'] {
   color: #4a4036 !important;
-  background: #f7f0e8 !important;
 }
 
 .epub-content-container[data-theme='sepia'] * {
