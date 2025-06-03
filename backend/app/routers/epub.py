@@ -42,21 +42,22 @@ async def get_epub_info(filename: str) -> Dict[str, Any]:
 @router.get("/{filename}/file")
 async def get_epub_file(filename: str):
     """
-    Serve the actual EPUB file for viewing (placeholder for now)
+    Serve the actual EPUB file for viewing
     """
     try:
         file_path = epub_service.get_epub_path(filename)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="EPUB file not found")
 
-        # For now, return 404 as specified in the plan
-        # This will be implemented in Phase 2
-        raise HTTPException(status_code=404, detail="EPUB viewer not yet implemented")
+        # Return success response indicating EPUB viewer is available
+        return {
+            "status": "success",
+            "message": "EPUB viewer available",
+            "filename": filename,
+        }
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="EPUB not found")
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error serving EPUB: {str(e)}")
 
@@ -85,3 +86,35 @@ async def get_epub_thumbnail(filename: str):
         raise HTTPException(
             status_code=500, detail=f"Error generating thumbnail: {str(e)}"
         )
+
+
+@router.get("/{filename}/navigation")
+async def get_epub_navigation(filename: str) -> Dict[str, Any]:
+    """
+    Get the hierarchical navigation structure (table of contents) for an EPUB
+    """
+    try:
+        navigation = epub_service.get_navigation_tree(filename)
+        return navigation
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error getting navigation: {str(e)}"
+        )
+
+
+@router.get("/{filename}/content/{nav_id}")
+async def get_epub_content(filename: str, nav_id: str) -> Dict[str, Any]:
+    """
+    Get HTML content for a specific navigation section
+    """
+    try:
+        content = epub_service.get_content_by_nav_id(filename, nav_id)
+        return content
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting content: {str(e)}")

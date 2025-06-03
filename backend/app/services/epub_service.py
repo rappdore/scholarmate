@@ -411,3 +411,160 @@ class EPUBService:
         file_path = self.get_epub_path(filename)
         thumbnail_filename = f"{file_path.stem}_thumb.png"
         return self.thumbnails_dir / thumbnail_filename
+
+    def get_navigation_tree(self, filename: str) -> Dict[str, Any]:
+        """
+        Get the hierarchical navigation structure of an EPUB
+        Returns full table of contents with nested structure
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+
+        # Get the navigation document
+        nav_items = []
+
+        # Try to get navigation from toc (table of contents)
+        if hasattr(book, "toc") and book.toc:
+            nav_items = self._process_toc_items(book.toc, book)
+        else:
+            # Fallback: create navigation from spine (reading order)
+            spine_items = []
+            for item_id, _ in book.spine:
+                item = book.get_item_with_id(item_id)
+                if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    spine_items.append(
+                        {
+                            "id": item.get_id(),
+                            "title": item.get_name()
+                            .replace(".xhtml", "")
+                            .replace(".html", "")
+                            .replace("_", " ")
+                            .title(),
+                            "level": 1,
+                            "children": [],
+                        }
+                    )
+            nav_items = spine_items
+
+        return {
+            "navigation": nav_items,
+            "spine_length": len(book.spine),
+            "has_toc": bool(hasattr(book, "toc") and book.toc),
+        }
+
+    def _process_toc_items(self, toc_items, book, level=1):
+        """
+        Recursively process table of contents items
+        """
+        processed_items = []
+
+        for item in toc_items:
+            if isinstance(item, tuple):
+                # This is a nested section
+                section, children = item
+                if hasattr(section, "title") and hasattr(section, "href"):
+                    nav_id = self._get_nav_id_from_href(section.href, book)
+                    processed_item = {
+                        "id": nav_id,
+                        "title": str(section.title),
+                        "href": section.href,
+                        "level": level,
+                        "children": self._process_toc_items(children, book, level + 1),
+                    }
+                    processed_items.append(processed_item)
+            elif hasattr(item, "title") and hasattr(item, "href"):
+                # This is a direct navigation item
+                nav_id = self._get_nav_id_from_href(item.href, book)
+                processed_item = {
+                    "id": nav_id,
+                    "title": str(item.title),
+                    "href": item.href,
+                    "level": level,
+                    "children": [],
+                }
+                processed_items.append(processed_item)
+
+        return processed_items
+
+    def _get_nav_id_from_href(self, href, book):
+        """
+        Convert href to navigation ID by finding the corresponding spine item
+        """
+        # Remove fragment identifier (anchor)
+        base_href = href.split("#")[0] if "#" in href else href
+
+        # Find the item in the book
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            if item.get_name() == base_href or item.get_name().endswith(base_href):
+                return item.get_id()
+
+        # Fallback: use href as ID (cleaned)
+        return base_href.replace("/", "_").replace(".", "_")
+
+    def get_content_by_nav_id(self, filename: str, nav_id: str) -> Dict[str, Any]:
+        """
+        Get HTML content for a specific navigation section
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+
+        # Find the item with the given ID
+        target_item = None
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            if item.get_id() == nav_id:
+                target_item = item
+                break
+
+        if not target_item:
+            # Try to find by name if ID doesn't match
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                if (
+                    nav_id in item.get_name()
+                    or item.get_name().replace(".", "_").replace("/", "_") == nav_id
+                ):
+                    target_item = item
+                    break
+
+        if not target_item:
+            raise ValueError(f"Navigation section '{nav_id}' not found")
+
+        # Get the content
+        content = target_item.get_content().decode("utf-8")
+
+        # Find position in spine for navigation context
+        spine_position = 0
+        total_spine = len(book.spine)
+
+        for idx, (item_id, _) in enumerate(book.spine):
+            if item_id == target_item.get_id():
+                spine_position = idx
+                break
+
+        # Get navigation context (previous/next)
+        prev_nav_id = None
+        next_nav_id = None
+
+        if spine_position > 0:
+            prev_item_id, _ = book.spine[spine_position - 1]
+            prev_nav_id = prev_item_id
+
+        if spine_position < total_spine - 1:
+            next_item_id, _ = book.spine[spine_position + 1]
+            next_nav_id = next_item_id
+
+        return {
+            "nav_id": nav_id,
+            "title": target_item.get_name()
+            .replace(".xhtml", "")
+            .replace(".html", "")
+            .replace("_", " ")
+            .title(),
+            "content": content,
+            "spine_position": spine_position,
+            "total_sections": total_spine,
+            "progress_percentage": round(
+                (spine_position / max(total_spine - 1, 1)) * 100, 1
+            ),
+            "previous_nav_id": prev_nav_id,
+            "next_nav_id": next_nav_id,
+        }

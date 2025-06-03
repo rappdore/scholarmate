@@ -25,4 +25,18 @@ export const epubService = {
   getThumbnailUrl: (filename: string): string => {
     return `http://localhost:8000/epub/${encodeURIComponent(filename)}/thumbnail`;
   },
+
+  getNavigation: async (filename: string): Promise<any> => {
+    const response = await api.get(
+      `/epub/${encodeURIComponent(filename)}/navigation`
+    );
+    return response.data;
+  },
+
+  getContent: async (filename: string, navId: string): Promise<any> => {
+    const response = await api.get(
+      `/epub/${encodeURIComponent(filename)}/content/${encodeURIComponent(navId)}`
+    );
+    return response.data;
+  },
 };
