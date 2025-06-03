@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from ..services.epub_service import EPUBService
 
@@ -118,3 +118,63 @@ async def get_epub_content(filename: str, nav_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting content: {str(e)}")
+
+
+@router.get("/{filename}/styles")
+async def get_epub_styles(filename: str) -> Dict[str, Any]:
+    """
+    Get CSS styles from an EPUB file
+    Returns sanitized CSS content for safe browser rendering
+    """
+    try:
+        styles = epub_service.get_epub_styles(filename)
+        return styles
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting styles: {str(e)}")
+
+
+@router.get("/{filename}/image/{image_path:path}")
+async def get_epub_image(filename: str, image_path: str):
+    """
+    Serve an image from an EPUB file
+    """
+    try:
+        image_data = epub_service.get_epub_image(filename, image_path)
+
+        # Determine content type based on file extension
+        content_type = "image/jpeg"  # default
+        if image_path.lower().endswith(".png"):
+            content_type = "image/png"
+        elif image_path.lower().endswith(".gif"):
+            content_type = "image/gif"
+        elif image_path.lower().endswith(".svg"):
+            content_type = "image/svg+xml"
+        elif image_path.lower().endswith(".webp"):
+            content_type = "image/webp"
+
+        return Response(
+            content=image_data,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},  # Cache for 1 hour
+        )
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error serving image: {str(e)}")
+
+
+@router.get("/{filename}/images")
+async def list_epub_images(filename: str) -> List[Dict[str, str]]:
+    """
+    List all images in an EPUB file
+    """
+    try:
+        images = epub_service.get_epub_images_list(filename)
+        return images
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing images: {str(e)}")

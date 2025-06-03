@@ -39,4 +39,11 @@ export const epubService = {
     );
     return response.data;
   },
+
+  getStyles: async (filename: string): Promise<any> => {
+    const response = await api.get(
+      `/epub/${encodeURIComponent(filename)}/styles`
+    );
+    return response.data;
+  },
 };

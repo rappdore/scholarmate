@@ -1,4 +1,6 @@
 import io
+import re
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -217,7 +219,6 @@ class EPUBService:
         2. Fall back to largest image
         3. Fall back to first image
         """
-        import zipfile
         from xml.etree import ElementTree as ET
 
         # Method 1: Parse OPF file directly - most reliable
@@ -531,6 +532,12 @@ class EPUBService:
         # Get the content
         content = target_item.get_content().decode("utf-8")
 
+        # Sanitize HTML content for security
+        content = self._sanitize_html(content)
+
+        # Rewrite image paths to point to our image serving endpoint
+        content = self._rewrite_image_paths(content, filename)
+
         # Find position in spine for navigation context
         spine_position = 0
         total_spine = len(book.spine)
@@ -568,3 +575,155 @@ class EPUBService:
             "previous_nav_id": prev_nav_id,
             "next_nav_id": next_nav_id,
         }
+
+    def get_epub_styles(self, filename: str) -> Dict[str, Any]:
+        """
+        Extract and return CSS styles from an EPUB
+        Returns sanitized CSS content for safe browser rendering
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+
+        styles = []
+
+        # Get all CSS items from the EPUB
+        for item in book.get_items_of_type(ebooklib.ITEM_STYLE):
+            try:
+                css_content = item.get_content().decode("utf-8")
+                # Sanitize CSS to remove potentially harmful content
+                sanitized_css = self._sanitize_css(css_content)
+                styles.append(
+                    {
+                        "id": item.get_id(),
+                        "name": item.get_name(),
+                        "content": sanitized_css,
+                    }
+                )
+            except Exception:
+                # Skip problematic CSS files
+                continue
+
+        return {"styles": styles, "count": len(styles)}
+
+    def _sanitize_css(self, css_content: str) -> str:
+        """
+        Sanitize CSS content to remove potentially harmful elements
+        """
+        # Remove @import statements to prevent loading external resources
+        css_content = re.sub(r"@import\s+[^;]+;", "", css_content, flags=re.IGNORECASE)
+
+        # Remove url() functions that could load external resources
+        css_content = re.sub(
+            r'url\s*\(\s*[\'"]?[^\'")]*[\'"]?\s*\)',
+            "url(about:blank)",
+            css_content,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove javascript: protocols
+        css_content = re.sub(r"javascript\s*:", "", css_content, flags=re.IGNORECASE)
+
+        # Remove expression() functions (IE-specific but potentially harmful)
+        css_content = re.sub(
+            r"expression\s*\([^)]*\)", "", css_content, flags=re.IGNORECASE
+        )
+
+        return css_content
+
+    def _sanitize_html(self, html_content: str) -> str:
+        """
+        Sanitize HTML content to remove potentially harmful elements
+        """
+        # Remove script tags and their content
+        html_content = re.sub(
+            r"<script[^>]*>.*?</script>",
+            "",
+            html_content,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Remove inline event handlers
+        html_content = re.sub(
+            r'\s+on\w+\s*=\s*[\'"][^\'"]*[\'"]', "", html_content, flags=re.IGNORECASE
+        )
+        html_content = re.sub(
+            r"\s+on\w+\s*=\s*[^\s>]+", "", html_content, flags=re.IGNORECASE
+        )
+
+        # Remove javascript: protocols from href and src attributes
+        html_content = re.sub(
+            r'(href|src)\s*=\s*[\'"]javascript:[^\'"]*[\'"]',
+            "",
+            html_content,
+            flags=re.IGNORECASE,
+        )
+
+        return html_content
+
+    def get_epub_image(self, filename: str, image_path: str) -> bytes:
+        """
+        Extract and return a specific image from an EPUB file
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+
+        # Try to find the image by path
+        for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+            if item.get_name() == image_path or item.get_name().endswith(image_path):
+                return item.get_content()
+
+        # If not found, try with different path variations
+        clean_path = image_path.lstrip("./")
+        for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+            item_name = item.get_name()
+            if (
+                item_name == clean_path
+                or item_name.endswith("/" + clean_path)
+                or item_name.split("/")[-1] == clean_path.split("/")[-1]
+            ):
+                return item.get_content()
+
+        raise FileNotFoundError(f"Image {image_path} not found in EPUB")
+
+    def get_epub_images_list(self, filename: str) -> List[Dict[str, str]]:
+        """
+        Get a list of all images in an EPUB file
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+
+        images = []
+        for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+            images.append(
+                {"id": item.get_id(), "name": item.get_name(), "path": item.get_name()}
+            )
+
+        return images
+
+    def _rewrite_image_paths(self, content: str, filename: str) -> str:
+        """
+        Rewrite image paths in HTML content to point to our image serving endpoint
+        """
+        import re
+
+        # Pattern to match img src attributes
+        img_pattern = r'<img([^>]*?)src\s*=\s*["\']([^"\']*?)["\']([^>]*?)>'
+
+        def replace_img_src(match):
+            before_src = match.group(1)
+            src_path = match.group(2)
+            after_src = match.group(3)
+
+            # Skip if already an absolute URL
+            if src_path.startswith(("http://", "https://", "data:")):
+                return match.group(0)
+
+            # Clean up the path
+            clean_path = src_path.lstrip("./")
+
+            # Create new URL pointing to our image endpoint
+            new_src = f"http://localhost:8000/epub/{filename}/image/{clean_path}"
+
+            return f'<img{before_src}src="{new_src}"{after_src}>'
+
+        return re.sub(img_pattern, replace_img_src, content, flags=re.IGNORECASE)

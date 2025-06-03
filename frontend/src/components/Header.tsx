@@ -19,7 +19,7 @@ export default function Header() {
             </h1>
             {isReaderPage && (
               <>
-                <span className="text-slate-400 text-sm">• PDF Reader</span>
+                <span className="text-slate-400 text-sm">• Book Reader</span>
                 <button
                   onClick={() => navigate('/')}
                   className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded transition-colors flex items-center space-x-1"
