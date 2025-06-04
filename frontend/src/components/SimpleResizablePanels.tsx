@@ -79,7 +79,7 @@ export default function SimpleResizablePanels({
         className="border-r border-gray-700 flex flex-col"
         style={{ width: `${leftWidth}%` }}
       >
-        <div className="h-full overflow-hidden">{leftPanel}</div>
+        <div className="h-full overflow-auto">{leftPanel}</div>
       </div>
 
       {/* Vertical Splitter */}
@@ -93,7 +93,7 @@ export default function SimpleResizablePanels({
 
       {/* Right Panel */}
       <div className="flex flex-col" style={{ width: `${100 - leftWidth}%` }}>
-        <div className="h-full overflow-hidden">{rightPanel}</div>
+        <div className="h-full overflow-auto">{rightPanel}</div>
       </div>
     </div>
   );

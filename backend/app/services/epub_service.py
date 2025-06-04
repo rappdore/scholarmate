@@ -490,17 +490,32 @@ class EPUBService:
     def _get_nav_id_from_href(self, href, book):
         """
         Convert href to navigation ID by finding the corresponding spine item
+        and including fragment identifiers for uniqueness
         """
-        # Remove fragment identifier (anchor)
-        base_href = href.split("#")[0] if "#" in href else href
+        # Split href into base and fragment
+        if "#" in href:
+            base_href, fragment = href.split("#", 1)
+        else:
+            base_href = href
+            fragment = None
 
         # Find the item in the book
+        spine_item_id = None
         for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
             if item.get_name() == base_href or item.get_name().endswith(base_href):
-                return item.get_id()
+                spine_item_id = item.get_id()
+                break
 
-        # Fallback: use href as ID (cleaned)
-        return base_href.replace("/", "_").replace(".", "_")
+        # Create unique ID by combining spine item ID with fragment
+        if spine_item_id:
+            if fragment:
+                # Include fragment to ensure uniqueness
+                return f"{spine_item_id}#{fragment}"
+            else:
+                return spine_item_id
+        else:
+            # Fallback: use href as ID (cleaned but preserving fragments for uniqueness)
+            return href.replace("/", "_").replace(".", "_")
 
     def get_content_by_nav_id(self, filename: str, nav_id: str) -> Dict[str, Any]:
         """
@@ -509,10 +524,16 @@ class EPUBService:
         file_path = self.get_epub_path(filename)
         book = epub.read_epub(str(file_path))
 
+        # Handle navigation IDs that might contain fragments
+        if "#" in nav_id:
+            base_nav_id, fragment = nav_id.split("#", 1)
+        else:
+            base_nav_id = nav_id
+
         # Find the item with the given ID
         target_item = None
         for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-            if item.get_id() == nav_id:
+            if item.get_id() == base_nav_id:
                 target_item = item
                 break
 
@@ -520,8 +541,9 @@ class EPUBService:
             # Try to find by name if ID doesn't match
             for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
                 if (
-                    nav_id in item.get_name()
-                    or item.get_name().replace(".", "_").replace("/", "_") == nav_id
+                    base_nav_id in item.get_name()
+                    or item.get_name().replace(".", "_").replace("/", "_")
+                    == base_nav_id
                 ):
                     target_item = item
                     break

@@ -315,9 +315,9 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
   }
 
   return (
-    <div className="h-full bg-gray-900 text-gray-300 flex flex-col">
+    <div className="h-full bg-gray-900 text-gray-300 flex flex-col overflow-hidden">
       {/* Header with Navigation Controls */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4">
+      <div className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
           <h2
             className="text-lg font-bold text-purple-400"
@@ -483,7 +483,7 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto">
         {/* Chapter Title */}
         <div className="max-w-4xl mx-auto p-6 pb-2">
           <h1 className="text-2xl font-bold text-white mb-6 border-b border-gray-700 pb-4">
@@ -504,7 +504,7 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
       </div>
 
       {/* Footer with Progress */}
-      <div className="bg-gray-800 border-t border-gray-700 p-4">
+      <div className="bg-gray-800 border-t border-gray-700 p-4 flex-shrink-0">
         <div className="flex items-center justify-between text-sm text-gray-400">
           <div>{currentContent.progress_percentage}% of book completed</div>
           <div className="flex gap-4">
