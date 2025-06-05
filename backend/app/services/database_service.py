@@ -17,6 +17,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional
 
 from .chat_notes_service import ChatNotesService
+from .epub_progress_service import EPUBProgressService
 from .highlights_service import HighlightsService
 from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
@@ -57,6 +58,7 @@ class DatabaseService:
 
         # Initialize specialized services
         self.reading_progress = ReadingProgressService(db_path)
+        self.epub_progress = EPUBProgressService(db_path)
         self.chat_notes = ChatNotesService(db_path)
         self.highlights = HighlightsService(db_path)
 
@@ -142,6 +144,38 @@ class DatabaseService:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS epub_reading_progress (
+                    epub_filename TEXT PRIMARY KEY,           -- Unique identifier for each EPUB
+                    current_nav_id TEXT NOT NULL,             -- Current finest navigation section
+                    chapter_id TEXT,                          -- Chapter-level ID for display
+                    chapter_title TEXT,                       -- Chapter title for UI display
+                    scroll_position INTEGER DEFAULT 0,       -- Scroll position within current section
+                    total_sections INTEGER,                   -- Total navigation sections in book
+                    progress_percentage REAL DEFAULT 0.0,    -- Overall book progress (0.0-100.0)
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- Book Status Management (same as PDF system)
+                    status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reading', 'finished')),
+                    status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    manually_set BOOLEAN DEFAULT FALSE,      -- Whether status was manually set by user
+
+                    -- EPUB-specific metadata for progress calculation
+                    nav_metadata TEXT                         -- JSON metadata about navigation structure
+                )
+            """)
+
+            # Create indexes for performance
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_progress_status
+                ON epub_reading_progress(status)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_progress_updated
+                ON epub_reading_progress(status, status_updated_at)
+            """)
+
             # Create index for faster lookups of notes by PDF and page
             # This significantly improves query performance when retrieving notes for a specific page
             conn.execute("""
@@ -207,6 +241,168 @@ class DatabaseService:
             Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
         """
         return self.reading_progress.get_all_progress()
+
+    # ========================================
+    # EPUB PROGRESS METHODS (separate from PDF)
+    # ========================================
+
+    def save_epub_progress(
+        self,
+        epub_filename: str,
+        current_nav_id: str,
+        chapter_id: str = None,
+        chapter_title: str = None,
+        scroll_position: int = 0,
+        total_sections: int = None,
+        progress_percentage: float = 0.0,
+        nav_metadata: Dict[str, Any] = None,
+    ) -> bool:
+        """
+        Save or update reading progress for an EPUB document.
+
+        Args:
+            epub_filename (str): Name of the EPUB file (used as unique identifier)
+            current_nav_id (str): Current finest navigation section ID
+            chapter_id (str): Chapter-level ID for display purposes
+            chapter_title (str): Chapter title for UI display
+            scroll_position (int): Scroll position within current section
+            total_sections (int): Total number of navigation sections in book
+            progress_percentage (float): Overall book progress (0.0-100.0)
+            nav_metadata (Dict[str, Any]): Navigation metadata for progress calculation
+
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        return self.epub_progress.save_progress(
+            epub_filename,
+            current_nav_id,
+            chapter_id,
+            chapter_title,
+            scroll_position,
+            total_sections,
+            progress_percentage,
+            nav_metadata,
+        )
+
+    def get_epub_progress(self, epub_filename: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve reading progress for a specific EPUB document.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to get progress for
+
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing progress information:
+                - epub_filename: Name of the EPUB file
+                - current_nav_id: Current navigation section ID
+                - chapter_id: Chapter-level ID for display
+                - chapter_title: Chapter title
+                - scroll_position: Scroll position within section
+                - total_sections: Total navigation sections
+                - progress_percentage: Overall progress (0.0-100.0)
+                - last_updated: Timestamp of last update
+                - status: Reading status (new/reading/finished)
+                - nav_metadata: Navigation structure metadata
+            Returns None if no progress is found for the EPUB.
+        """
+        return self.epub_progress.get_progress(epub_filename)
+
+    def get_all_epub_progress(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Retrieve reading progress for all EPUB documents.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
+        """
+        return self.epub_progress.get_all_progress()
+
+    def update_epub_book_status(
+        self, epub_filename: str, status: str, manual: bool = True
+    ) -> bool:
+        """
+        Update the reading status of an EPUB book.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to update status for
+            status (str): New status ('new', 'reading', 'finished')
+            manual (bool): Whether this status was manually set by the user
+
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        return self.epub_progress.update_book_status(epub_filename, status, manual)
+
+    def get_epub_books_by_status(
+        self, status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all EPUB books filtered by status.
+
+        Args:
+            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+                                   If None, returns all books.
+
+        Returns:
+            List[Dict[str, Any]]: List of EPUB books with their progress and status information
+        """
+        return self.epub_progress.get_books_by_status(status)
+
+    def get_epub_status_counts(self) -> Dict[str, int]:
+        """
+        Get count of EPUB books for each status.
+
+        Returns:
+            Dict[str, int]: Dictionary with status counts
+        """
+        return self.epub_progress.get_status_counts()
+
+    def delete_epub_progress(self, epub_filename: str) -> bool:
+        """
+        Delete reading progress record for a specific EPUB.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to delete progress for
+
+        Returns:
+            bool: True if the record was deleted successfully, False otherwise
+        """
+        return self.epub_progress.delete_progress(epub_filename)
+
+    def calculate_epub_progress_percentage(
+        self, current_nav_id: str, nav_metadata: Dict[str, Any] = None
+    ) -> float:
+        """
+        Calculate overall progress percentage for an EPUB based on current navigation position.
+
+        Args:
+            current_nav_id (str): Current navigation section ID
+            nav_metadata (Dict[str, Any]): Navigation structure metadata
+
+        Returns:
+            float: Progress percentage (0.0-100.0)
+        """
+        return self.epub_progress.calculate_progress_percentage(
+            current_nav_id, nav_metadata
+        )
+
+    def get_epub_chapter_progress_info(
+        self, epub_filename: str, chapter_id: str = None
+    ) -> Dict[str, Any]:
+        """
+        Get detailed progress information for a specific EPUB chapter or current chapter.
+
+        Args:
+            epub_filename (str): Name of the EPUB file
+            chapter_id (str): Specific chapter ID, or None for current chapter
+
+        Returns:
+            Dict[str, Any]: Chapter progress information
+        """
+        return self.epub_progress.get_chapter_progress_info(epub_filename, chapter_id)
+
+    # ========================================
+    # CHAT NOTES METHODS
+    # ========================================
 
     def save_chat_note(
         self, pdf_filename: str, page_number: int, title: str, chat_content: str
@@ -539,7 +735,26 @@ class DatabaseService:
 
         return results
 
-    # Chat notes methods (delegated to chat notes service)
+    def delete_all_epub_data(self, epub_filename: str) -> Dict[str, bool]:
+        """
+        Delete all database data for a specific EPUB book.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to delete all data for
+
+        Returns:
+            Dict[str, bool]: Dictionary indicating success/failure for each data type
+        """
+        results = {}
+
+        # Delete EPUB reading progress
+        results["epub_progress"] = self.delete_epub_progress(epub_filename)
+
+        # Note: EPUB notes and highlights will be added in future phases
+        # For now, we only handle progress data to maintain service separation
+        # When EPUB notes/highlights are implemented, they will be added here
+
+        return results
 
 
 # Global instance
