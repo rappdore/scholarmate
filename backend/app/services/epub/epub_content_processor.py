@@ -249,10 +249,9 @@ class EPUBContentProcessor:
             if src_path.startswith(("http://", "https://", "data:")):
                 return match.group(0)
 
-            # Construct the new path
-            # The replace('.', '_') is to handle potential file extension issues in paths
-            safe_filename = filename.replace(".", "_")
-            new_src = f"{self.base_url}/epub/{safe_filename}/image/{src_path}"
+            # Construct the new path - use filename as-is, don't modify it
+            # The backend endpoint expects the original filename with extension
+            new_src = f"{self.base_url}/epub/{filename}/image/{src_path}"
             return f'<img{before_src}src="{new_src}"{after_src}>'
 
         return re.sub(img_pattern, replace_img_src, content, flags=re.IGNORECASE)

@@ -69,6 +69,7 @@ export default function EPUBViewer({
   // Progress tracking state
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [savedProgress, setSavedProgress] = useState<EPUBProgress | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // Scroll tracking
   const contentContainerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +80,7 @@ export default function EPUBViewer({
     loadNavigation();
     loadStyles();
     loadProgress();
+    setInitialLoadDone(false); // Reset initial load flag for new EPUB
   }, [filename]);
 
   // Load saved progress and restore position
@@ -348,7 +350,8 @@ export default function EPUBViewer({
 
   // Load content and handle progress restoration
   useEffect(() => {
-    if (!navigation || !isProgressLoaded || !filename) return;
+    if (!navigation || !isProgressLoaded || !filename || initialLoadDone)
+      return;
 
     // Try to restore from saved progress, otherwise load first chapter
     const navIdToLoad =
@@ -360,8 +363,15 @@ export default function EPUBViewer({
 
     if (navIdToLoad) {
       loadContent(navIdToLoad, true); // Pass true to indicate this is initial load
+      setInitialLoadDone(true); // Mark initial load as complete
     }
-  }, [navigation, isProgressLoaded, savedProgress]);
+  }, [
+    navigation,
+    isProgressLoaded,
+    chapterOptions,
+    savedProgress,
+    initialLoadDone,
+  ]); // Restored savedProgress
 
   // Restore scroll position after content loads
   useEffect(() => {
