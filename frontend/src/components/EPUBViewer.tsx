@@ -64,6 +64,7 @@ export default function EPUBViewer({
   const [fontSize, setFontSize] = useState<FontSize>('medium');
   const [lineHeight, setLineHeight] = useState<LineHeight>('normal');
   const [showSettings, setShowSettings] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   // Progress tracking state
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
@@ -136,6 +137,14 @@ export default function EPUBViewer({
       };
 
       await epubService.saveEPUBProgress(filename, progressData);
+      // Also update the local state to ensure UI is consistent
+      setSavedProgress(prev => ({
+        ...(prev ?? ({} as EPUBProgress)),
+        ...progressData,
+        last_updated: new Date().toISOString(),
+      }));
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2000); // Effect for 2s
       console.log('Saved EPUB progress:', progressData);
     } catch (error) {
       console.error('Error saving EPUB progress:', error);
@@ -570,7 +579,15 @@ export default function EPUBViewer({
               {' • '}
               {currentContent.progress_percentage}% complete
               {savedProgress && (
-                <span className="text-green-400 ml-2">📖 Progress saved</span>
+                <span
+                  className={`ml-2 ${
+                    justSaved
+                      ? 'text-green-300 animate-pulse'
+                      : 'text-green-500'
+                  }`}
+                >
+                  📖 Progress saved
+                </span>
               )}
             </div>
             {/* Settings Button */}
