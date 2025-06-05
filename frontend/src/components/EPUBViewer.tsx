@@ -4,6 +4,7 @@ import '../styles/epub.css';
 
 interface EPUBViewerProps {
   filename?: string;
+  onNavIdChange?: (navId: string) => void;
 }
 
 interface NavigationItem {
@@ -44,7 +45,10 @@ type Theme = 'dark' | 'light' | 'sepia';
 type FontSize = 'small' | 'medium' | 'large' | 'xl';
 type LineHeight = 'tight' | 'normal' | 'loose';
 
-export default function EPUBViewer({ filename }: EPUBViewerProps) {
+export default function EPUBViewer({
+  filename,
+  onNavIdChange,
+}: EPUBViewerProps) {
   const [navigation, setNavigation] = useState<NavigationData | null>(null);
   const [currentContent, setCurrentContent] = useState<ContentData | null>(
     null
@@ -418,15 +422,39 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
         await saveProgress(navId, contentData, 0); // Reset scroll on navigation
         setScrollPosition(0); // Reset scroll position
       }
-    } catch (err) {
+
+      // Restore scroll position if it's an initial load with saved progress
+      if (isInitialLoad && savedProgress?.scroll_position) {
+        // Use a timeout to allow the content to render before scrolling
+        setTimeout(() => {
+          if (contentContainerRef.current) {
+            contentContainerRef.current.scrollTop =
+              savedProgress.scroll_position;
+          }
+        }, 100);
+      } else if (contentContainerRef.current) {
+        // Otherwise, scroll to top for new sections
+        contentContainerRef.current.scrollTop = 0;
+      }
+    } catch (err: any) {
       console.error('Error loading content:', err);
-      setError('Failed to load chapter content');
+      setError(`Error loading content: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (currentNavId && onNavIdChange) {
+      onNavIdChange(currentNavId);
+    }
+  }, [currentNavId, onNavIdChange]);
+
   const handleChapterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedNavId = event.target.value;
-    loadContent(selectedNavId);
+    const newNavId = event.target.value;
+    if (newNavId) {
+      loadContent(newNavId);
+    }
   };
 
   const handlePreviousChapter = () => {

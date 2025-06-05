@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..services.epub_service import EPUBService
 from ..services.ollama_service import OllamaService
 from ..services.pdf_service import PDFService
 
@@ -13,11 +14,18 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 # Initialize services
 ollama_service = OllamaService()
 pdf_service = PDFService()
+epub_service = EPUBService()
 
 
 class AnalyzePageRequest(BaseModel):
     filename: str
     page_num: int
+    context: Optional[str] = ""
+
+
+class AnalyzeEpubSectionRequest(BaseModel):
+    filename: str
+    nav_id: str
     context: Optional[str] = ""
 
 
@@ -75,6 +83,104 @@ async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.post("/analyze-epub-section")
+async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, Any]:
+    """
+    Analyze a specific section of an EPUB using AI.
+    """
+    try:
+        section_text = epub_service.extract_section_text(
+            request.filename, request.nav_id
+        )
+
+        if not section_text.strip():
+            return {
+                "filename": request.filename,
+                "nav_id": request.nav_id,
+                "analysis": "This section appears to be empty or contains no extractable text.",
+                "text_extracted": False,
+            }
+
+        analysis = await ollama_service.analyze_epub_section(
+            text=section_text,
+            filename=request.filename,
+            nav_id=request.nav_id,
+            context=request.context,
+        )
+
+        return {
+            "filename": request.filename,
+            "nav_id": request.nav_id,
+            "analysis": analysis,
+            "text_extracted": True,
+            "text_length": len(section_text),
+        }
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.post("/analyze-epub-section/stream")
+async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
+    """
+    Analyze a specific section of an EPUB using AI with a streaming response.
+    """
+    try:
+        section_text = epub_service.extract_section_text(
+            request.filename, request.nav_id
+        )
+
+        if not section_text.strip():
+
+            async def generate_empty_response():
+                yield f"data: {json.dumps({'content': 'This section appears to be empty or contains no extractable text.', 'text_extracted': False})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+
+            return StreamingResponse(
+                generate_empty_response(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        async def generate_analysis():
+            try:
+                async for chunk in ollama_service.analyze_epub_section_stream(
+                    text=section_text,
+                    filename=request.filename,
+                    nav_id=request.nav_id,
+                    context=request.context,
+                ):
+                    yield f"data: {json.dumps({'content': chunk, 'text_extracted': True})}\n\n"
+
+                yield f"data: {json.dumps({'done': True})}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate_analysis(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

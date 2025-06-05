@@ -102,6 +102,14 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.content_processor.get_content_by_nav_id(book, nav_id, filename)
 
+    def extract_section_text(self, filename: str, nav_id: str) -> str:
+        """
+        Extracts plain text content for a specific navigation section.
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+        return self.content_processor.extract_section_text(book, nav_id, filename)
+
     def get_epub_styles(self, filename: str) -> Dict[str, Any]:
         """
         Extract and return CSS styles from an EPUB

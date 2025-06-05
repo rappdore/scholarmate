@@ -145,6 +145,19 @@ export const aiService = {
     return response.data;
   },
 
+  analyzeEpubSection: async (
+    filename: string,
+    navId: string,
+    context?: string
+  ) => {
+    const response = await api.post('/ai/analyze-epub-section', {
+      filename,
+      nav_id: navId,
+      context: context || '',
+    });
+    return response.data;
+  },
+
   streamAnalyzePage: async function* (
     filename: string,
     pageNum: number,
@@ -171,6 +184,81 @@ export const aiService = {
           context: context || '',
         }),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Failed to get response reader');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                yield data;
+                if (data.done) {
+                  return;
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (error) {
+      throw new Error(
+        `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  },
+
+  streamAnalyzeEpubSection: async function* (
+    filename: string,
+    navId: string,
+    context?: string
+  ): AsyncGenerator<
+    {
+      content?: string;
+      done?: boolean;
+      text_extracted?: boolean;
+      error?: string;
+    },
+    void,
+    unknown
+  > {
+    try {
+      const response = await fetch(
+        'http://localhost:8000/ai/analyze-epub-section/stream',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename,
+            nav_id: navId,
+            context: context || '',
+          }),
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

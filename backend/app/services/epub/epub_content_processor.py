@@ -2,6 +2,7 @@ import re
 from typing import Any, Dict, Tuple
 
 import ebooklib
+from bs4 import BeautifulSoup
 
 from .epub_navigation_service import EPUBNavigationService
 
@@ -248,12 +249,32 @@ class EPUBContentProcessor:
             if src_path.startswith(("http://", "https://", "data:")):
                 return match.group(0)
 
-            # Clean up the path
-            clean_path = src_path.lstrip("./")
-
-            # Create new URL pointing to our image endpoint
-            new_src = f"{self.base_url}/epub/{filename}/image/{clean_path}"
-
+            # Construct the new path
+            # The replace('.', '_') is to handle potential file extension issues in paths
+            safe_filename = filename.replace(".", "_")
+            new_src = f"{self.base_url}/epub/{safe_filename}/image/{src_path}"
             return f'<img{before_src}src="{new_src}"{after_src}>'
 
         return re.sub(img_pattern, replace_img_src, content, flags=re.IGNORECASE)
+
+    def _extract_text_from_html(self, html_content: str) -> str:
+        """
+        Extract plain text from HTML content using BeautifulSoup.
+        """
+        if not html_content:
+            return ""
+
+        soup = BeautifulSoup(html_content, "html.parser")
+        text = soup.get_text(separator=" ", strip=True)
+
+        return text
+
+    def extract_section_text(self, book, nav_id: str, filename: str) -> str:
+        """
+        Extracts plain text content for a specific navigation section.
+        """
+        # We pass filename here because get_content_by_nav_id needs it to rewrite image paths,
+        # even though we are stripping them out, it's part of the process.
+        section_data = self.get_content_by_nav_id(book, nav_id, filename)
+        html_content = section_data.get("content", "")
+        return self._extract_text_from_html(html_content)

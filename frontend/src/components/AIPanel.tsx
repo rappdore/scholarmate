@@ -12,10 +12,17 @@ import { aiService } from '../services/api';
 
 interface AIPanelProps {
   filename?: string;
-  currentPage: number;
+  documentType?: 'pdf' | 'epub';
+  currentPage: number; // For PDF
+  currentNavId?: string; // For EPUB
 }
 
-export default function AIPanel({ filename, currentPage }: AIPanelProps) {
+export default function AIPanel({
+  filename,
+  documentType,
+  currentPage,
+  currentNavId,
+}: AIPanelProps) {
   const [analysis, setAnalysis] = useState<string>('');
   const [thinkingContent, setThinkingContent] = useState<string>('');
   const [showThinking, setShowThinking] = useState(false);
@@ -33,10 +40,10 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
 
   // Auto-analyze when page changes (if enabled)
   useEffect(() => {
-    if (autoAnalyze && filename && currentPage) {
-      analyzeCurrentPage();
+    if (autoAnalyze && filename && (currentPage || currentNavId)) {
+      analyzeDocument();
     }
-  }, [filename, currentPage, autoAnalyze]);
+  }, [filename, currentPage, currentNavId, autoAnalyze, documentType]);
 
   const parseAnalysisContent = (content: string) => {
     // Extract thinking content
@@ -66,8 +73,10 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
     }
   };
 
-  const analyzeCurrentPage = async () => {
-    if (!filename) return;
+  const analyzeDocument = async () => {
+    if (!filename || !documentType) return;
+    if (documentType === 'pdf' && !currentPage) return;
+    if (documentType === 'epub' && !currentNavId) return;
 
     setLoading(true);
     setStreaming(true);
@@ -78,10 +87,12 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
       let fullAnalysis = '';
       let textExtracted = true;
 
-      for await (const chunk of aiService.streamAnalyzePage(
-        filename,
-        currentPage
-      )) {
+      const analysisStream =
+        documentType === 'epub' && currentNavId
+          ? aiService.streamAnalyzeEpubSection(filename, currentNavId)
+          : aiService.streamAnalyzePage(filename, currentPage);
+
+      for await (const chunk of analysisStream) {
         if (chunk.error) {
           throw new Error(chunk.error);
         }
@@ -107,13 +118,13 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
         setAnalysis(
           prev =>
             prev +
-            '\n\n💡 Tip: This page might contain images, diagrams, or special formatting that requires visual analysis.'
+            '\n\n💡 Tip: This content might contain images, diagrams, or special formatting that requires visual analysis.'
         );
       }
     } catch (error) {
       console.error('Analysis failed:', error);
       setAnalysis(
-        'Failed to analyze page. Please check if the AI service is running and try again.'
+        'Failed to analyze content. Please check if the AI service is running and try again.'
       );
       setThinkingContent('');
     } finally {
@@ -268,11 +279,11 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
             Auto-analyze pages
           </label>
           <button
-            onClick={analyzeCurrentPage}
+            onClick={analyzeDocument}
             disabled={loading || streaming || !filename || aiStatus === 'error'}
             className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed text-sm hover:bg-green-500 transition-colors"
           >
-            {loading || streaming ? 'Analyzing...' : 'Analyze Page'}
+            {loading || streaming ? 'Analyzing...' : 'Analyze Content'}
           </button>
         </div>
       </div>
@@ -281,7 +292,7 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
       <div className="flex-1 overflow-auto p-4">
         {!filename ? (
           <div className="text-gray-400 text-center mt-8">
-            Open a PDF to get AI insights
+            Open a document to get AI insights
           </div>
         ) : aiStatus === 'error' ? (
           <div className="text-center mt-8">
@@ -415,8 +426,8 @@ export default function AIPanel({ filename, currentPage }: AIPanelProps) {
         ) : (
           <div className="text-gray-400 text-center mt-8">
             {autoAnalyze
-              ? 'Auto-analysis enabled. Change pages to see insights.'
-              : 'Click "Analyze Page" to get AI insights about the current page'}
+              ? 'Auto-analysis enabled. Change sections to see insights.'
+              : 'Click "Analyze Content" to get AI insights about the current content.'}
           </div>
         )}
       </div>

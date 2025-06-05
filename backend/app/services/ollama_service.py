@@ -57,6 +57,50 @@ Provide a helpful analysis that will aid in understanding this content."""
         except Exception as e:
             raise Exception(f"Failed to analyze page: {str(e)}")
 
+    async def analyze_epub_section(
+        self, text: str, filename: str, nav_id: str, context: str = ""
+    ) -> str:
+        """
+        Analyze an EPUB section using AI
+        """
+        system_prompt = """/no_think
+
+        You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
+
+When analyzing a section, you should:
+1. Summarize the key points and main ideas
+2. Explain any complex concepts in simpler terms
+3. Highlight important information or insights
+4. Provide context or background knowledge when helpful
+5. Point out connections to other concepts or fields
+6. Suggest questions the reader might want to explore further
+
+Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
+
+        user_prompt = f"""Please analyze the section with ID '{nav_id}' of the document "{filename}".
+
+{f"Additional context: {context}" if context else ""}
+
+Section content:
+{text}
+
+Provide a helpful analysis that will aid in understanding this content."""
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            raise Exception(f"Failed to analyze EPUB section: {str(e)}")
+
     async def chat_stream(
         self,
         message: str,
@@ -155,6 +199,53 @@ Keep your analysis concise but thorough, and focus on enhancing understanding ra
 {f"Additional context: {context}" if context else ""}
 
 Page content:
+{text}
+
+Provide a helpful analysis that will aid in understanding this content."""
+
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            yield f"Error: {str(e)}"
+
+    async def analyze_epub_section_stream(
+        self, text: str, filename: str, nav_id: str, context: str = ""
+    ) -> AsyncGenerator[str, None]:
+        """
+        Analyze an EPUB section using AI with a streaming response.
+        """
+        system_prompt = """/no_think
+
+        You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
+
+When analyzing a section, you should:
+1. Summarize the key points and main ideas
+2. Explain any complex concepts in simpler terms
+3. Highlight important information or insights
+4. Provide context or background knowledge when helpful
+5. Point out connections to other concepts or fields
+6. Suggest questions the reader might want to explore further
+
+Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
+
+        user_prompt = f"""Please analyze the section with ID '{nav_id}' of the document "{filename}".
+
+{f"Additional context: {context}" if context else ""}
+
+Section content:
 {text}
 
 Provide a helpful analysis that will aid in understanding this content."""

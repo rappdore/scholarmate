@@ -12,6 +12,9 @@ export default function Reader() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentNavId, setCurrentNavId] = useState<string | undefined>(
+    undefined
+  );
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [documentType, setDocumentType] = useState<DocumentType | null>(null);
@@ -135,6 +138,10 @@ export default function Reader() {
     setCurrentPage(page);
   };
 
+  const handleNavIdChange = (navId: string) => {
+    setCurrentNavId(navId);
+  };
+
   const handleTotalPagesChange = (total: number) => {
     if (!totalPages) {
       setTotalPages(total);
@@ -189,7 +196,9 @@ export default function Reader() {
           />
         );
       case 'epub':
-        return <EPUBViewer filename={filename} />;
+        return (
+          <EPUBViewer filename={filename} onNavIdChange={handleNavIdChange} />
+        );
       default:
         return (
           <div className="flex items-center justify-center h-full bg-gray-900 text-gray-300">
@@ -209,7 +218,9 @@ export default function Reader() {
         rightPanel={
           <TabbedRightPanel
             filename={filename}
+            documentType={documentType}
             currentPage={currentPage}
+            currentNavId={currentNavId}
             onPageJump={handlePageChange}
           />
         }

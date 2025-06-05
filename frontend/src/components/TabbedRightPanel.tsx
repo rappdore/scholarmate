@@ -3,10 +3,13 @@ import AIPanel from './AIPanel';
 import ChatInterface from './ChatInterface';
 import NotesPanel from './NotesPanel';
 import HighlightsPanel from './HighlightsPanel';
+import type { DocumentType } from '../types/document';
 
 interface TabbedRightPanelProps {
   filename?: string;
+  documentType: DocumentType | null;
   currentPage: number;
+  currentNavId?: string;
   onPageJump?: (pageNumber: number) => void;
 }
 
@@ -14,7 +17,9 @@ type TabType = 'ai' | 'chat' | 'notes' | 'highlights';
 
 export default function TabbedRightPanel({
   filename,
+  documentType,
   currentPage,
+  currentNavId,
   onPageJump,
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
@@ -52,7 +57,12 @@ export default function TabbedRightPanel({
       {/* Tab Content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'ai' && (
-          <AIPanel filename={filename} currentPage={currentPage} />
+          <AIPanel
+            filename={filename}
+            documentType={documentType ?? undefined}
+            currentPage={currentPage}
+            currentNavId={currentNavId}
+          />
         )}
         {activeTab === 'chat' && (
           <ChatInterface filename={filename} currentPage={currentPage} />
