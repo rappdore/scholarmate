@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { epubService } from '../services/epubService';
+import React, { useState, useEffect, useRef } from 'react';
+import { epubService, type EPUBProgress } from '../services/epubService';
 import '../styles/epub.css';
 
 interface EPUBViewerProps {
@@ -61,11 +61,182 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
   const [lineHeight, setLineHeight] = useState<LineHeight>('normal');
   const [showSettings, setShowSettings] = useState(false);
 
+  // Progress tracking state
+  const [isProgressLoaded, setIsProgressLoaded] = useState(false);
+  const [savedProgress, setSavedProgress] = useState<EPUBProgress | null>(null);
+
+  // Scroll tracking
+  const contentContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollPosition, setScrollPosition] = useState(0);
+
   useEffect(() => {
     if (!filename) return;
     loadNavigation();
     loadStyles();
+    loadProgress();
   }, [filename]);
+
+  // Load saved progress and restore position
+  const loadProgress = async () => {
+    if (!filename) return;
+
+    try {
+      const progress = await epubService.getEPUBProgress(filename);
+      setSavedProgress(progress);
+
+      // Set loaded flag for both new and existing progress
+      setIsProgressLoaded(true);
+
+      console.log('Loaded EPUB progress:', progress);
+    } catch (error) {
+      console.error('Error loading EPUB progress:', error);
+      setIsProgressLoaded(true); // Set loaded even on error to allow new progress
+    }
+  };
+
+  // Save progress when navigation changes or scroll position changes
+  const saveProgress = async (
+    navId: string,
+    contentData?: ContentData,
+    currentScrollPos?: number
+  ) => {
+    if (!filename || !isProgressLoaded) return;
+
+    try {
+      // Determine chapter info from current navigation or content data
+      const chapterInfo = getCurrentChapterInfo(navId, contentData);
+
+      // Calculate navigation metadata for progress calculation
+      const navMetadata = navigation
+        ? {
+            all_sections: getAllSectionIds(navigation.navigation),
+            chapters: getChapterMetadata(navigation.navigation),
+            spine_length: navigation.spine_length,
+          }
+        : undefined;
+
+      // Calculate more accurate progress if we have navigation metadata
+      const progressPercentage =
+        contentData?.progress_percentage ||
+        calculateProgressFromNavMetadata(navId, navMetadata) ||
+        0;
+
+      const progressData = {
+        current_nav_id: navId,
+        chapter_id: chapterInfo.chapterId,
+        chapter_title: chapterInfo.chapterTitle,
+        scroll_position: currentScrollPos || scrollPosition,
+        total_sections: contentData?.total_sections || navigation?.spine_length,
+        progress_percentage: progressPercentage,
+        nav_metadata: navMetadata,
+      };
+
+      await epubService.saveEPUBProgress(filename, progressData);
+      console.log('Saved EPUB progress:', progressData);
+    } catch (error) {
+      console.error('Error saving EPUB progress:', error);
+    }
+  };
+
+  // Debounced save effect for scroll position
+  useEffect(() => {
+    if (!filename || !currentNavId || !isProgressLoaded || !currentContent)
+      return;
+
+    const timeoutId = setTimeout(() => {
+      saveProgress(currentNavId, currentContent, scrollPosition);
+    }, 1000); // Debounce scroll saves
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    filename,
+    currentNavId,
+    scrollPosition,
+    isProgressLoaded,
+    currentContent,
+  ]);
+
+  // Handle scroll position tracking
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLDivElement;
+    setScrollPosition(target.scrollTop);
+  };
+
+  // Helper function to get current chapter info
+  const getCurrentChapterInfo = (navId: string, contentData?: ContentData) => {
+    // Try to find chapter info from current content
+    if (contentData) {
+      const chapterTitle = getCurrentChapterTitle();
+      return {
+        chapterId: extractChapterIdFromNavId(navId),
+        chapterTitle: chapterTitle || contentData.title,
+      };
+    }
+
+    // Fallback to extracting from navigation
+    return {
+      chapterId: extractChapterIdFromNavId(navId),
+      chapterTitle: getCurrentChapterTitle(),
+    };
+  };
+
+  // Helper to extract chapter ID from nav ID (simplified)
+  const extractChapterIdFromNavId = (navId: string): string => {
+    // This is a simplified approach - in a real implementation you'd want
+    // to map navigation IDs to chapter IDs based on the navigation structure
+    const parts = navId.split('_');
+    return parts.length > 1 ? `chapter_${parts[1]}` : 'chapter_1';
+  };
+
+  // Helper to get all section IDs for progress calculation
+  const getAllSectionIds = (
+    navItems: NavigationItem[]
+  ): Array<{ id: string; title: string }> => {
+    const sections: Array<{ id: string; title: string }> = [];
+
+    const extractSections = (items: NavigationItem[]) => {
+      for (const item of items) {
+        sections.push({ id: item.id, title: item.title });
+        if (item.children.length > 0) {
+          extractSections(item.children);
+        }
+      }
+    };
+
+    extractSections(navItems);
+    return sections;
+  };
+
+  // Helper to get chapter metadata for progress tracking
+  const getChapterMetadata = (navItems: NavigationItem[]) => {
+    return navItems.map(chapter => ({
+      id: chapter.id,
+      title: chapter.title,
+      sections: chapter.children.map(section => ({
+        id: section.id,
+        title: section.title,
+      })),
+    }));
+  };
+
+  // Helper to calculate progress from navigation metadata
+  const calculateProgressFromNavMetadata = (
+    navId: string,
+    metadata?: { all_sections: Array<{ id: string; title: string }> }
+  ): number => {
+    if (!metadata?.all_sections) return 0;
+
+    const currentIndex = metadata.all_sections.findIndex(
+      section => section.id === navId
+    );
+    if (currentIndex === -1) return 0;
+
+    return (
+      Math.round(
+        ((currentIndex + 1) / metadata.all_sections.length) * 100 * 10
+      ) / 10
+    );
+  };
 
   // Inject EPUB styles into the document
   useEffect(() => {
@@ -151,17 +322,50 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
       const chapterOpts = extractChapterOptions(navData.navigation);
       setChapterOptions(chapterOpts);
 
-      // Load first chapter by default
-      if (chapterOpts.length > 0) {
-        await loadContent(chapterOpts[0].id);
-      }
+      // Set this as loaded only after we have navigation
+      console.log('Navigation loaded, preparing to restore progress...');
     } catch (err) {
       console.error('Error loading navigation:', err);
       setError('Failed to load EPUB navigation');
+      setIsProgressLoaded(true); // Set loaded even on error
     } finally {
       setLoading(false);
     }
   };
+
+  // Load content and handle progress restoration
+  useEffect(() => {
+    if (!navigation || !isProgressLoaded || !filename) return;
+
+    // Try to restore from saved progress, otherwise load first chapter
+    const navIdToLoad =
+      savedProgress?.current_nav_id && savedProgress.current_nav_id !== 'start'
+        ? savedProgress.current_nav_id
+        : chapterOptions.length > 0
+          ? chapterOptions[0].id
+          : null;
+
+    if (navIdToLoad) {
+      loadContent(navIdToLoad, true); // Pass true to indicate this is initial load
+    }
+  }, [navigation, isProgressLoaded, savedProgress]);
+
+  // Restore scroll position after content loads
+  useEffect(() => {
+    if (currentContent && savedProgress && contentContainerRef.current) {
+      // Small delay to ensure content is rendered
+      setTimeout(() => {
+        if (contentContainerRef.current && savedProgress.scroll_position > 0) {
+          contentContainerRef.current.scrollTop = savedProgress.scroll_position;
+          setScrollPosition(savedProgress.scroll_position);
+          console.log(
+            'Restored scroll position:',
+            savedProgress.scroll_position
+          );
+        }
+      }, 100);
+    }
+  }, [currentContent, savedProgress]);
 
   const extractChapterOptions = (
     navItems: NavigationItem[]
@@ -201,13 +405,19 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
     return getFinestNavId(item.children[0]);
   };
 
-  const loadContent = async (navId: string) => {
+  const loadContent = async (navId: string, isInitialLoad: boolean = false) => {
     if (!filename) return;
 
     try {
       setCurrentNavId(navId);
       const contentData = await epubService.getContent(filename, navId);
       setCurrentContent(contentData);
+
+      // Save progress immediately when navigating (but not on initial restore)
+      if (!isInitialLoad && isProgressLoaded) {
+        await saveProgress(navId, contentData, 0); // Reset scroll on navigation
+        setScrollPosition(0); // Reset scroll position
+      }
     } catch (err) {
       console.error('Error loading content:', err);
       setError('Failed to load chapter content');
@@ -331,6 +541,9 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
               {currentContent.total_sections}
               {' • '}
               {currentContent.progress_percentage}% complete
+              {savedProgress && (
+                <span className="text-green-400 ml-2">📖 Progress saved</span>
+              )}
             </div>
             {/* Settings Button */}
             <button
@@ -483,7 +696,11 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div
+        className="flex-1 min-h-0 overflow-auto"
+        ref={contentContainerRef}
+        onScroll={handleScroll}
+      >
         {/* Chapter Title */}
         <div className="max-w-4xl mx-auto p-6 pb-2">
           <h1 className="text-2xl font-bold text-white mb-6 border-b border-gray-700 pb-4">
@@ -520,6 +737,14 @@ export default function EPUBViewer({ filename }: EPUBViewerProps) {
             {epubStyles && epubStyles.count > 0 && (
               <span className="text-green-400">
                 🎨 {epubStyles.count} styles loaded
+              </span>
+            )}
+            {savedProgress && (
+              <span className="text-blue-400">
+                💾 Last read:{' '}
+                {new Date(
+                  savedProgress.last_updated || ''
+                ).toLocaleDateString()}
               </span>
             )}
           </div>

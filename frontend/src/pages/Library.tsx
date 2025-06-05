@@ -92,8 +92,31 @@ export default function Library() {
 
   const loadStatusCounts = async () => {
     try {
-      const counts = await pdfService.getStatusCounts();
-      setStatusCounts(counts);
+      // Load status counts from both PDF and EPUB services in parallel
+      const [pdfCounts, epubCounts] = await Promise.all([
+        pdfService
+          .getStatusCounts()
+          .catch(() => ({ new: 0, reading: 0, finished: 0 })),
+        epubService
+          .getEPUBStatusCounts()
+          .catch(() => ({ new: 0, reading: 0, finished: 0 })),
+      ]);
+
+      // Combine the counts
+      const combinedCounts = {
+        all:
+          pdfCounts.new +
+          pdfCounts.reading +
+          pdfCounts.finished +
+          epubCounts.new +
+          epubCounts.reading +
+          epubCounts.finished,
+        new: pdfCounts.new + epubCounts.new,
+        reading: pdfCounts.reading + epubCounts.reading,
+        finished: pdfCounts.finished + epubCounts.finished,
+      };
+
+      setStatusCounts(combinedCounts);
     } catch (err) {
       console.error('Error loading status counts:', err);
     }
@@ -107,10 +130,12 @@ export default function Library() {
       // Update status via appropriate API based on document type
       if (isPDFDocument(document)) {
         await pdfService.updateBookStatus(document.filename, newStatus, true);
-      } else {
-        // For EPUBs, we'll use the same PDF service for now since status management isn't document-type specific
-        // This will be enhanced in later phases
-        await pdfService.updateBookStatus(document.filename, newStatus, true);
+      } else if (isEPUBDocument(document)) {
+        await epubService.updateEPUBBookStatus(
+          document.filename,
+          newStatus,
+          true
+        );
       }
 
       // Update local state
@@ -148,10 +173,8 @@ export default function Library() {
       // Delete via appropriate API based on document type
       if (isPDFDocument(document)) {
         await pdfService.deleteBook(document.filename);
-      } else {
-        // For EPUBs, we'll use the same PDF service for now since deletion isn't document-type specific
-        // This will be enhanced in later phases
-        await pdfService.deleteBook(document.filename);
+      } else if (isEPUBDocument(document)) {
+        await epubService.deleteEPUBBook(document.filename);
       }
 
       // Remove from local state
