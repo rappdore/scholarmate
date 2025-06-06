@@ -7,6 +7,8 @@ import ebooklib
 from ebooklib import epub
 from PIL import Image
 
+from .epub_url_helper import EPUBURLHelper
+
 
 class EPUBImageService:
     def __init__(self, thumbnails_dir: str = "thumbnails"):
@@ -115,21 +117,50 @@ class EPUBImageService:
     def get_epub_image(self, book, image_path: str) -> bytes:
         """
         Extract and return a specific image from an EPUB file
+        Uses robust URL helper for path normalization and security
         """
-        # Try to find the image by path
+        # Validate the image path for security
+        if not EPUBURLHelper.is_valid_image_path(image_path):
+            raise FileNotFoundError(f"Invalid image path: {image_path}")
+
+        # Normalize the path using URL helper
+        normalized_path = EPUBURLHelper.normalize_image_path(image_path)
+
+        if not normalized_path:
+            raise FileNotFoundError(
+                f"Empty image path after normalization: {image_path}"
+            )
+
+        # Try to find the image by exact match first
         for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-            if item.get_name() == image_path or item.get_name().endswith(image_path):
+            item_name = EPUBURLHelper.extract_image_path_from_epub_item(item.get_name())
+
+            # Try multiple matching strategies
+            if (
+                item_name == image_path
+                or item_name == normalized_path
+                or item.get_name() == image_path
+                or item.get_name() == normalized_path
+                or item.get_name().endswith(image_path)
+                or item.get_name().endswith(normalized_path)
+            ):
                 return item.get_content()
 
-        # If not found, try with different path variations
-        clean_path = image_path.lstrip("./")
+        # If not found, try fallback matching by filename only
+        target_filename = (
+            normalized_path.split("/")[-1]
+            if "/" in normalized_path
+            else normalized_path
+        )
+
         for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-            item_name = item.get_name()
-            if (
-                item_name == clean_path
-                or item_name.endswith("/" + clean_path)
-                or item_name.split("/")[-1] == clean_path.split("/")[-1]
-            ):
+            item_filename = (
+                item.get_name().split("/")[-1]
+                if "/" in item.get_name()
+                else item.get_name()
+            )
+
+            if item_filename == target_filename:
                 return item.get_content()
 
         raise FileNotFoundError(f"Image {image_path} not found in EPUB")

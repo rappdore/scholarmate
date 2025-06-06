@@ -5,6 +5,7 @@ import ebooklib
 from bs4 import BeautifulSoup
 
 from .epub_navigation_service import EPUBNavigationService
+from .epub_url_helper import EPUBURLHelper
 
 
 class EPUBContentProcessor:
@@ -236,6 +237,7 @@ class EPUBContentProcessor:
     def _rewrite_image_paths(self, content: str, filename: str) -> str:
         """
         Rewrite image paths in HTML content to point to our image serving endpoint
+        Uses robust URL helper for proper encoding and security
         """
         # Pattern to match img src attributes
         img_pattern = r'<img([^>]*?)src\s*=\s*["\']([^"\']*?)["\']([^>]*?)>'
@@ -246,12 +248,16 @@ class EPUBContentProcessor:
             after_src = match.group(3)
 
             # Skip if already an absolute URL
-            if src_path.startswith(("http://", "https://", "data:")):
+            if src_path.startswith(("http://", "https://", "data:", "blob:")):
                 return match.group(0)
 
-            # Construct the new path - use filename as-is, don't modify it
-            # The backend endpoint expects the original filename with extension
-            new_src = f"{self.base_url}/epub/{filename}/image/{src_path}"
+            # Use robust URL helper to build the image URL
+            new_src = EPUBURLHelper.build_image_url(self.base_url, filename, src_path)
+
+            # If URL building failed, keep original
+            if not new_src:
+                return match.group(0)
+
             return f'<img{before_src}src="{new_src}"{after_src}>'
 
         return re.sub(img_pattern, replace_img_src, content, flags=re.IGNORECASE)

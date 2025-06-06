@@ -10,6 +10,7 @@ from .epub import (
     EPUBNavigationService,
     EPUBStyleProcessor,
 )
+from .epub.epub_url_helper import EPUBURLHelper
 
 
 class EPUBService:
@@ -47,14 +48,18 @@ class EPUBService:
     def get_epub_path(self, filename: str) -> Path:
         """
         Get the full path to an EPUB file
+        Handles URL decoding for filenames with special characters
         """
-        file_path = self.epub_dir / filename
+        # Decode the filename in case it's URL-encoded
+        decoded_filename = EPUBURLHelper.decode_filename_from_url(filename)
+
+        file_path = self.epub_dir / decoded_filename
 
         if not file_path.exists():
-            raise FileNotFoundError(f"EPUB {filename} not found")
+            raise FileNotFoundError(f"EPUB {decoded_filename} not found")
 
         if not file_path.suffix.lower() == ".epub":
-            raise ValueError(f"{filename} is not an EPUB file")
+            raise ValueError(f"{decoded_filename} is not an EPUB file")
 
         return file_path
 
