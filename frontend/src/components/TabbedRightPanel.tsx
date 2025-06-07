@@ -65,7 +65,12 @@ export default function TabbedRightPanel({
           />
         )}
         {activeTab === 'chat' && (
-          <ChatInterface filename={filename} currentPage={currentPage} />
+          <ChatInterface
+            filename={filename}
+            currentPage={currentPage}
+            currentNavId={currentNavId}
+            documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
+          />
         )}
         {activeTab === 'notes' && (
           <NotesPanel filename={filename} currentPage={currentPage} />

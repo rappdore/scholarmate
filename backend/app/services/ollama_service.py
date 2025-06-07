@@ -154,6 +154,58 @@ Keep responses conversational but informative."""
         except Exception as e:
             yield f"Error: {str(e)}"
 
+    async def chat_epub_stream(
+        self,
+        message: str,
+        filename: str,
+        nav_id: str,
+        epub_text: str,
+        chat_history: list = None,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream chat responses about the EPUB content
+        """
+        system_prompt = f"""/no_think
+        You are an intelligent study assistant helping a user understand an EPUB document.
+
+Current context:
+- Document: {filename}
+- Current section: {nav_id}
+- Section content: {epub_text[:2000]}{"..." if len(epub_text) > 2000 else ""}
+
+You should:
+1. Answer questions directly related to the EPUB content
+2. Provide explanations and clarifications
+3. Help connect concepts within the document
+4. Suggest related questions or areas to explore
+5. Reference specific parts of the content when relevant
+
+Keep responses conversational but informative."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add chat history if provided
+        if chat_history:
+            messages.extend(chat_history[-10:])  # Keep last 10 messages for context
+
+        # Add current message
+        messages.append({"role": "user", "content": message})
+
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            yield f"Error: {str(e)}"
+
     async def test_connection(self) -> Dict[str, Any]:
         """
         Test connection to Ollama

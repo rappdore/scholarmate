@@ -36,6 +36,13 @@ class ChatRequest(BaseModel):
     chat_history: Optional[List[Dict[str, str]]] = None
 
 
+class EpubChatRequest(BaseModel):
+    message: str
+    filename: str
+    nav_id: str
+    chat_history: Optional[List[Dict[str, str]]] = None
+
+
 @router.get("/health")
 async def health_check():
     """
@@ -288,6 +295,52 @@ async def chat_with_ai(request: ChatRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+@router.post("/chat/epub")
+async def chat_with_ai_epub(request: EpubChatRequest):
+    """
+    Chat with AI about the EPUB content with streaming response
+    """
+    try:
+        # Extract text from current section for context
+        section_text = epub_service.extract_section_text(
+            request.filename, request.nav_id
+        )
+
+        async def generate_response():
+            try:
+                async for chunk in ollama_service.chat_epub_stream(
+                    message=request.message,
+                    filename=request.filename,
+                    nav_id=request.nav_id,
+                    epub_text=section_text,
+                    chat_history=request.chat_history,
+                ):
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+
+                # Send end-of-stream marker
+                yield f"data: {json.dumps({'done': True})}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate_response(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream",
+            },
+        )
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"EPUB chat failed: {str(e)}")
 
 
 @router.get("/{filename}/context/{page_num}")

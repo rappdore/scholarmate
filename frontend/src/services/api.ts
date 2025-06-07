@@ -387,6 +387,76 @@ export const chatService = {
       );
     }
   },
+
+  streamChatEpub: async function* (
+    message: string,
+    filename: string,
+    navId: string,
+    chatHistory?: Array<{ role: string; content: string }>
+  ): AsyncGenerator<string, void, unknown> {
+    try {
+      const response = await fetch('http://localhost:8000/ai/chat/epub', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message,
+          filename,
+          nav_id: navId,
+          chat_history: chatHistory,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Failed to get response reader');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.error) {
+                  throw new Error(data.error);
+                }
+                if (data.done) {
+                  return;
+                }
+                if (data.content) {
+                  yield data.content;
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (error) {
+      throw new Error(
+        `EPUB chat failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  },
 };
 
 // Real Highlight Service - Connects to backend API

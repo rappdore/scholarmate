@@ -19,12 +19,16 @@ interface Message {
 
 interface ChatInterfaceProps {
   filename?: string;
-  currentPage: number;
+  currentPage?: number; // For PDFs
+  currentNavId?: string; // For EPUBs
+  documentType: 'pdf' | 'epub';
 }
 
 export default function ChatInterface({
   filename,
   currentPage,
+  currentNavId,
+  documentType,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -51,14 +55,22 @@ export default function ChatInterface({
 
       const title =
         noteTitle.trim() ||
-        `Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`;
+        `Chat on ${documentType === 'pdf' ? `page ${currentPage}` : `section ${currentNavId}`} - ${new Date().toLocaleDateString()}`;
 
-      await notesService.saveChatNote(
-        filename,
-        currentPage,
-        title,
-        chatContent
-      );
+      // Note: For now, we only support saving PDF chat notes
+      // EPUB chat notes will need separate implementation
+      if (documentType === 'pdf' && currentPage !== undefined) {
+        await notesService.saveChatNote(
+          filename,
+          currentPage,
+          title,
+          chatContent
+        );
+      } else {
+        // TODO: Implement EPUB chat note saving
+        console.log('EPUB chat note saving not yet implemented');
+        throw new Error('EPUB chat note saving not yet implemented');
+      }
 
       setShowSaveDialog(false);
       setNoteTitle('');
@@ -114,13 +126,21 @@ export default function ChatInterface({
         content: msg.text,
       }));
 
-      // Stream the AI response
-      const stream = chatService.streamChat(
-        currentInput,
-        filename,
-        currentPage,
-        chatHistory
-      );
+      // Stream the AI response based on document type
+      const stream =
+        documentType === 'pdf'
+          ? chatService.streamChat(
+              currentInput,
+              filename,
+              currentPage!, // We know currentPage is defined for PDFs
+              chatHistory
+            )
+          : chatService.streamChatEpub(
+              currentInput,
+              filename,
+              currentNavId!, // We know currentNavId is defined for EPUBs
+              chatHistory
+            );
 
       let fullResponse = '';
       for await (const chunk of stream) {
@@ -274,7 +294,12 @@ export default function ChatInterface({
       {/* Header */}
       <div className="border-b border-gray-700 px-4 py-2 bg-gray-800 flex justify-between items-center">
         <h3 className="text-sm font-medium text-gray-200">
-          Chat about {filename ? `${filename} (Page ${currentPage})` : 'PDF'}
+          Chat about{' '}
+          {filename
+            ? `${filename} (${documentType === 'pdf' ? `Page ${currentPage}` : `Section ${currentNavId}`})`
+            : documentType === 'pdf'
+              ? 'PDF'
+              : 'EPUB'}
         </h3>
         {messages.length > 0 && (
           <div className="flex gap-2">
@@ -302,8 +327,8 @@ export default function ChatInterface({
         {messages.length === 0 ? (
           <div className="text-gray-400 text-sm text-center">
             {filename
-              ? 'Ask questions about the PDF content...'
-              : 'Open a PDF to start chatting'}
+              ? `Ask questions about the ${documentType.toUpperCase()} content...`
+              : `Open a ${documentType.toUpperCase()} to start chatting`}
           </div>
         ) : (
           messages.map(message => (
@@ -356,7 +381,9 @@ export default function ChatInterface({
             onChange={e => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              filename ? 'Ask about this PDF...' : 'Open a PDF to chat'
+              filename
+                ? `Ask about this ${documentType.toUpperCase()}...`
+                : `Open a ${documentType.toUpperCase()} to chat`
             }
             disabled={!filename || loading}
             className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-700 disabled:text-gray-500"
@@ -400,7 +427,16 @@ export default function ChatInterface({
 
             <div className="mb-4 text-sm text-gray-400">
               This will save the entire chat conversation ({messages.length}{' '}
-              messages) linked to page {currentPage} of {filename}.
+              messages) linked to{' '}
+              {documentType === 'pdf'
+                ? `page ${currentPage}`
+                : `section ${currentNavId}`}{' '}
+              of {filename}.
+              {documentType === 'epub' && (
+                <div className="mt-2 text-yellow-400">
+                  Note: EPUB chat note saving is not yet implemented.
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end">
