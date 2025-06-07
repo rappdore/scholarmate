@@ -678,4 +678,69 @@ export const highlightService = {
   },
 };
 
+// EPUB-specific notes service (completely separate from PDF notesService)
+export const epubNotesService = {
+  saveChatNote: async (
+    epubFilename: string,
+    navId: string,
+    chapterId: string,
+    chapterTitle: string,
+    title: string,
+    chatContent: string,
+    contextSections?: string[],
+    scrollPosition?: number
+  ): Promise<any> => {
+    const response = await api.post('/epub-notes/chat', {
+      epub_filename: epubFilename,
+      nav_id: navId,
+      chapter_id: chapterId,
+      chapter_title: chapterTitle,
+      title: title,
+      chat_content: chatContent,
+      context_sections: contextSections,
+      scroll_position: scrollPosition || 0,
+    });
+    return response.data;
+  },
+
+  getChatNotesForEpub: async (
+    epubFilename: string,
+    navId?: string,
+    chapterId?: string
+  ): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (navId) params.append('nav_id', navId);
+    if (chapterId) params.append('chapter_id', chapterId);
+
+    const response = await api.get(
+      `/epub-notes/chat/${epubFilename}${params.toString() ? '?' + params.toString() : ''}`
+    );
+    return response.data;
+  },
+
+  getChatNotesByChapter: async (
+    epubFilename: string
+  ): Promise<Record<string, any[]>> => {
+    const response = await api.get(
+      `/epub-notes/chat/${epubFilename}/by-chapter`
+    );
+    return response.data;
+  },
+
+  getChatNoteById: async (noteId: number): Promise<any> => {
+    const response = await api.get(`/epub-notes/chat/id/${noteId}`);
+    return response.data;
+  },
+
+  deleteChatNote: async (noteId: number): Promise<any> => {
+    const response = await api.delete(`/epub-notes/chat/${noteId}`);
+    return response.data;
+  },
+
+  getNotesStatistics: async (): Promise<Record<string, any>> => {
+    const response = await api.get('/epub-notes/stats');
+    return response.data;
+  },
+};
+
 export default api;

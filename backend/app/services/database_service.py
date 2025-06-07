@@ -17,6 +17,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional
 
 from .chat_notes_service import ChatNotesService
+from .epub_chat_notes_service import EPUBChatNotesService
 from .epub_progress_service import EPUBProgressService
 from .highlights_service import HighlightsService
 from .migration_service import MigrationService
@@ -28,12 +29,14 @@ logger = logging.getLogger(__name__)
 
 class DatabaseService:
     """
-    A facade service class for managing PDF reading progress, chat notes, and highlights using SQLite.
+    A facade service class for managing PDF/EPUB reading progress, chat notes, and highlights using SQLite.
 
     This class coordinates specialized services for different data domains while maintaining
     the same public API for backward compatibility. It delegates operations to:
     - ReadingProgressService: for PDF reading progress tracking
+    - EPUBProgressService: for EPUB reading progress tracking
     - ChatNotesService: for conversation notes linked to PDF pages
+    - EPUBChatNotesService: for conversation notes linked to EPUB navigation sections
     - HighlightsService: for text highlights with coordinates
 
     The database is automatically initialized with the required schema on first use.
@@ -60,6 +63,7 @@ class DatabaseService:
         self.reading_progress = ReadingProgressService(db_path)
         self.epub_progress = EPUBProgressService(db_path)
         self.chat_notes = ChatNotesService(db_path)
+        self.epub_chat_notes = EPUBChatNotesService(db_path)
         self.highlights = HighlightsService(db_path)
 
     def _ensure_data_dir(self):
@@ -501,6 +505,116 @@ class DatabaseService:
         return self.chat_notes.get_notes_count_by_pdf()
 
     # ========================================
+    # EPUB CHAT NOTES METHODS
+    # ========================================
+
+    def save_epub_chat_note(
+        self,
+        epub_filename: str,
+        nav_id: str,
+        chapter_id: str,
+        chapter_title: str,
+        title: str,
+        chat_content: str,
+        context_sections: List[str] = None,
+        scroll_position: int = 0,
+    ) -> Optional[int]:
+        """
+        Save an EPUB chat conversation as a note linked to a navigation section.
+
+        Args:
+            epub_filename (str): Name of the EPUB file this note belongs to
+            nav_id (str): Precise navigation section identifier
+            chapter_id (str): Chapter identifier for grouping/display
+            chapter_title (str): Human-readable chapter title
+            title (str): Title for the note (can be empty)
+            chat_content (str): The actual conversation or note content
+            context_sections (List[str]): List of section IDs that provided context
+            scroll_position (int): Scroll position within the section
+
+        Returns:
+            Optional[int]: The ID of the newly created note, or None if creation failed
+        """
+        return self.epub_chat_notes.save_note(
+            epub_filename,
+            nav_id,
+            chapter_id,
+            chapter_title,
+            title,
+            chat_content,
+            context_sections,
+            scroll_position,
+        )
+
+    def get_epub_chat_notes(
+        self,
+        epub_filename: str,
+        nav_id: Optional[str] = None,
+        chapter_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve chat notes for an EPUB document, with fine-grained or chapter-level filtering.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to get notes for
+            nav_id (Optional[str]): Specific navigation section to filter by
+            chapter_id (Optional[str]): Specific chapter to filter by
+
+        Returns:
+            List[Dict[str, Any]]: List of note dictionaries with navigation context
+        """
+        return self.epub_chat_notes.get_notes_for_epub(
+            epub_filename, nav_id, chapter_id
+        )
+
+    def get_epub_chat_notes_by_chapter(
+        self, epub_filename: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get EPUB chat notes grouped by chapter for UI display.
+
+        Args:
+            epub_filename (str): Name of the EPUB file to get notes for
+
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
+        """
+        return self.epub_chat_notes.get_notes_grouped_by_chapter(epub_filename)
+
+    def get_epub_chat_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a specific EPUB chat note by its unique ID.
+
+        Args:
+            note_id (int): Unique identifier of the note to retrieve
+
+        Returns:
+            Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
+        """
+        return self.epub_chat_notes.get_note_by_id(note_id)
+
+    def delete_epub_chat_note(self, note_id: int) -> bool:
+        """
+        Delete a specific EPUB chat note by its ID.
+
+        Args:
+            note_id (int): Unique identifier of the note to delete
+
+        Returns:
+            bool: True if a note was deleted, False if no note was found or deletion failed
+        """
+        return self.epub_chat_notes.delete_note(note_id)
+
+    def get_epub_notes_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get summary statistics about notes for all EPUB documents.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
+        """
+        return self.epub_chat_notes.get_notes_count_by_epub()
+
+    # ========================================
     # HIGHLIGHT METHODS
     # ========================================
 
@@ -750,9 +864,23 @@ class DatabaseService:
         # Delete EPUB reading progress
         results["epub_progress"] = self.delete_epub_progress(epub_filename)
 
-        # Note: EPUB notes and highlights will be added in future phases
-        # For now, we only handle progress data to maintain service separation
-        # When EPUB notes/highlights are implemented, they will be added here
+        # Delete EPUB chat notes
+        try:
+            with self.epub_chat_notes.get_connection() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM epub_chat_notes WHERE epub_filename = ?",
+                    (epub_filename,),
+                )
+                conn.commit()
+                results["epub_chat_notes"] = (
+                    cursor.rowcount >= 0
+                )  # Consider successful even if no rows were deleted
+        except Exception as e:
+            logger.error(f"Error deleting EPUB chat notes for {epub_filename}: {e}")
+            results["epub_chat_notes"] = False
+
+        # Note: EPUB highlights will be added in future phases
+        # When EPUB highlights are implemented, they will be added here
 
         return results
 

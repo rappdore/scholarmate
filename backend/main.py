@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import ai, epub, highlights, notes, pdf
+from app.routers import ai, epub, epub_notes, highlights, notes, pdf
 
 app = FastAPI(title="PDF AI Reader API", version="1.0.0")
 
@@ -34,6 +34,7 @@ app.include_router(pdf.router)
 app.include_router(epub.router)
 app.include_router(ai.router)
 app.include_router(notes.router)
+app.include_router(epub_notes.router)
 app.include_router(highlights.router)
 
 if __name__ == "__main__":

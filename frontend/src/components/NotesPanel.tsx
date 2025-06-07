@@ -8,9 +8,9 @@ import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css';
 import '../styles/katex-dark.css';
 import type { Components } from 'react-markdown';
-import { notesService } from '../services/api';
+import { notesService, epubNotesService } from '../services/api';
 
-interface Note {
+interface PDFNote {
   id: number;
   pdf_filename: string;
   page_number: number;
@@ -20,18 +20,43 @@ interface Note {
   updated_at: string;
 }
 
+interface EPUBNote {
+  id: number;
+  epub_filename: string;
+  nav_id: string;
+  chapter_id: string;
+  chapter_title: string;
+  title: string;
+  chat_content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+type Note = PDFNote | EPUBNote;
+
 interface NotesPanelProps {
   filename?: string;
   currentPage: number;
+  currentNavId?: string; // For EPUBs
+  currentChapterId?: string; // For EPUB chapter identification
+  currentChapterTitle?: string; // For EPUB chapter display
+  documentType: 'pdf' | 'epub';
 }
 
-export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
+export default function NotesPanel({
+  filename,
+  currentPage,
+  currentNavId,
+  currentChapterId,
+  currentChapterTitle,
+  documentType,
+}: NotesPanelProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<number | null>(null);
 
-  // Load notes for the current PDF
+  // Load notes for the current document (PDF or EPUB)
   useEffect(() => {
     if (!filename) {
       setNotes([]);
@@ -42,7 +67,14 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
       setLoading(true);
       setError(null);
       try {
-        const fetchedNotes = await notesService.getChatNotesForPdf(filename);
+        let fetchedNotes;
+        if (documentType === 'pdf') {
+          fetchedNotes = await notesService.getChatNotesForPdf(filename);
+        } else if (documentType === 'epub') {
+          fetchedNotes = await epubNotesService.getChatNotesForEpub(filename);
+        } else {
+          throw new Error(`Unsupported document type: ${documentType}`);
+        }
         setNotes(fetchedNotes);
       } catch (err) {
         console.error('Error loading notes:', err);
@@ -53,11 +85,15 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
     };
 
     loadNotes();
-  }, [filename]);
+  }, [filename, documentType]);
 
   const deleteNote = async (noteId: number) => {
     try {
-      await notesService.deleteChatNote(noteId);
+      if (documentType === 'pdf') {
+        await notesService.deleteChatNote(noteId);
+      } else if (documentType === 'epub') {
+        await epubNotesService.deleteChatNote(noteId);
+      }
       setNotes(notes.filter(note => note.id !== noteId));
       if (expandedNote === noteId) {
         setExpandedNote(null);
@@ -193,16 +229,45 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
     ),
   } as Components;
 
-  // Separate notes by current page and other pages
-  const currentPageNotes = notes.filter(
-    note => note.page_number === currentPage
-  );
-  const otherPageNotes = notes.filter(note => note.page_number !== currentPage);
+  // Helper functions to check note context
+  const isCurrentContext = (note: Note): boolean => {
+    if (documentType === 'pdf') {
+      return (note as PDFNote).page_number === currentPage;
+    } else if (documentType === 'epub') {
+      return (note as EPUBNote).nav_id === currentNavId;
+    }
+    return false;
+  };
+
+  const getLocationLabel = (note: Note): string => {
+    if (documentType === 'pdf') {
+      return `Page ${(note as PDFNote).page_number}`;
+    } else if (documentType === 'epub') {
+      const epubNote = note as EPUBNote;
+      return `${epubNote.chapter_title || 'Unknown Chapter'}`;
+    }
+    return 'Unknown location';
+  };
+
+  const getSortKey = (note: Note): string | number => {
+    if (documentType === 'pdf') {
+      return (note as PDFNote).page_number;
+    } else if (documentType === 'epub') {
+      return (note as EPUBNote).nav_id;
+    }
+    return 0;
+  };
+
+  // Separate notes by current context and other contexts
+  const currentContextNotes = notes.filter(isCurrentContext);
+  const otherContextNotes = notes.filter(note => !isCurrentContext(note));
 
   if (!filename) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900">
-        <p className="text-gray-400 text-sm">Open a PDF to view notes</p>
+        <p className="text-gray-400 text-sm">
+          Open a {documentType?.toUpperCase() || 'document'} to view notes
+        </p>
       </div>
     );
   }
@@ -241,14 +306,16 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            {/* Current Page Notes */}
-            {currentPageNotes.length > 0 && (
+            {/* Current Context Notes */}
+            {currentContextNotes.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold text-purple-400 mb-3 uppercase tracking-wider">
-                  Current Page ({currentPage})
+                  {documentType === 'pdf'
+                    ? `Current Page (${currentPage})`
+                    : `Current Section (${currentChapterTitle || 'Unknown'})`}
                 </h4>
                 <div className="space-y-3">
-                  {currentPageNotes.map(note => (
+                  {currentContextNotes.map((note: Note) => (
                     <div
                       key={note.id}
                       className="bg-gray-800 border border-purple-500/30 rounded-lg"
@@ -289,7 +356,7 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                           </button>
                         </div>
                         <div className="flex items-center justify-between text-xs text-gray-400">
-                          <span>Page {note.page_number}</span>
+                          <span>{getLocationLabel(note)}</span>
                           <span>{formatDate(note.created_at)}</span>
                         </div>
                       </div>
@@ -322,20 +389,32 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
               </div>
             )}
 
-            {/* Other Pages Notes */}
-            {otherPageNotes.length > 0 && (
+            {/* Other Context Notes */}
+            {otherContextNotes.length > 0 && (
               <div>
-                {currentPageNotes.length > 0 && (
+                {currentContextNotes.length > 0 && (
                   <div className="border-t border-gray-700 pt-4 mt-4">
                     <h4 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                      Other Pages
+                      {documentType === 'pdf'
+                        ? 'Other Pages'
+                        : 'Other Sections'}
                     </h4>
                   </div>
                 )}
                 <div className="space-y-3">
-                  {otherPageNotes
-                    .sort((a, b) => a.page_number - b.page_number)
-                    .map(note => (
+                  {otherContextNotes
+                    .sort((a: Note, b: Note) => {
+                      const aKey = getSortKey(a);
+                      const bKey = getSortKey(b);
+                      if (
+                        typeof aKey === 'number' &&
+                        typeof bKey === 'number'
+                      ) {
+                        return aKey - bKey;
+                      }
+                      return String(aKey).localeCompare(String(bKey));
+                    })
+                    .map((note: Note) => (
                       <div
                         key={note.id}
                         className="bg-gray-800 border border-gray-700 rounded-lg"
@@ -379,7 +458,7 @@ export default function NotesPanel({ filename, currentPage }: NotesPanelProps) {
                           </div>
                           <div className="flex items-center justify-between text-xs text-gray-400">
                             <span className="text-blue-400">
-                              Page {note.page_number}
+                              {getLocationLabel(note)}
                             </span>
                             <span>{formatDate(note.created_at)}</span>
                           </div>

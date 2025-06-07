@@ -15,6 +15,12 @@ export default function Reader() {
   const [currentNavId, setCurrentNavId] = useState<string | undefined>(
     undefined
   );
+  const [currentChapterId, setCurrentChapterId] = useState<string | undefined>(
+    undefined
+  );
+  const [currentChapterTitle, setCurrentChapterTitle] = useState<
+    string | undefined
+  >(undefined);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [documentType, setDocumentType] = useState<DocumentType | null>(null);
@@ -142,6 +148,11 @@ export default function Reader() {
     setCurrentNavId(navId);
   };
 
+  const handleChapterInfoChange = (chapterId: string, chapterTitle: string) => {
+    setCurrentChapterId(chapterId);
+    setCurrentChapterTitle(chapterTitle);
+  };
+
   const handleTotalPagesChange = (total: number) => {
     if (!totalPages) {
       setTotalPages(total);
@@ -197,7 +208,11 @@ export default function Reader() {
         );
       case 'epub':
         return (
-          <EPUBViewer filename={filename} onNavIdChange={handleNavIdChange} />
+          <EPUBViewer
+            filename={filename}
+            onNavIdChange={handleNavIdChange}
+            onChapterInfoChange={handleChapterInfoChange}
+          />
         );
       default:
         return (
@@ -221,6 +236,8 @@ export default function Reader() {
             documentType={documentType}
             currentPage={currentPage}
             currentNavId={currentNavId}
+            currentChapterId={currentChapterId}
+            currentChapterTitle={currentChapterTitle}
             onPageJump={handlePageChange}
           />
         }

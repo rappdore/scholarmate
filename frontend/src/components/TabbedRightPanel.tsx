@@ -10,6 +10,8 @@ interface TabbedRightPanelProps {
   documentType: DocumentType | null;
   currentPage: number;
   currentNavId?: string;
+  currentChapterId?: string; // For EPUB chapter identification
+  currentChapterTitle?: string; // For EPUB chapter display
   onPageJump?: (pageNumber: number) => void;
 }
 
@@ -20,6 +22,8 @@ export default function TabbedRightPanel({
   documentType,
   currentPage,
   currentNavId,
+  currentChapterId,
+  currentChapterTitle,
   onPageJump,
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
@@ -69,11 +73,20 @@ export default function TabbedRightPanel({
             filename={filename}
             currentPage={currentPage}
             currentNavId={currentNavId}
+            currentChapterId={currentChapterId}
+            currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
           />
         )}
         {activeTab === 'notes' && (
-          <NotesPanel filename={filename} currentPage={currentPage} />
+          <NotesPanel
+            filename={filename}
+            currentPage={currentPage}
+            currentNavId={currentNavId}
+            currentChapterId={currentChapterId}
+            currentChapterTitle={currentChapterTitle}
+            documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
+          />
         )}
         {activeTab === 'highlights' && (
           <HighlightsPanel

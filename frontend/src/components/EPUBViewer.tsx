@@ -5,6 +5,7 @@ import '../styles/epub.css';
 interface EPUBViewerProps {
   filename?: string;
   onNavIdChange?: (navId: string) => void;
+  onChapterInfoChange?: (chapterId: string, chapterTitle: string) => void;
 }
 
 interface NavigationItem {
@@ -48,6 +49,7 @@ type LineHeight = 'tight' | 'normal' | 'loose';
 export default function EPUBViewer({
   filename,
   onNavIdChange,
+  onChapterInfoChange,
 }: EPUBViewerProps) {
   const [navigation, setNavigation] = useState<NavigationData | null>(null);
   const [currentContent, setCurrentContent] = useState<ContentData | null>(
@@ -467,7 +469,14 @@ export default function EPUBViewer({
     if (currentNavId && onNavIdChange) {
       onNavIdChange(currentNavId);
     }
-  }, [currentNavId, onNavIdChange]);
+
+    // Also notify chapter info changes
+    if (currentNavId && onChapterInfoChange) {
+      const chapterId = extractChapterIdFromNavId(currentNavId);
+      const chapterTitle = getCurrentChapterTitle();
+      onChapterInfoChange(chapterId, chapterTitle);
+    }
+  }, [currentNavId, onNavIdChange, onChapterInfoChange]);
 
   const handleChapterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newNavId = event.target.value;

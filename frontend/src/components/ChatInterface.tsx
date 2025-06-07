@@ -8,7 +8,7 @@ import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css'; // KaTeX CSS for math rendering
 import '../styles/katex-dark.css'; // Custom dark theme for KaTeX
 import type { Components } from 'react-markdown';
-import { chatService, notesService } from '../services/api';
+import { chatService, notesService, epubNotesService } from '../services/api';
 
 interface Message {
   id: string;
@@ -21,6 +21,8 @@ interface ChatInterfaceProps {
   filename?: string;
   currentPage?: number; // For PDFs
   currentNavId?: string; // For EPUBs
+  currentChapterId?: string; // For EPUB chapter identification
+  currentChapterTitle?: string; // For EPUB chapter display
   documentType: 'pdf' | 'epub';
 }
 
@@ -28,6 +30,8 @@ export default function ChatInterface({
   filename,
   currentPage,
   currentNavId,
+  currentChapterId,
+  currentChapterTitle,
   documentType,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -57,19 +61,30 @@ export default function ChatInterface({
         noteTitle.trim() ||
         `Chat on ${documentType === 'pdf' ? `page ${currentPage}` : `section ${currentNavId}`} - ${new Date().toLocaleDateString()}`;
 
-      // Note: For now, we only support saving PDF chat notes
-      // EPUB chat notes will need separate implementation
       if (documentType === 'pdf' && currentPage !== undefined) {
+        // Existing PDF implementation (unchanged)
         await notesService.saveChatNote(
           filename,
           currentPage,
           title,
           chatContent
         );
+      } else if (documentType === 'epub' && currentNavId !== undefined) {
+        // NEW: EPUB implementation
+        await epubNotesService.saveChatNote(
+          filename,
+          currentNavId,
+          currentChapterId || 'unknown',
+          currentChapterTitle || 'Unknown Chapter',
+          title,
+          chatContent,
+          [], // context_sections - could be enhanced later
+          0 // scroll_position - could be enhanced later
+        );
       } else {
-        // TODO: Implement EPUB chat note saving
-        console.log('EPUB chat note saving not yet implemented');
-        throw new Error('EPUB chat note saving not yet implemented');
+        throw new Error(
+          `Unsupported document type: ${documentType} or missing context data`
+        );
       }
 
       setShowSaveDialog(false);
@@ -420,7 +435,11 @@ export default function ChatInterface({
                     saveChatAsNote();
                   }
                 }}
-                placeholder={`Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`}
+                placeholder={
+                  documentType === 'pdf'
+                    ? `Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`
+                    : `Chat on ${currentChapterTitle || 'section'} - ${new Date().toLocaleDateString()}`
+                }
                 className="w-full px-3 py-2 border border-gray-600 bg-gray-700 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
@@ -432,11 +451,6 @@ export default function ChatInterface({
                 ? `page ${currentPage}`
                 : `section ${currentNavId}`}{' '}
               of {filename}.
-              {documentType === 'epub' && (
-                <div className="mt-2 text-yellow-400">
-                  Note: EPUB chat note saving is not yet implemented.
-                </div>
-              )}
             </div>
 
             <div className="flex gap-3 justify-end">
