@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { epubService, type EPUBProgress } from '../services/epubService';
 import '../styles/epub.css';
+import EPUBHighlightMenu from './EPUBHighlightMenu';
+import {
+  getEPUBSelection,
+  applyHighlight,
+  clearAllHighlights,
+  extractChapterIdFromNavId,
+  type EPUBHighlight,
+  type HighlightColor,
+} from '../utils/epubHighlights';
 
 interface EPUBViewerProps {
   filename?: string;
@@ -77,6 +86,26 @@ export default function EPUBViewer({
   const contentContainerRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
 
+  // Highlighting state
+  const [highlights, setHighlights] = useState<EPUBHighlight[]>([]);
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [highlightMenuPosition, setHighlightMenuPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [selectedText, setSelectedText] = useState('');
+  const [pendingSelection, setPendingSelection] = useState<{
+    xpath: string;
+    startOffset: number;
+    endOffset: number;
+    selectedText: string;
+    navId: string;
+    chapterId: string;
+  } | null>(null);
+
+  // Ref for the HTML container that holds the injected EPUB content
+  const htmlRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!filename) return;
     loadNavigation();
@@ -84,6 +113,37 @@ export default function EPUBViewer({
     loadProgress();
     setInitialLoadDone(false); // Reset initial load flag for new EPUB
   }, [filename]);
+
+  // Load highlights when content changes
+  useEffect(() => {
+    if (!filename || !currentNavId) return;
+    loadSectionHighlights();
+  }, [filename, currentNavId]);
+
+  // Inject chapter HTML into the DOM and then apply highlights
+  useEffect(() => {
+    if (!currentContent) return;
+
+    // Inject HTML only when chapter content string changes
+    if (htmlRef.current) {
+      htmlRef.current.innerHTML = currentContent.content;
+    }
+
+    // Apply highlights after the DOM has updated
+    setTimeout(() => {
+      applyHighlightsToContent();
+    }, 50);
+  }, [currentContent]);
+
+  // Re-apply highlights whenever the number of highlights changes (e.g. after creating a new one)
+  useEffect(() => {
+    if (!currentContent || highlights.length === 0) return;
+
+    // Re-apply on next tick so the DOM has settled after state updates
+    setTimeout(() => {
+      applyHighlightsToContent();
+    }, 20);
+  }, [highlights.length]);
 
   // Load saved progress and restore position
   const loadProgress = async () => {
@@ -536,6 +596,177 @@ export default function EPUBViewer({
     return decodedTitle.substring(0, maxLength) + '...';
   };
 
+  // ========================================
+  // HIGHLIGHT FUNCTIONALITY
+  // ========================================
+
+  const loadSectionHighlights = async () => {
+    if (!filename || !currentNavId) return;
+
+    try {
+      const sectionHighlights = await epubService.getSectionHighlights(
+        filename,
+        currentNavId
+      );
+      setHighlights(sectionHighlights);
+    } catch (error) {
+      console.error('Error loading section highlights:', error);
+      setHighlights([]);
+    }
+  };
+
+  const applyHighlightsToContent = () => {
+    console.log('🎨 Applying highlights to content, count:', highlights.length);
+
+    // Clear existing highlights first
+    clearAllHighlights();
+
+    // Apply each highlight
+    highlights.forEach((highlight, index) => {
+      console.log(
+        `🖍️ Applying highlight ${index + 1}:`,
+        highlight.highlight_text
+      );
+      const success = applyHighlight(highlight);
+      if (!success) {
+        console.warn('❌ Failed to apply highlight:', highlight);
+      }
+    });
+  };
+
+  const handleTextSelection = (event: MouseEvent) => {
+    console.log('🖱️ Mouse up event detected', event.target);
+
+    // Don't process selection if clicking on the highlight menu
+    const target = event.target as Element;
+    if (target.closest('.epub-highlight-menu')) {
+      console.log('🚫 Clicked on highlight menu, ignoring');
+      return;
+    }
+
+    // Close existing menu first
+    setShowHighlightMenu(false);
+
+    // Small delay to allow selection to complete
+    setTimeout(() => {
+      if (!currentNavId) {
+        console.log('❌ No currentNavId');
+        return;
+      }
+
+      console.log('🔍 Checking for text selection...');
+      const chapterId = extractChapterIdFromNavId(currentNavId);
+      const selection = getEPUBSelection(currentNavId, chapterId);
+
+      console.log('📝 Selection result:', selection);
+
+      if (selection) {
+        console.log('✅ Valid selection found, showing menu');
+        // Show highlight menu
+        setSelectedText(selection.selectedText);
+        setPendingSelection(selection);
+        setHighlightMenuPosition({ x: event.clientX, y: event.clientY });
+        setShowHighlightMenu(true);
+      } else {
+        console.log('❌ No valid selection found');
+      }
+    }, 10);
+  };
+
+  const handleCreateHighlight = async (color: HighlightColor) => {
+    console.log('🎨 Creating highlight with color:', color);
+    console.log('📋 Pending selection:', pendingSelection);
+
+    if (!filename || !pendingSelection) {
+      console.log('❌ Missing filename or pending selection');
+      return;
+    }
+
+    try {
+      const newHighlight = await epubService.createEPUBHighlight(filename, {
+        nav_id: pendingSelection.navId,
+        chapter_id: pendingSelection.chapterId,
+        xpath: pendingSelection.xpath,
+        start_offset: pendingSelection.startOffset,
+        end_offset: pendingSelection.endOffset,
+        highlight_text: pendingSelection.selectedText,
+        color,
+      });
+
+      console.log('✅ Highlight created:', newHighlight);
+
+      // Add to local state - this will trigger the useEffect to reapply all highlights
+      setHighlights(prev => [...prev, newHighlight]);
+
+      // Clear selection
+      window.getSelection()?.removeAllRanges();
+      setPendingSelection(null);
+    } catch (error) {
+      console.error('❌ Error creating highlight:', error);
+
+      // For now, create a local highlight even if API fails
+      const localHighlight: EPUBHighlight = {
+        id: Date.now().toString(),
+        document_id: filename,
+        nav_id: pendingSelection.navId,
+        chapter_id: pendingSelection.chapterId,
+        xpath: pendingSelection.xpath,
+        start_offset: pendingSelection.startOffset,
+        end_offset: pendingSelection.endOffset,
+        highlight_text: pendingSelection.selectedText,
+        color,
+        created_at: new Date().toISOString(),
+      };
+
+      console.log('📝 Creating local highlight for testing:', localHighlight);
+      setHighlights(prev => [...prev, localHighlight]);
+    }
+  };
+
+  const handleCloseHighlightMenu = () => {
+    setShowHighlightMenu(false);
+    setPendingSelection(null);
+    setSelectedText('');
+
+    // Clear text selection
+    window.getSelection()?.removeAllRanges();
+  };
+
+  // Add text selection listener to content container
+  useEffect(() => {
+    // Wait for content to be loaded and rendered
+    if (!currentContent) {
+      console.log('❌ No content loaded yet, skipping event listener setup');
+      return;
+    }
+
+    // Small delay to ensure DOM is ready after content injection
+    const timeoutId = setTimeout(() => {
+      const container = contentContainerRef.current;
+      console.log(
+        '🎯 Setting up text selection listener on container:',
+        container
+      );
+
+      if (!container) {
+        console.log('❌ No container found for text selection listener');
+        return;
+      }
+
+      console.log('✅ Adding mouseup event listener to container');
+      container.addEventListener('mouseup', handleTextSelection);
+    }, 50);
+
+    return () => {
+      clearTimeout(timeoutId);
+      const container = contentContainerRef.current;
+      if (container) {
+        console.log('🧹 Cleaning up mouseup event listener');
+        container.removeEventListener('mouseup', handleTextSelection);
+      }
+    };
+  }, [currentContent, currentNavId]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-gray-300">
@@ -775,13 +1006,23 @@ export default function EPUBViewer({
         {/* EPUB Content with Two-Container Approach */}
         <div className="epub-outer-container">
           <div
+            ref={htmlRef}
             className="epub-content-container"
             data-theme={theme}
             data-font-size={fontSize}
             data-line-height={lineHeight}
-            dangerouslySetInnerHTML={{ __html: currentContent.content }}
           />
         </div>
+
+        {/* Highlight Context Menu */}
+        {showHighlightMenu && (
+          <EPUBHighlightMenu
+            position={highlightMenuPosition}
+            selectedText={selectedText}
+            onHighlight={handleCreateHighlight}
+            onClose={handleCloseHighlightMenu}
+          />
+        )}
       </div>
 
       {/* Footer with Progress */}

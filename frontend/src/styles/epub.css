@@ -316,3 +316,169 @@
 .epub-custom-styles {
   /* Styles from EPUB CSS files will be injected here */
 }
+
+/* ============================================ */
+/* EPUB HIGHLIGHT STYLES                       */
+/* ============================================ */
+
+/* Base highlight styling */
+.epub-highlight {
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.epub-highlight:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Highlight color variations - Dark Theme */
+.epub-highlight-yellow {
+  background-color: rgba(255, 235, 59, 0.3);
+  color: #1f2937 !important;
+}
+
+.epub-highlight-blue {
+  background-color: rgba(33, 150, 243, 0.3);
+  color: #ffffff !important;
+}
+
+.epub-highlight-green {
+  background-color: rgba(76, 175, 80, 0.3);
+  color: #1f2937 !important;
+}
+
+.epub-highlight-pink {
+  background-color: rgba(233, 30, 99, 0.3);
+  color: #ffffff !important;
+}
+
+.epub-highlight-orange {
+  background-color: rgba(255, 152, 0, 0.3);
+  color: #1f2937 !important;
+}
+
+/* Light theme highlight adjustments */
+.epub-content-container[data-theme='light'] .epub-highlight-yellow {
+  background-color: rgba(255, 235, 59, 0.4);
+  color: #1f2937 !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-blue {
+  background-color: rgba(33, 150, 243, 0.4);
+  color: #ffffff !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-green {
+  background-color: rgba(76, 175, 80, 0.4);
+  color: #1f2937 !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-pink {
+  background-color: rgba(233, 30, 99, 0.4);
+  color: #ffffff !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-orange {
+  background-color: rgba(255, 152, 0, 0.4);
+  color: #1f2937 !important;
+}
+
+/* Sepia theme highlight adjustments */
+.epub-content-container[data-theme='sepia'] .epub-highlight-yellow {
+  background-color: rgba(255, 235, 59, 0.35);
+  color: #5d4037 !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-blue {
+  background-color: rgba(33, 150, 243, 0.35);
+  color: #f3e5ab !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-green {
+  background-color: rgba(76, 175, 80, 0.35);
+  color: #5d4037 !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-pink {
+  background-color: rgba(233, 30, 99, 0.35);
+  color: #f3e5ab !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-orange {
+  background-color: rgba(255, 152, 0, 0.35);
+  color: #5d4037 !important;
+}
+
+/* Highlight context menu styling */
+.epub-highlight-menu {
+  position: absolute;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.epub-highlight-menu button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.epub-highlight-menu button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.epub-highlight-menu .color-yellow {
+  background-color: rgba(255, 235, 59, 0.8);
+  color: #1f2937;
+}
+
+.epub-highlight-menu .color-blue {
+  background-color: rgba(33, 150, 243, 0.8);
+  color: #ffffff;
+}
+
+.epub-highlight-menu .color-green {
+  background-color: rgba(76, 175, 80, 0.8);
+  color: #1f2937;
+}
+
+.epub-highlight-menu .color-pink {
+  background-color: rgba(233, 30, 99, 0.8);
+  color: #ffffff;
+}
+
+.epub-highlight-menu .color-orange {
+  background-color: rgba(255, 152, 0, 0.8);
+  color: #1f2937;
+}
+
+/* Delete button styling */
+.epub-highlight-menu .delete-button {
+  background-color: #dc2626;
+  color: #ffffff;
+  margin-left: 4px;
+  border-left: 1px solid #374151;
+  padding-left: 8px;
+}
+
+.epub-highlight-menu .delete-button:hover {
+  background-color: #b91c1c;
+}

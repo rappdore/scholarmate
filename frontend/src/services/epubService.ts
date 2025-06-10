@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { EPUBDocument, EPUBDocumentInfo } from '../types/document';
+import type { EPUBHighlight } from '../utils/epubHighlights';
 
 const api = axios.create({
   baseURL: 'http://localhost:8000',
@@ -135,5 +136,44 @@ export const epubService = {
       `/epub/${encodeURIComponent(filename)}/chapter-progress/${chapterId}`
     );
     return response.data;
+  },
+
+  // ========================================
+  // EPUB HIGHLIGHTS METHODS
+  // ========================================
+
+  createEPUBHighlight: async (
+    filename: string,
+    highlightData: Omit<EPUBHighlight, 'id' | 'created_at' | 'document_id'>
+  ): Promise<EPUBHighlight> => {
+    const response = await api.post(`/epub-highlights/create`, {
+      ...highlightData,
+      document_id: filename,
+    });
+    return response.data;
+  },
+
+  getSectionHighlights: async (
+    filename: string,
+    navId: string
+  ): Promise<EPUBHighlight[]> => {
+    const response = await api.get(
+      `/epub-highlights/${encodeURIComponent(filename)}/section/${encodeURIComponent(navId)}`
+    );
+    return response.data;
+  },
+
+  getChapterHighlights: async (
+    filename: string,
+    chapterId: string
+  ): Promise<EPUBHighlight[]> => {
+    const response = await api.get(
+      `/epub-highlights/${encodeURIComponent(filename)}/chapter/${encodeURIComponent(chapterId)}`
+    );
+    return response.data;
+  },
+
+  deleteEPUBHighlight: async (highlightId: string): Promise<void> => {
+    await api.delete(`/epub-highlights/${highlightId}`);
   },
 };
