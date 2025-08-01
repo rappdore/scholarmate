@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 
 class OllamaService:
     def __init__(
-        self, base_url: str = "http://localhost:11434/v1", model: str = "qwen3:30b"
+        self, base_url: str = "http://localhost:1234/v1", model: str = "qwen3:30b"
     ):
         self.client = AsyncOpenAI(
             base_url=base_url,
