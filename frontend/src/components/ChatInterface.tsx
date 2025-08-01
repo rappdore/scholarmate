@@ -44,7 +44,7 @@ export default function ChatInterface({
   const [abortController, setAbortController] =
     useState<AbortController | null>(null);
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const clearChat = () => {
     setMessages([]);
@@ -130,7 +130,11 @@ export default function ChatInterface({
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use direct scrollTop on the messages container to avoid scrolling parent elements
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -402,7 +406,10 @@ export default function ChatInterface({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-auto p-4 space-y-3">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-auto p-4 space-y-3"
+      >
         {messages.length === 0 ? (
           <div className="text-gray-400 text-sm text-center">
             {filename
@@ -448,7 +455,6 @@ export default function ChatInterface({
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
