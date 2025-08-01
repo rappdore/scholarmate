@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import OllamaService
 from ..services.pdf_service import PDFService
+from ..services.request_tracking_service import request_tracking_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -34,6 +36,7 @@ class ChatRequest(BaseModel):
     filename: str
     page_num: int
     chat_history: Optional[List[Dict[str, str]]] = None
+    request_id: Optional[str] = None
 
 
 class EpubChatRequest(BaseModel):
@@ -41,6 +44,7 @@ class EpubChatRequest(BaseModel):
     filename: str
     nav_id: str
     chat_history: Optional[List[Dict[str, str]]] = None
+    request_id: Optional[str] = None
 
 
 @router.get("/health")
@@ -259,25 +263,47 @@ async def chat_with_ai(request: ChatRequest):
     Chat with AI about the PDF content with streaming response
     """
     try:
+        # Register the request for tracking
+        request_id = request_tracking_service.register_request(
+            filename=request.filename,
+            document_type="pdf",
+            page_num=request.page_num,
+            request_id=request.request_id,
+        )
+
         # Extract text from current page for context
         page_text = pdf_service.extract_page_text(request.filename, request.page_num)
 
         async def generate_response():
             try:
+                # Send the request ID first
+                yield f"data: {json.dumps({'request_id': request_id})}\n\n"
+
                 async for chunk in ollama_service.chat_stream(
                     message=request.message,
                     filename=request.filename,
                     page_num=request.page_num,
                     pdf_text=page_text,
                     chat_history=request.chat_history,
+                    request_id=request_id,
                 ):
+                    # Check if request was cancelled
+                    if request_tracking_service.is_cancelled(request_id):
+                        yield f"data: {json.dumps({'cancelled': True})}\n\n"
+                        break
+
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
 
                 # Send end-of-stream marker
                 yield f"data: {json.dumps({'done': True})}\n\n"
 
+            except asyncio.CancelledError:
+                yield f"data: {json.dumps({'cancelled': True})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                # Clean up the request
+                request_tracking_service.complete_request(request_id)
 
         return StreamingResponse(
             generate_response(),
@@ -303,6 +329,14 @@ async def chat_with_ai_epub(request: EpubChatRequest):
     Chat with AI about the EPUB content with streaming response
     """
     try:
+        # Register the request for tracking
+        request_id = request_tracking_service.register_request(
+            filename=request.filename,
+            document_type="epub",
+            nav_id=request.nav_id,
+            request_id=request.request_id,
+        )
+
         # Extract text from current section for context
         section_text = epub_service.extract_section_text(
             request.filename, request.nav_id
@@ -310,20 +344,34 @@ async def chat_with_ai_epub(request: EpubChatRequest):
 
         async def generate_response():
             try:
+                # Send the request ID first
+                yield f"data: {json.dumps({'request_id': request_id})}\n\n"
+
                 async for chunk in ollama_service.chat_epub_stream(
                     message=request.message,
                     filename=request.filename,
                     nav_id=request.nav_id,
                     epub_text=section_text,
                     chat_history=request.chat_history,
+                    request_id=request_id,
                 ):
+                    # Check if request was cancelled
+                    if request_tracking_service.is_cancelled(request_id):
+                        yield f"data: {json.dumps({'cancelled': True})}\n\n"
+                        break
+
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
 
                 # Send end-of-stream marker
                 yield f"data: {json.dumps({'done': True})}\n\n"
 
+            except asyncio.CancelledError:
+                yield f"data: {json.dumps({'cancelled': True})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                # Clean up the request
+                request_tracking_service.complete_request(request_id)
 
         return StreamingResponse(
             generate_response(),
@@ -380,3 +428,39 @@ async def get_page_context(
         raise HTTPException(status_code=404, detail="PDF not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting context: {str(e)}")
+
+
+@router.post("/chat/stop/{request_id}")
+async def stop_chat(request_id: str):
+    """
+    Stop an active PDF chat streaming request
+    """
+    try:
+        success = request_tracking_service.cancel_request(request_id)
+        if success:
+            return {"message": f"Request {request_id} cancelled successfully"}
+        else:
+            raise HTTPException(
+                status_code=404, detail="Request not found or already completed"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error stopping chat: {str(e)}")
+
+
+@router.post("/chat/epub/stop/{request_id}")
+async def stop_epub_chat(request_id: str):
+    """
+    Stop an active EPUB chat streaming request
+    """
+    try:
+        success = request_tracking_service.cancel_request(request_id)
+        if success:
+            return {"message": f"Request {request_id} cancelled successfully"}
+        else:
+            raise HTTPException(
+                status_code=404, detail="Request not found or already completed"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error stopping EPUB chat: {str(e)}"
+        )

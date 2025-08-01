@@ -318,12 +318,43 @@ export const aiService = {
 };
 
 export const chatService = {
+  stopChat: async (requestId: string): Promise<void> => {
+    try {
+      const response = await api.post(`/ai/chat/stop/${requestId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to stop chat:', error);
+      throw error;
+    }
+  },
+
+  stopEpubChat: async (requestId: string): Promise<void> => {
+    try {
+      const response = await api.post(`/ai/chat/epub/stop/${requestId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to stop EPUB chat:', error);
+      throw error;
+    }
+  },
+
   streamChat: async function* (
     message: string,
     filename: string,
     pageNum: number,
-    chatHistory?: Array<{ role: string; content: string }>
-  ): AsyncGenerator<string, void, unknown> {
+    chatHistory?: Array<{ role: string; content: string }>,
+    abortSignal?: AbortSignal
+  ): AsyncGenerator<
+    {
+      content?: string;
+      request_id?: string;
+      done?: boolean;
+      cancelled?: boolean;
+      error?: string;
+    },
+    void,
+    unknown
+  > {
     try {
       const response = await fetch('http://localhost:8000/ai/chat', {
         method: 'POST',
@@ -336,6 +367,7 @@ export const chatService = {
           page_num: pageNum,
           chat_history: chatHistory,
         }),
+        signal: abortSignal,
       });
 
       if (!response.ok) {
@@ -366,11 +398,12 @@ export const chatService = {
                 if (data.error) {
                   throw new Error(data.error);
                 }
-                if (data.done) {
+
+                // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
+                yield data;
+
+                if (data.done || data.cancelled) {
                   return;
-                }
-                if (data.content) {
-                  yield data.content;
                 }
               } catch (e) {
                 console.error('Error parsing SSE data:', e);
@@ -392,8 +425,19 @@ export const chatService = {
     message: string,
     filename: string,
     navId: string,
-    chatHistory?: Array<{ role: string; content: string }>
-  ): AsyncGenerator<string, void, unknown> {
+    chatHistory?: Array<{ role: string; content: string }>,
+    abortSignal?: AbortSignal
+  ): AsyncGenerator<
+    {
+      content?: string;
+      request_id?: string;
+      done?: boolean;
+      cancelled?: boolean;
+      error?: string;
+    },
+    void,
+    unknown
+  > {
     try {
       const response = await fetch('http://localhost:8000/ai/chat/epub', {
         method: 'POST',
@@ -406,6 +450,7 @@ export const chatService = {
           nav_id: navId,
           chat_history: chatHistory,
         }),
+        signal: abortSignal,
       });
 
       if (!response.ok) {
@@ -436,11 +481,12 @@ export const chatService = {
                 if (data.error) {
                   throw new Error(data.error);
                 }
-                if (data.done) {
+
+                // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
+                yield data;
+
+                if (data.done || data.cancelled) {
                   return;
-                }
-                if (data.content) {
-                  yield data.content;
                 }
               } catch (e) {
                 console.error('Error parsing SSE data:', e);

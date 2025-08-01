@@ -1,4 +1,4 @@
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Optional
 
 from openai import AsyncOpenAI
 
@@ -108,6 +108,7 @@ Provide a helpful analysis that will aid in understanding this content."""
         page_num: int,
         pdf_text: str,
         chat_history: list = None,
+        request_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream chat responses about the PDF content
@@ -148,6 +149,14 @@ Keep responses conversational but informative."""
             )
 
             async for chunk in stream:
+                # Check for cancellation if request_id is provided
+                if request_id:
+                    # Lazy import to avoid circular imports
+                    from .request_tracking_service import request_tracking_service
+
+                    if request_tracking_service.is_cancelled(request_id):
+                        break
+
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 
@@ -161,6 +170,7 @@ Keep responses conversational but informative."""
         nav_id: str,
         epub_text: str,
         chat_history: list = None,
+        request_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream chat responses about the EPUB content
@@ -200,6 +210,14 @@ Keep responses conversational but informative."""
             )
 
             async for chunk in stream:
+                # Check for cancellation if request_id is provided
+                if request_id:
+                    # Lazy import to avoid circular imports
+                    from .request_tracking_service import request_tracking_service
+
+                    if request_tracking_service.is_cancelled(request_id):
+                        break
+
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 

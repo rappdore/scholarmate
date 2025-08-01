@@ -41,10 +41,39 @@ export default function ChatInterface({
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [noteTitle, setNoteTitle] = useState('');
   const [saving, setSaving] = useState(false);
+  const [abortController, setAbortController] =
+    useState<AbortController | null>(null);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const clearChat = () => {
     setMessages([]);
+  };
+
+  const stopMessage = async () => {
+    if (currentRequestId) {
+      try {
+        // Call backend stop API
+        if (documentType === 'pdf') {
+          await chatService.stopChat(currentRequestId);
+        } else {
+          await chatService.stopEpubChat(currentRequestId);
+        }
+      } catch (error) {
+        console.error('Failed to stop chat:', error);
+      }
+    }
+
+    // Also abort the fetch request as fallback
+    if (abortController) {
+      abortController.abort();
+    }
+
+    // Clean up state
+    setAbortController(null);
+    setCurrentRequestId(null);
+    setLoading(false);
+    setStreaming(false);
   };
 
   const saveChatAsNote = async () => {
@@ -124,6 +153,10 @@ export default function ChatInterface({
     setLoading(true);
     setStreaming(true);
 
+    // Create abort controller for this request
+    const controller = new AbortController();
+    setAbortController(controller);
+
     // Create placeholder AI message for streaming
     const aiMessageId = (Date.now() + 1).toString();
     const aiMessage: Message = {
@@ -148,43 +181,74 @@ export default function ChatInterface({
               currentInput,
               filename,
               currentPage!, // We know currentPage is defined for PDFs
-              chatHistory
+              chatHistory,
+              controller.signal
             )
           : chatService.streamChatEpub(
               currentInput,
               filename,
               currentNavId!, // We know currentNavId is defined for EPUBs
-              chatHistory
+              chatHistory,
+              controller.signal
             );
 
       let fullResponse = '';
-      for await (const chunk of stream) {
-        fullResponse += chunk;
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === aiMessageId ? { ...msg, text: fullResponse } : msg
-          )
-        );
+      for await (const data of stream) {
+        // Handle request_id from backend
+        if (data.request_id) {
+          setCurrentRequestId(data.request_id);
+          continue;
+        }
+
+        // Handle cancellation
+        if (data.cancelled) {
+          const cancelText = 'Message generation stopped by user.';
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === aiMessageId ? { ...msg, text: cancelText } : msg
+            )
+          );
+          break;
+        }
+
+        // Handle content
+        if (data.content) {
+          fullResponse += data.content;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === aiMessageId ? { ...msg, text: fullResponse } : msg
+            )
+          );
+        }
+
+        // Handle completion
+        if (data.done) {
+          break;
+        }
       }
     } catch (error) {
       console.error('Chat failed:', error);
-      const errorText = `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please make sure the AI service is running.`;
-
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === aiMessageId ? { ...msg, text: errorText } : msg
-        )
-      );
+      // Check if the error is due to abort
+      if (error instanceof Error && error.name === 'AbortError') {
+        const abortText = 'Message generation stopped by user.';
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === aiMessageId ? { ...msg, text: abortText } : msg
+          )
+        );
+      } else {
+        const errorText = `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please make sure the AI service is running.`;
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === aiMessageId ? { ...msg, text: errorText } : msg
+          )
+        );
+      }
     } finally {
       setLoading(false);
       setStreaming(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+      setAbortController(null);
+      setCurrentRequestId(null);
     }
   };
 
@@ -389,26 +453,33 @@ export default function ChatInterface({
 
       {/* Input */}
       <div className="border-t border-gray-700 p-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
+        <div className="flex gap-2 items-end">
+          <textarea
             value={inputText}
             onChange={e => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder={
               filename
                 ? `Ask about this ${documentType.toUpperCase()}...`
                 : `Open a ${documentType.toUpperCase()} to chat`
             }
             disabled={!filename || loading}
-            className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-700 disabled:text-gray-500"
+            rows={3}
+            className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-700 disabled:text-gray-500 resize-y min-h-[76px]"
           />
           <button
-            onClick={sendMessage}
-            disabled={!inputText.trim() || !filename || loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:bg-gray-600 disabled:cursor-not-allowed hover:bg-blue-500 transition-colors"
+            onClick={streaming ? stopMessage : sendMessage}
+            disabled={
+              streaming
+                ? false // Always enable stop button when streaming
+                : !inputText.trim() || !filename || loading // Disable send button when no input, no file, or loading
+            }
+            className={`px-4 py-2 text-white rounded-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors ${
+              streaming
+                ? 'bg-red-600 hover:bg-red-500'
+                : 'bg-blue-600 hover:bg-blue-500'
+            }`}
           >
-            {loading ? 'Sending...' : 'Send'}
+            {streaming ? 'Stop' : loading ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>
