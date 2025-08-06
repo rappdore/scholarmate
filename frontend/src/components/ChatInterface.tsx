@@ -463,9 +463,20 @@ export default function ChatInterface({
           <textarea
             value={inputText}
             onChange={e => setInputText(e.target.value)}
+            onKeyDown={e => {
+              // Submit on Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault(); // Prevent new line
+                if (!streaming && inputText.trim() && filename && !loading) {
+                  sendMessage();
+                } else if (streaming) {
+                  stopMessage();
+                }
+              }
+            }}
             placeholder={
               filename
-                ? `Ask about this ${documentType.toUpperCase()}...`
+                ? `Ask about this ${documentType.toUpperCase()}... (${navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'}+Enter to send)`
                 : `Open a ${documentType.toUpperCase()} to chat`
             }
             disabled={!filename || loading}
