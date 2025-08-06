@@ -19,9 +19,9 @@ class OllamaService:
         """
         Analyze a PDF page using AI
         """
-        system_prompt = """/no_think
+        system_prompt = """
 
-        You are an intelligent study assistant. Your role is to help users understand PDF documents by providing clear, insightful analysis of the content.
+        You are an intelligent study assistant. Your role is to help users understand documents by providing clear, insightful analysis of the content.
 
 When analyzing a page, you should:
 1. Summarize the key points and main ideas
@@ -63,7 +63,7 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Analyze an EPUB section using AI
         """
-        system_prompt = """/no_think
+        system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
 
@@ -113,7 +113,7 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Stream chat responses about the PDF content
         """
-        system_prompt = f"""/no_think
+        system_prompt = f"""
         You are an intelligent study assistant helping a user understand a PDF document.
 
 Current context:
@@ -175,7 +175,7 @@ Keep responses conversational but informative."""
         """
         Stream chat responses about the EPUB content
         """
-        system_prompt = f"""/no_think
+        system_prompt = f"""
         You are an intelligent study assistant helping a user understand an EPUB document.
 
 Current context:
@@ -250,7 +250,7 @@ Keep responses conversational but informative."""
         """
         Analyze a PDF page using AI with streaming response
         """
-        system_prompt = """/no_think
+        system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand PDF documents by providing clear, insightful analysis of the content.
 
@@ -297,7 +297,7 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Analyze an EPUB section using AI with a streaming response.
         """
-        system_prompt = """/no_think
+        system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
 
