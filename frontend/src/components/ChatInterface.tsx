@@ -13,6 +13,48 @@ import '../styles/katex-dark.css'; // Custom dark theme for KaTeX
 import type { Components } from 'react-markdown';
 import { chatService, notesService, epubNotesService } from '../services/api';
 
+// Normalize LaTeX math delimiters so that remark-math can parse them.
+// - Convert \[ ... \] → $$ ... $$ (block math)
+// - Convert \( ... \) → $ ... $   (inline math)
+// Avoid replacements inside fenced code blocks ```...``` and inline code `...`.
+function normalizeMathDelimiters(markdown: string): string {
+  if (!markdown) return markdown;
+
+  // Split by fenced code blocks first (keep the fences)
+  const fencedSplit = markdown.split(/(```[\s\S]*?```)/g);
+
+  const processOutsideCode = (segment: string): string => {
+    // Further split by inline code spans (keep the backticks)
+    const inlineSplit = segment.split(/(`[^`]*`)/g);
+    return inlineSplit
+      .map((part, idx) => {
+        // Odd indices are code segments due to capturing group; leave them unchanged
+        if (idx % 2 === 1 && part.startsWith('`')) return part;
+
+        // Replace display math delimiters: \[ ... \] → $$ ... $$ (dotAll)
+        let replaced = part.replace(
+          /\\\[([\s\S]*?)\\\]/g,
+          (_m, inner) => `$$${inner}$$`
+        );
+        // Replace inline math delimiters: \( ... \) → $ ... $
+        replaced = replaced.replace(
+          /\\\(((?:.|\n)*?)\\\)/g,
+          (_m, inner) => `$${inner}$`
+        );
+        return replaced;
+      })
+      .join('');
+  };
+
+  return fencedSplit
+    .map((chunk, idx) => {
+      // Odd indices are fenced code blocks due to capturing group; leave as-is
+      if (idx % 2 === 1 && chunk.startsWith('```')) return chunk;
+      return processOutsideCode(chunk);
+    })
+    .join('');
+}
+
 interface Message {
   id: string;
   text: string;
@@ -483,7 +525,7 @@ export default function ChatInterface({
                       skipHtml={false}
                       components={markdownComponents}
                     >
-                      {message.text}
+                      {normalizeMathDelimiters(message.text)}
                     </ReactMarkdown>
                   </div>
                 )}
