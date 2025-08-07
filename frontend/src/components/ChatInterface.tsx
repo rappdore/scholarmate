@@ -4,6 +4,9 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
+import { defaultSchema } from 'hast-util-sanitize';
 import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css'; // KaTeX CSS for math rendering
 import '../styles/katex-dark.css'; // Custom dark theme for KaTeX
@@ -34,6 +37,16 @@ export default function ChatInterface({
   currentChapterTitle,
   documentType,
 }: ChatInterfaceProps) {
+  // Extend sanitize schema to allow custom <think> tag from some LLMs
+  const sanitizeSchema = {
+    ...defaultSchema,
+    tagNames: [...(defaultSchema.tagNames || []), 'think'],
+    attributes: {
+      ...(defaultSchema.attributes || {}),
+      think: ['className'],
+    },
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -256,6 +269,28 @@ export default function ChatInterface({
     }
   };
 
+  // Collapsible renderer for <think> blocks
+  const ThinkBlock = ({ children }: { children: React.ReactNode }) => {
+    const [open, setOpen] = useState(false);
+    return (
+      <div className="my-2 border border-yellow-700/60 bg-yellow-900/20 rounded">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="w-full text-left px-2 py-1 text-xs font-medium text-yellow-200 flex items-center justify-between hover:bg-yellow-800/30"
+        >
+          <span>Model thoughts</span>
+          <span className="text-yellow-300">{open ? '−' : '+'}</span>
+        </button>
+        {open && (
+          <div className="px-2 pb-2 text-xs text-gray-200 space-y-1">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const markdownComponents = {
     code: ({ className, children, ...props }) => {
       return (
@@ -267,6 +302,10 @@ export default function ChatInterface({
         </code>
       );
     },
+    // Render custom <think> blocks from LLMs
+    think: ({ children }: { children: React.ReactNode }) => (
+      <ThinkBlock>{children}</ThinkBlock>
+    ),
     // Custom styling for math elements to work with dark theme
     span: ({ className, children, ...props }) => {
       if (className?.includes('katex')) {
@@ -426,7 +465,7 @@ export default function ChatInterface({
                 className={`px-3 py-2 rounded-lg text-sm ${
                   message.isUser
                     ? 'bg-blue-600 text-white max-w-xs lg:max-w-md'
-                    : 'bg-gray-700 text-gray-200 max-w-full lg:max-w-4xl'
+                    : 'bg-gray-700 text-gray-200 w-full'
                 }`}
               >
                 {message.isUser ? (
@@ -435,7 +474,13 @@ export default function ChatInterface({
                   <div className="max-w-none text-gray-200">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
-                      rehypePlugins={[rehypeHighlight, rehypeKatex]}
+                      rehypePlugins={[
+                        rehypeRaw,
+                        [rehypeSanitize, sanitizeSchema],
+                        rehypeHighlight,
+                        rehypeKatex,
+                      ]}
+                      skipHtml={false}
                       components={markdownComponents}
                     >
                       {message.text}
