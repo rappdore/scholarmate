@@ -30,8 +30,8 @@ When analyzing a page, you should:
 4. Provide context or background knowledge when helpful
 5. Point out connections to other concepts or fields
 6. Suggest questions the reader might want to explore further
-
-Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
+lms
+Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content. Keep the tone playful and engaging. A tone too terse and lacking in levity makes the user feel like they're talking to a robot."""
 
         user_prompt = f"""Please analyze page {page_num} of the document "{filename}".
 

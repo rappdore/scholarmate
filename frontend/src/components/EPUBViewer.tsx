@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { epubService, type EPUBProgress } from '../services/epubService';
+import {
+  epubService,
+  type EPUBProgress,
+  type EPUBNavigationResponse,
+  type EPUBFlatNavigationItem,
+  type EPUBNavigationItem,
+} from '../services/epubService';
 import '../styles/epub.css';
 import EPUBHighlightMenu from './EPUBHighlightMenu';
 import {
@@ -15,20 +21,6 @@ interface EPUBViewerProps {
   filename?: string;
   onNavIdChange?: (navId: string) => void;
   onChapterInfoChange?: (chapterId: string, chapterTitle: string) => void;
-}
-
-interface NavigationItem {
-  id: string;
-  title: string;
-  href?: string;
-  level: number;
-  children: NavigationItem[];
-}
-
-interface NavigationData {
-  navigation: NavigationItem[];
-  spine_length: number;
-  has_toc: boolean;
 }
 
 interface ContentData {
@@ -55,21 +47,28 @@ type Theme = 'dark' | 'light' | 'sepia';
 type FontSize = 'small' | 'medium' | 'large' | 'xl';
 type LineHeight = 'tight' | 'normal' | 'loose';
 
+type ChapterOption = {
+  id: string;
+  title: string;
+  label: string;
+  level: number;
+};
+
 export default function EPUBViewer({
   filename,
   onNavIdChange,
   onChapterInfoChange,
 }: EPUBViewerProps) {
-  const [navigation, setNavigation] = useState<NavigationData | null>(null);
+  const [navigation, setNavigation] = useState<EPUBNavigationResponse | null>(
+    null
+  );
   const [currentContent, setCurrentContent] = useState<ContentData | null>(
     null
   );
   const [currentNavId, setCurrentNavId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chapterOptions, setChapterOptions] = useState<
-    { id: string; title: string }[]
-  >([]);
+  const [chapterOptions, setChapterOptions] = useState<ChapterOption[]>([]);
   const [epubStyles, setEpubStyles] = useState<EPUBStyles | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
   const [fontSize, setFontSize] = useState<FontSize>('medium');
@@ -176,13 +175,7 @@ export default function EPUBViewer({
       const chapterInfo = getCurrentChapterInfo(navId, contentData);
 
       // Calculate navigation metadata for progress calculation
-      const navMetadata = navigation
-        ? {
-            all_sections: getAllSectionIds(navigation.navigation),
-            chapters: getChapterMetadata(navigation.navigation),
-            spine_length: navigation.spine_length,
-          }
-        : undefined;
+      const navMetadata = buildNavMetadata(navigation);
 
       // Calculate more accurate progress if we have navigation metadata
       const progressPercentage =
@@ -257,21 +250,22 @@ export default function EPUBViewer({
     };
   };
 
-  // Helper to extract chapter ID from nav ID (simplified)
-  const extractChapterIdFromNavId = (navId: string): string => {
-    // This is a simplified approach - in a real implementation you'd want
-    // to map navigation IDs to chapter IDs based on the navigation structure
-    const parts = navId.split('_');
-    return parts.length > 1 ? `chapter_${parts[1]}` : 'chapter_1';
-  };
-
   // Helper to get all section IDs for progress calculation
   const getAllSectionIds = (
-    navItems: NavigationItem[]
+    flatNav?: EPUBFlatNavigationItem[],
+    navItems?: EPUBNavigationItem[]
   ): Array<{ id: string; title: string }> => {
+    if (flatNav && flatNav.length > 0) {
+      return flatNav
+        .filter(isReadableFlatItem)
+        .map(item => ({ id: item.id, title: item.title }));
+    }
+
+    if (!navItems) return [];
+
     const sections: Array<{ id: string; title: string }> = [];
 
-    const extractSections = (items: NavigationItem[]) => {
+    const extractSections = (items: EPUBNavigationItem[]) => {
       for (const item of items) {
         sections.push({ id: item.id, title: item.title });
         if (item.children.length > 0) {
@@ -285,7 +279,16 @@ export default function EPUBViewer({
   };
 
   // Helper to get chapter metadata for progress tracking
-  const getChapterMetadata = (navItems: NavigationItem[]) => {
+  const getChapterMetadata = (
+    flatNav?: EPUBFlatNavigationItem[],
+    navItems?: EPUBNavigationItem[]
+  ) => {
+    if (flatNav && flatNav.length > 0) {
+      return buildChapterMetadataFromFlat(flatNav);
+    }
+
+    if (!navItems) return [];
+
     return navItems.map(chapter => ({
       id: chapter.id,
       title: chapter.title,
@@ -294,6 +297,102 @@ export default function EPUBViewer({
         title: section.title,
       })),
     }));
+  };
+
+  const buildChapterMetadataFromFlat = (flatNav: EPUBFlatNavigationItem[]) => {
+    if (!flatNav.length) return [];
+
+    const byId = new Map(flatNav.map(item => [item.id, item]));
+    const readableIds = new Set(
+      flatNav.filter(isReadableFlatItem).map(item => item.id)
+    );
+
+    const chapterMap = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        sections: Array<{ id: string; title: string }>;
+      }
+    >();
+
+    const ensureChapter = (item: EPUBFlatNavigationItem) => {
+      if (!chapterMap.has(item.id)) {
+        chapterMap.set(item.id, {
+          id: item.id,
+          title: item.title,
+          sections: [],
+        });
+      }
+      return chapterMap.get(item.id)!;
+    };
+
+    for (const item of flatNav) {
+      if (item.level === 1 && readableIds.has(item.id)) {
+        ensureChapter(item);
+      }
+    }
+
+    for (const item of flatNav) {
+      if (item.level <= 1 || !readableIds.has(item.id)) {
+        continue;
+      }
+
+      let parentId = item.parent_id ?? null;
+      let assigned = false;
+
+      while (parentId) {
+        const parent = byId.get(parentId);
+        if (!parent) {
+          break;
+        }
+
+        if (parent.level <= 1) {
+          if (isReadableFlatItem(parent)) {
+            const chapter = ensureChapter(parent);
+            chapter.sections.push({ id: item.id, title: item.title });
+            assigned = true;
+            break;
+          }
+
+          parentId = parent.parent_id ?? null;
+          continue;
+        }
+
+        parentId = parent.parent_id ?? null;
+      }
+
+      if (!assigned) {
+        ensureChapter(item);
+      }
+    }
+
+    return Array.from(chapterMap.values());
+  };
+
+  const buildNavMetadata = (
+    navData: EPUBNavigationResponse | null
+  ):
+    | {
+        all_sections: Array<{ id: string; title: string }>;
+        chapters: Array<{
+          id: string;
+          title: string;
+          sections: Array<{ id: string; title: string }>;
+        }>;
+        spine_length: number;
+      }
+    | undefined => {
+    if (!navData) return undefined;
+
+    return {
+      all_sections: getAllSectionIds(
+        navData.flat_navigation,
+        navData.navigation
+      ),
+      chapters: getChapterMetadata(navData.flat_navigation, navData.navigation),
+      spine_length: navData.spine_length,
+    };
   };
 
   // Helper to calculate progress from navigation metadata
@@ -396,7 +495,7 @@ export default function EPUBViewer({
 
       // Create flat list of chapter-level options for dropdown
       // Display only top-level items (chapters) but store finest navigation ID
-      const chapterOpts = extractChapterOptions(navData.navigation);
+      const chapterOpts = buildChapterOptions(navData);
       setChapterOptions(chapterOpts);
 
       // Set this as loaded only after we have navigation
@@ -452,38 +551,64 @@ export default function EPUBViewer({
     }
   }, [currentContent, savedProgress]);
 
-  const extractChapterOptions = (
-    navItems: NavigationItem[]
-  ): { id: string; title: string }[] => {
-    const options: { id: string; title: string }[] = [];
+  const isReadableFlatItem = (item: EPUBFlatNavigationItem): boolean => {
+    return (
+      (item.spine_positions && item.spine_positions.length > 0) ||
+      item.child_count === 0
+    );
+  };
 
-    const processItems = (items: NavigationItem[], level: number = 1) => {
-      for (const item of items) {
-        // For display, we show chapter-level (level 1) items
-        // But we store the finest navigation level available
-        if (level === 1) {
-          // If this chapter has subsections, use the first subsection ID for navigation
-          const navId =
-            item.children.length > 0 ? getFinestNavId(item) : item.id;
-          options.push({
-            id: navId,
-            title: item.title,
-          });
-        }
+  const buildChapterOptions = (
+    navData: EPUBNavigationResponse
+  ): ChapterOption[] => {
+    if (navData.flat_navigation && navData.flat_navigation.length > 0) {
+      return navData.flat_navigation.filter(isReadableFlatItem).map(item => {
+        const prefix =
+          item.level > 1
+            ? `${Array(item.level - 1)
+                .fill('> ')
+                .join('')}`
+            : '';
+        return {
+          id: item.id,
+          title: item.title,
+          label: `${prefix}${item.title}`,
+          level: item.level,
+        };
+      });
+    }
 
-        // Process children for nested navigation
-        if (item.children.length > 0) {
-          processItems(item.children, level + 1);
-        }
+    return extractChapterOptionsFromTree(navData.navigation);
+  };
+
+  const extractChapterOptionsFromTree = (
+    navItems: EPUBNavigationItem[],
+    level: number = 1
+  ): ChapterOption[] => {
+    const options: ChapterOption[] = [];
+
+    for (const item of navItems) {
+      if (level === 1) {
+        const navId = item.children.length > 0 ? getFinestNavId(item) : item.id;
+        options.push({
+          id: navId,
+          title: item.title,
+          label: item.title,
+          level,
+        });
       }
-    };
 
-    processItems(navItems);
+      if (item.children.length > 0) {
+        options.push(
+          ...extractChapterOptionsFromTree(item.children, level + 1)
+        );
+      }
+    }
+
     return options;
   };
 
-  const getFinestNavId = (item: NavigationItem): string => {
-    // Recursively find the finest (deepest) navigation ID
+  const getFinestNavId = (item: EPUBNavigationItem): string => {
     if (item.children.length === 0) {
       return item.id;
     }
@@ -517,9 +642,10 @@ export default function EPUBViewer({
         // Otherwise, scroll to top for new sections
         contentContainerRef.current.scrollTop = 0;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading content:', err);
-      setError(`Error loading content: ${err.message}`);
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Error loading content: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -567,8 +693,17 @@ export default function EPUBViewer({
       }
     }
 
+    if (navigation?.flat_navigation) {
+      const match = navigation.flat_navigation.find(
+        item => item.id === currentNavId
+      );
+      if (match) {
+        return match.title;
+      }
+    }
+
     // Fallback: search through all navigation items
-    const findTitleInNav = (items: NavigationItem[]): string => {
+    const findTitleInNav = (items: EPUBNavigationItem[]): string => {
       for (const item of items) {
         if (item.id === currentNavId) {
           return item.title;
@@ -938,7 +1073,7 @@ export default function EPUBViewer({
             >
               {chapterOptions.map(option => (
                 <option key={option.id} value={option.id}>
-                  {option.title}
+                  {option.label}
                 </option>
               ))}
             </select>

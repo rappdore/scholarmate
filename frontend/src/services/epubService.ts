@@ -2,6 +2,33 @@ import axios from 'axios';
 import type { EPUBDocument, EPUBDocumentInfo } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
 
+export interface EPUBNavigationItem {
+  id: string;
+  title: string;
+  href?: string;
+  level: number;
+  children: EPUBNavigationItem[];
+}
+
+export interface EPUBFlatNavigationItem {
+  id: string;
+  title: string;
+  href?: string;
+  level: number;
+  parent_id?: string | null;
+  order: number;
+  spine_positions: number[];
+  spine_item_ids?: string[];
+  child_count: number;
+}
+
+export interface EPUBNavigationResponse {
+  navigation: EPUBNavigationItem[];
+  flat_navigation?: EPUBFlatNavigationItem[];
+  spine_length: number;
+  has_toc: boolean;
+}
+
 const api = axios.create({
   baseURL: 'http://localhost:8000',
 });
@@ -53,7 +80,7 @@ export const epubService = {
     return `http://localhost:8000/epub/${encodeURIComponent(filename)}/thumbnail`;
   },
 
-  getNavigation: async (filename: string): Promise<any> => {
+  getNavigation: async (filename: string): Promise<EPUBNavigationResponse> => {
     const response = await api.get(
       `/epub/${encodeURIComponent(filename)}/navigation`
     );
