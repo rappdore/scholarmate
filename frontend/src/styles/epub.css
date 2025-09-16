@@ -2,16 +2,17 @@
 
 /* Outer container: Controls spacing from viewport edges */
 .epub-outer-container {
-  /* This container controls the margins/padding from screen edges */
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem 1.5rem;
+  /* Stretch across the reader pane while keeping comfortable gutter space */
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 2rem 2rem 3rem 2rem;
 }
 
 /* Responsive padding for outer container */
 @media (max-width: 768px) {
   .epub-outer-container {
-    padding: 1.5rem 1rem 2.5rem 1rem;
+    padding: 1.5rem 1.25rem 2.5rem 1.25rem;
   }
 }
 
@@ -156,6 +157,9 @@
 /* Light theme overrides */
 .epub-content-container[data-theme='light'] {
   color: #1f2937 !important;
+  background: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
 }
 
 .epub-content-container[data-theme='light'] * {
@@ -198,6 +202,23 @@
 
 .epub-content-container[data-theme='light'] table {
   background: #ffffff;
+}
+
+.epub-content-container[data-theme='dark'] {
+  background: rgba(17, 24, 39, 0.6);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+}
+
+.epub-content-container[data-theme='sepia'] {
+  background: #f5e6d3;
+  color: #5b4636 !important;
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(107, 70, 2, 0.15);
+}
+
+.epub-content-container[data-theme='sepia'] * {
+  color: inherit !important;
 }
 
 .epub-content-container[data-theme='light'] th {
