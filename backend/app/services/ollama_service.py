@@ -128,7 +128,7 @@ You should:
 4. Suggest related questions or areas to explore
 5. Reference specific parts of the content when relevant
 
-Keep responses conversational but informative."""
+Keep responses conversational but informative. When explaining a concept, emphasize intuition. Rigor is important, but not at the expense of clarity. Why something makes intuitive sense is just as important as the technical details."""
 
         messages = [{"role": "system", "content": system_prompt}]
 

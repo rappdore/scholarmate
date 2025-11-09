@@ -191,9 +191,23 @@ export default function Library() {
     }
   };
 
-  const filteredDocuments = documents.filter(doc =>
-    matchesStatusFilter(doc as any, activeTab)
-  ); // Use 'as any' for now
+  const filteredDocuments = documents
+    .filter(doc => matchesStatusFilter(doc as any, activeTab))
+    .sort((a, b) => {
+      // Sort by last_updated in reverse chronological order (most recent first)
+      const aLastUpdated = a.reading_progress?.last_updated;
+      const bLastUpdated = b.reading_progress?.last_updated;
+
+      // Books with reading progress come before books without
+      if (!aLastUpdated && !bLastUpdated) return 0;
+      if (!aLastUpdated) return 1;
+      if (!bLastUpdated) return -1;
+
+      // Compare dates in reverse chronological order
+      return (
+        new Date(bLastUpdated).getTime() - new Date(aLastUpdated).getTime()
+      );
+    });
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
