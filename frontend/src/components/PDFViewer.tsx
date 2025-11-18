@@ -64,6 +64,16 @@ export default function PDFViewer({
     getSavedViewMode()
   ); // Add view mode state
 
+  // Page turn timing state
+  const [pageTurnTime, setPageTurnTime] = useState<number | null>(null); // Time in seconds
+  const [lastPageTurnTime, setLastPageTurnTime] = useState<number | null>(null); // Previous turn time for comparison
+  const [isFaster, setIsFaster] = useState<boolean | null>(null); // true = green, false = red, null = first turn
+  const lastPageRef = useRef<number | null>(null); // null means not initialized yet
+  const pageStartTimeRef = useRef<number>(Date.now());
+
+  // Session page counter state
+  const [sessionPagesRead, setSessionPagesRead] = useState<number>(0);
+
   // Text selection state
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -115,6 +125,57 @@ export default function PDFViewer({
       console.warn('Error saving view mode to localStorage:', error);
     }
   }, [viewMode]);
+
+  // Track page turn timing and session page count
+  useEffect(() => {
+    const previousPage = lastPageRef.current;
+
+    // Skip tracking if this is the first render (previousPage is null)
+    if (previousPage === null) {
+      lastPageRef.current = currentPage;
+      return;
+    }
+
+    if (currentPage > previousPage) {
+      // Forward navigation - record time and increment counter
+      const elapsedSeconds = (Date.now() - pageStartTimeRef.current) / 1000;
+      setPageTurnTime(elapsedSeconds);
+
+      // Compare with last turn time
+      if (lastPageTurnTime === null) {
+        // First page turn - show green
+        setIsFaster(true);
+      } else {
+        setIsFaster(elapsedSeconds < lastPageTurnTime);
+      }
+
+      setLastPageTurnTime(elapsedSeconds);
+      pageStartTimeRef.current = Date.now();
+
+      // Increment session page counter
+      setSessionPagesRead(prev => prev + 1);
+    } else if (currentPage < previousPage) {
+      // Backward navigation - reset timer and blank out display
+      setPageTurnTime(null);
+      setIsFaster(null);
+      pageStartTimeRef.current = Date.now();
+
+      // Decrement session page counter
+      setSessionPagesRead(prev => prev - 1);
+    }
+
+    lastPageRef.current = currentPage;
+  }, [currentPage, lastPageTurnTime]);
+
+  // Reset timer and session counter when document changes
+  useEffect(() => {
+    setPageTurnTime(null);
+    setLastPageTurnTime(null);
+    setIsFaster(null);
+    setSessionPagesRead(0);
+    pageStartTimeRef.current = Date.now();
+    lastPageRef.current = null; // Reset to null so first page change is ignored
+  }, [filename]); // Only reset when filename changes
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -189,6 +250,13 @@ export default function PDFViewer({
 
   const resetZoom = () => {
     setScale(1.0);
+  };
+
+  // Format time in minutes:seconds
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Toggle view mode
@@ -461,6 +529,30 @@ export default function PDFViewer({
           {filename}
         </h1>
         <div className="flex items-center gap-4">
+          {/* Session pages read counter */}
+          <div className="flex items-center">
+            <span
+              className={`text-sm font-mono ${
+                sessionPagesRead >= 0 ? 'text-green-400' : 'text-red-400'
+              }`}
+            >
+              Pages: {sessionPagesRead}
+            </span>
+          </div>
+
+          {/* Page turn time display */}
+          {pageTurnTime !== null && (
+            <div className="flex items-center">
+              <span
+                className={`text-sm font-mono ${
+                  isFaster ? 'text-green-400' : 'text-red-400'
+                }`}
+              >
+                {formatTime(pageTurnTime)}
+              </span>
+            </div>
+          )}
+
           {/* View mode toggle */}
           <div className="flex items-center gap-2">
             <button
