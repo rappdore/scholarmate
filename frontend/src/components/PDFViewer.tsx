@@ -71,6 +71,10 @@ export default function PDFViewer({
   const lastPageRef = useRef<number | null>(null); // null means not initialized yet
   const pageStartTimeRef = useRef<number>(Date.now());
 
+  // Average page time state
+  const [averagePageTime, setAveragePageTime] = useState<number>(0);
+  const [numTimeSamples, setNumTimeSamples] = useState<number>(0);
+
   // Session page counter state
   const [sessionPagesRead, setSessionPagesRead] = useState<number>(0);
 
@@ -141,6 +145,14 @@ export default function PDFViewer({
       const elapsedSeconds = (Date.now() - pageStartTimeRef.current) / 1000;
       setPageTurnTime(elapsedSeconds);
 
+      // Update average
+      // (n * current average + current page)/( n + 1)
+      const newAverage =
+        (numTimeSamples * averagePageTime + elapsedSeconds) /
+        (numTimeSamples + 1);
+      setAveragePageTime(newAverage);
+      setNumTimeSamples(prev => prev + 1);
+
       // Compare with last turn time
       if (lastPageTurnTime === null) {
         // First page turn - show green
@@ -165,7 +177,7 @@ export default function PDFViewer({
     }
 
     lastPageRef.current = currentPage;
-  }, [currentPage, lastPageTurnTime]);
+  }, [currentPage, lastPageTurnTime, averagePageTime, numTimeSamples]);
 
   // Reset timer and session counter when document changes
   useEffect(() => {
@@ -173,6 +185,8 @@ export default function PDFViewer({
     setLastPageTurnTime(null);
     setIsFaster(null);
     setSessionPagesRead(0);
+    setAveragePageTime(0);
+    setNumTimeSamples(0);
     pageStartTimeRef.current = Date.now();
     lastPageRef.current = null; // Reset to null so first page change is ignored
   }, [filename]); // Only reset when filename changes
@@ -539,6 +553,15 @@ export default function PDFViewer({
               Pages: {sessionPagesRead}
             </span>
           </div>
+
+          {/* Average page time display */}
+          {averagePageTime > 0 && (
+            <div className="flex items-center">
+              <span className="text-sm font-mono text-blue-400">
+                Avg: {formatTime(averagePageTime)}
+              </span>
+            </div>
+          )}
 
           {/* Page turn time display */}
           {pageTurnTime !== null && (
