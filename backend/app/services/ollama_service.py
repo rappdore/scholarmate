@@ -1,15 +1,33 @@
+import os
 from typing import Any, AsyncGenerator, Dict, Optional
 
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+load_dotenv()
+
+# get the API key from the environment variables
+API_KEY = os.getenv("OPENAI_API_KEY")
+if not API_KEY:
+    raise ValueError("OPENAI_API_KEY is not set")
+
+# get the LLM URL from the environment variables
+# sometimes we will use the local LLM URL, sometimes we will use the OpenRouter URL
+LLM_URL = os.getenv("LLM_URL")
+if not LLM_URL:
+    raise ValueError("LLM_URL is not set")
+
+# get the LLM model from the environment variables
+LLM_MODEL = os.getenv("LLM_MODEL")
+if not LLM_MODEL:
+    raise ValueError("LLM_MODEL is not set")
 
 
 class OllamaService:
-    def __init__(
-        self, base_url: str = "http://localhost:1234/v1", model: str = "qwen3:30b"
-    ):
+    def __init__(self, base_url: str = LLM_URL, model: str = LLM_MODEL):
         self.client = AsyncOpenAI(
             base_url=base_url,
-            api_key="ollama",  # Ollama doesn't require a real API key
+            api_key=API_KEY,  # Ollama doesn't require a real API key
         )
         self.model = model
 
@@ -128,7 +146,7 @@ You should:
 4. Suggest related questions or areas to explore
 5. Reference specific parts of the content when relevant
 
-Keep responses conversational but informative. When explaining a concept, emphasize intuition. Rigor is important, but not at the expense of clarity. Why something makes intuitive sense is just as important as the technical details."""
+Keep responses conversational but informative. When explaining a concept, emphasize intuition. Rigor is important, but not at the expense of clarity. Why something makes intuitive sense is just as important as the technical details. If explaining math, use LaTeX to format equations."""
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -146,6 +164,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 temperature=0.7,
                 # max_tokens=800,
                 stream=True,
+                extra_body={"reasoning": {"enabled": True}},
             )
 
             async for chunk in stream:

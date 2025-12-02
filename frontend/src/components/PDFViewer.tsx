@@ -78,6 +78,25 @@ export default function PDFViewer({
   // Session page counter state
   const [sessionPagesRead, setSessionPagesRead] = useState<number>(0);
 
+  // Session ID state - generated once per reading session
+  const [sessionId, setSessionId] = useState<string>('');
+
+  // Generate session ID on mount or when filename changes
+  useEffect(() => {
+    // Generate a new session ID when a PDF is opened
+    const generateSessionId = () => {
+      return crypto.randomUUID();
+    };
+
+    if (filename && !sessionId) {
+      // Generate new session ID if we don't have one
+      setSessionId(generateSessionId());
+    } else if (!filename) {
+      // Clear session ID when no file is selected (returned to library)
+      setSessionId('');
+    }
+  }, [filename]); // Only depend on filename
+
   // Text selection state
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -165,7 +184,25 @@ export default function PDFViewer({
       pageStartTimeRef.current = Date.now();
 
       // Increment session page counter
-      setSessionPagesRead(prev => prev + 1);
+      const newPagesRead = sessionPagesRead + 1;
+      setSessionPagesRead(newPagesRead);
+
+      // Send reading session data to backend
+      if (sessionId && filename) {
+        fetch('/api/reading-statistics/session/update', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            pdf_filename: filename,
+            pages_read: newPagesRead,
+            average_time_per_page: newAverage,
+          }),
+        }).catch(error => {
+          console.error('Failed to update reading statistics:', error);
+          // Don't block the UI on statistics update failures
+        });
+      }
     } else if (currentPage < previousPage) {
       // Backward navigation - reset timer and blank out display
       setPageTurnTime(null);
@@ -543,6 +580,15 @@ export default function PDFViewer({
           {filename}
         </h1>
         <div className="flex items-center gap-4">
+          {/* Session ID display (for debugging) */}
+          {sessionId && (
+            <div className="flex items-center">
+              <span className="text-xs font-mono text-gray-500">
+                Session: {sessionId.substring(0, 8)}...
+              </span>
+            </div>
+          )}
+
           {/* Session pages read counter */}
           <div className="flex items-center">
             <span

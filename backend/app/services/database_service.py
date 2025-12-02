@@ -23,6 +23,7 @@ from .epub_progress_service import EPUBProgressService
 from .highlights_service import HighlightsService
 from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
+from .reading_statistics_service import ReadingStatisticsService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class DatabaseService:
         self.epub_chat_notes = EPUBChatNotesService(db_path)
         self.highlights = HighlightsService(db_path)
         self.epub_highlights = EPUBHighlightService(db_path)
+        self.reading_statistics = ReadingStatisticsService(db_path)
 
     def _ensure_data_dir(self):
         """
