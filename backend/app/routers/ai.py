@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     page_num: int
     chat_history: Optional[List[Dict[str, str]]] = None
     request_id: Optional[str] = None
+    is_new_chat: Optional[bool] = False
 
 
 class EpubChatRequest(BaseModel):
@@ -45,6 +46,7 @@ class EpubChatRequest(BaseModel):
     nav_id: str
     chat_history: Optional[List[Dict[str, str]]] = None
     request_id: Optional[str] = None
+    is_new_chat: Optional[bool] = False
 
 
 @router.get("/health")
@@ -286,6 +288,7 @@ async def chat_with_ai(request: ChatRequest):
                     pdf_text=page_text,
                     chat_history=request.chat_history,
                     request_id=request_id,
+                    is_new_chat=request.is_new_chat,
                 ):
                     # Check if request was cancelled
                     if request_tracking_service.is_cancelled(request_id):
@@ -354,6 +357,7 @@ async def chat_with_ai_epub(request: EpubChatRequest):
                     epub_text=section_text,
                     chat_history=request.chat_history,
                     request_id=request_id,
+                    is_new_chat=request.is_new_chat,
                 ):
                     # Check if request was cancelled
                     if request_tracking_service.is_cancelled(request_id):

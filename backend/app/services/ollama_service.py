@@ -30,6 +30,8 @@ class OllamaService:
             api_key=API_KEY,  # Ollama doesn't require a real API key
         )
         self.model = model
+        # Session storage for reasoning traces, keyed by filename
+        self._reasoning_sessions: Dict[str, list] = {}
 
     async def analyze_page(
         self, text: str, filename: str, page_num: int, context: str = ""
@@ -127,10 +129,23 @@ Provide a helpful analysis that will aid in understanding this content."""
         pdf_text: str,
         chat_history: list = None,
         request_id: Optional[str] = None,
+        is_new_chat: bool = False,
     ) -> AsyncGenerator[str, None]:
         """
-        Stream chat responses about the PDF content
+        Stream chat responses about the PDF content with reasoning trace preservation
         """
+        # Clear reasoning session if this is a new chat
+        if is_new_chat:
+            if filename in self._reasoning_sessions:
+                print(f"[DEBUG] Clearing reasoning session for {filename}")
+                del self._reasoning_sessions[filename]
+            else:
+                print(f"[DEBUG] Starting new chat for {filename} (no existing session)")
+
+        # Initialize session storage if it doesn't exist
+        if filename not in self._reasoning_sessions:
+            self._reasoning_sessions[filename] = []
+
         system_prompt = f"""
         You are an intelligent study assistant helping a user understand a PDF document.
 
@@ -150,9 +165,34 @@ Keep responses conversational but informative. When explaining a concept, emphas
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Add chat history if provided
+        # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:
-            messages.extend(chat_history[-10:])  # Keep last 10 messages for context
+            stored_reasoning = self._reasoning_sessions[filename]
+            assistant_msg_count = 0
+
+            for msg in chat_history[-10:]:  # Keep last 10 messages for context
+                if msg.get("role") == "assistant":
+                    # Try to match this assistant message with stored reasoning
+                    if assistant_msg_count < len(stored_reasoning):
+                        reasoning = stored_reasoning[assistant_msg_count]
+                        if reasoning:
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": msg.get("content", ""),
+                                    "reasoning_details": reasoning,
+                                }
+                            )
+                            print(
+                                f"[DEBUG] Added assistant message {assistant_msg_count} with reasoning_details: {reasoning}"
+                            )
+                        else:
+                            messages.append(msg)
+                        assistant_msg_count += 1
+                    else:
+                        messages.append(msg)
+                else:
+                    messages.append(msg)
 
         # Add current message
         messages.append({"role": "user", "content": message})
@@ -167,6 +207,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 extra_body={"reasoning": {"enabled": True}},
             )
 
+            reasoning_details = None
             async for chunk in stream:
                 # Check for cancellation if request_id is provided
                 if request_id:
@@ -179,6 +220,27 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 
+                # Capture reasoning_details from the response
+                if hasattr(chunk.choices[0], "message") and hasattr(
+                    chunk.choices[0].message, "reasoning_details"
+                ):
+                    reasoning_details = chunk.choices[0].message.reasoning_details
+                elif hasattr(chunk.choices[0], "delta") and hasattr(
+                    chunk.choices[0].delta, "reasoning_details"
+                ):
+                    reasoning_details = chunk.choices[0].delta.reasoning_details
+
+            # Store the reasoning_details for this response
+            if reasoning_details:
+                self._reasoning_sessions[filename].append(reasoning_details)
+                print(
+                    f"[DEBUG] Stored reasoning_details for {filename}: {reasoning_details}"
+                )
+            else:
+                # Store None to keep indexing aligned
+                self._reasoning_sessions[filename].append(None)
+                print(f"[DEBUG] No reasoning_details in response for {filename}")
+
         except Exception as e:
             yield f"Error: {str(e)}"
 
@@ -190,10 +252,23 @@ Keep responses conversational but informative. When explaining a concept, emphas
         epub_text: str,
         chat_history: list = None,
         request_id: Optional[str] = None,
+        is_new_chat: bool = False,
     ) -> AsyncGenerator[str, None]:
         """
-        Stream chat responses about the EPUB content
+        Stream chat responses about the EPUB content with reasoning trace preservation
         """
+        # Clear reasoning session if this is a new chat
+        if is_new_chat:
+            if filename in self._reasoning_sessions:
+                print(f"[DEBUG] Clearing reasoning session for {filename}")
+                del self._reasoning_sessions[filename]
+            else:
+                print(f"[DEBUG] Starting new chat for {filename} (no existing session)")
+
+        # Initialize session storage if it doesn't exist
+        if filename not in self._reasoning_sessions:
+            self._reasoning_sessions[filename] = []
+
         system_prompt = f"""
         You are an intelligent study assistant helping a user understand an EPUB document.
 
@@ -213,9 +288,34 @@ Keep responses conversational but informative."""
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Add chat history if provided
+        # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:
-            messages.extend(chat_history[-10:])  # Keep last 10 messages for context
+            stored_reasoning = self._reasoning_sessions[filename]
+            assistant_msg_count = 0
+
+            for msg in chat_history[-10:]:  # Keep last 10 messages for context
+                if msg.get("role") == "assistant":
+                    # Try to match this assistant message with stored reasoning
+                    if assistant_msg_count < len(stored_reasoning):
+                        reasoning = stored_reasoning[assistant_msg_count]
+                        if reasoning:
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": msg.get("content", ""),
+                                    "reasoning_details": reasoning,
+                                }
+                            )
+                            print(
+                                f"[DEBUG] Added assistant message {assistant_msg_count} with reasoning_details: {reasoning}"
+                            )
+                        else:
+                            messages.append(msg)
+                        assistant_msg_count += 1
+                    else:
+                        messages.append(msg)
+                else:
+                    messages.append(msg)
 
         # Add current message
         messages.append({"role": "user", "content": message})
@@ -226,8 +326,10 @@ Keep responses conversational but informative."""
                 messages=messages,
                 temperature=0.7,
                 stream=True,
+                extra_body={"reasoning": {"enabled": True}},
             )
 
+            reasoning_details = None
             async for chunk in stream:
                 # Check for cancellation if request_id is provided
                 if request_id:
@@ -239,6 +341,27 @@ Keep responses conversational but informative."""
 
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+
+                # Capture reasoning_details from the response
+                if hasattr(chunk.choices[0], "message") and hasattr(
+                    chunk.choices[0].message, "reasoning_details"
+                ):
+                    reasoning_details = chunk.choices[0].message.reasoning_details
+                elif hasattr(chunk.choices[0], "delta") and hasattr(
+                    chunk.choices[0].delta, "reasoning_details"
+                ):
+                    reasoning_details = chunk.choices[0].delta.reasoning_details
+
+            # Store the reasoning_details for this response
+            if reasoning_details:
+                self._reasoning_sessions[filename].append(reasoning_details)
+                print(
+                    f"[DEBUG] Stored reasoning_details for {filename}: {reasoning_details}"
+                )
+            else:
+                # Store None to keep indexing aligned
+                self._reasoning_sessions[filename].append(None)
+                print(f"[DEBUG] No reasoning_details in response for {filename}")
 
         except Exception as e:
             yield f"Error: {str(e)}"

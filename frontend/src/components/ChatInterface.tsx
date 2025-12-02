@@ -233,6 +233,9 @@ export default function ChatInterface({
         content: msg.text,
       }));
 
+      // Detect if this is a new chat (no messages yet)
+      const isNewChat = messages.length === 0;
+
       // Stream the AI response based on document type
       const stream =
         documentType === 'pdf'
@@ -241,14 +244,16 @@ export default function ChatInterface({
               filename,
               currentPage!, // We know currentPage is defined for PDFs
               chatHistory,
-              controller.signal
+              controller.signal,
+              isNewChat
             )
           : chatService.streamChatEpub(
               currentInput,
               filename,
               currentNavId!, // We know currentNavId is defined for EPUBs
               chatHistory,
-              controller.signal
+              controller.signal,
+              isNewChat
             );
 
       let fullResponse = '';

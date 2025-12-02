@@ -343,7 +343,8 @@ export const chatService = {
     filename: string,
     pageNum: number,
     chatHistory?: Array<{ role: string; content: string }>,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    isNewChat?: boolean
   ): AsyncGenerator<
     {
       content?: string;
@@ -366,6 +367,7 @@ export const chatService = {
           filename,
           page_num: pageNum,
           chat_history: chatHistory,
+          is_new_chat: isNewChat || false,
         }),
         signal: abortSignal,
       });
@@ -426,7 +428,8 @@ export const chatService = {
     filename: string,
     navId: string,
     chatHistory?: Array<{ role: string; content: string }>,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    isNewChat?: boolean
   ): AsyncGenerator<
     {
       content?: string;
@@ -449,6 +452,7 @@ export const chatService = {
           filename,
           nav_id: navId,
           chat_history: chatHistory,
+          is_new_chat: isNewChat || false,
         }),
         signal: abortSignal,
       });
