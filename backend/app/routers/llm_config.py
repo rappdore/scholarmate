@@ -230,24 +230,35 @@ async def activate_configuration(config_id: int):
         404: Configuration not found
     """
     try:
+        logger.info(f"🔄 [ACTIVATION] Activating LLM configuration ID: {config_id}")
         result = llm_config_service.activate_configuration(config_id)
+        logger.info(
+            f"✅ [ACTIVATION] Database updated. New active config: {result.get('new_active_id')}"
+        )
 
         # Trigger OllamaService to reload configuration
         # This will be implemented when we modify OllamaService
         try:
             from app.services.ollama_service import ollama_service
 
+            logger.info(
+                "🔄 [ACTIVATION] Calling ollama_service.reload_configuration()..."
+            )
             ollama_service.reload_configuration()
-            logger.info("OllamaService configuration reloaded")
+            logger.info(
+                "✅ [ACTIVATION] OllamaService configuration reloaded successfully!"
+            )
         except Exception as reload_error:
-            logger.warning(f"Failed to reload OllamaService: {reload_error}")
+            logger.warning(
+                f"⚠️ [ACTIVATION] Failed to reload OllamaService: {reload_error}"
+            )
             # Don't fail the activation if reload fails
 
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Error activating configuration {config_id}: {e}")
+        logger.error(f"❌ [ACTIVATION] Error activating configuration {config_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -7,14 +7,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services.epub_service import EPUBService
-from ..services.ollama_service import OllamaService
+from ..services.ollama_service import ollama_service
 from ..services.pdf_service import PDFService
 from ..services.request_tracking_service import request_tracking_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 # Initialize services
-ollama_service = OllamaService()
 pdf_service = PDFService()
 epub_service = EPUBService()
 

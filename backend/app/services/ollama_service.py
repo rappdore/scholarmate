@@ -42,14 +42,18 @@ class OllamaService:
                 self.base_url = config["base_url"]
                 self.api_key = config["api_key"]
                 self.model = config["model_name"]
-                logger.info(f"Loaded LLM configuration from database: {config['name']}")
+                logger.info(
+                    f"✅ Loaded LLM configuration from database: {config['name']}"
+                )
+                logger.info(f"   - Base URL: {self.base_url}")
+                logger.info(f"   - Model: {self.model}")
             else:
                 # No active configuration, use LM Studio defaults
                 self.base_url = DEFAULT_BASE_URL
                 self.api_key = DEFAULT_API_KEY
                 self.model = DEFAULT_MODEL
                 logger.warning(
-                    "No active LLM configuration found in database. "
+                    f"⚠️  No active LLM configuration found in database. "
                     f"Using default fallback: {DEFAULT_BASE_URL}"
                 )
 
@@ -72,9 +76,11 @@ class OllamaService:
         Reload configuration from database (called when active config changes).
         This allows switching LLMs without restarting the service.
         """
-        logger.info("Reloading LLM configuration...")
+        logger.info("🔄 Reloading LLM configuration...")
         self._load_active_configuration()
-        logger.info(f"Configuration reloaded: {self.base_url} / {self.model}")
+        logger.info("✅ Configuration reloaded successfully!")
+        logger.info(f"   - Base URL: {self.base_url}")
+        logger.info(f"   - Model: {self.model}")
 
     async def analyze_page(
         self, text: str, filename: str, page_num: int, context: str = ""
@@ -82,6 +88,10 @@ class OllamaService:
         """
         Analyze a PDF page using AI
         """
+        logger.info(
+            f"[LLM] analyze_page - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand documents by providing clear, insightful analysis of the content.
@@ -126,6 +136,10 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Analyze an EPUB section using AI
         """
+        logger.info(
+            f"[LLM] analyze_epub_section - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
@@ -177,6 +191,10 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Stream chat responses about the PDF content with reasoning trace preservation
         """
+        logger.info(
+            f"[LLM] chat_stream - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         # Clear reasoning session if this is a new chat
         if is_new_chat:
             if filename in self._reasoning_sessions:
@@ -300,6 +318,10 @@ Keep responses conversational but informative. When explaining a concept, emphas
         """
         Stream chat responses about the EPUB content with reasoning trace preservation
         """
+        logger.info(
+            f"[LLM] chat_epub_stream - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         # Clear reasoning session if this is a new chat
         if is_new_chat:
             if filename in self._reasoning_sessions:
@@ -435,6 +457,10 @@ Keep responses conversational but informative."""
         """
         Analyze a PDF page using AI with streaming response
         """
+        logger.info(
+            f"[LLM] analyze_page_stream - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand PDF documents by providing clear, insightful analysis of the content.
@@ -482,6 +508,10 @@ Provide a helpful analysis that will aid in understanding this content."""
         """
         Analyze an EPUB section using AI with a streaming response.
         """
+        logger.info(
+            f"[LLM] analyze_epub_section_stream - Using model: {self.model}, base_url: {self.base_url}"
+        )
+
         system_prompt = """
 
         You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
