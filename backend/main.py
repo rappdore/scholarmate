@@ -7,6 +7,7 @@ from app.routers import (
     epub_highlights,
     epub_notes,
     highlights,
+    llm_config,
     notes,
     pdf,
     reading_statistics,
@@ -47,6 +48,7 @@ app.include_router(epub_notes.router)
 app.include_router(highlights.router)
 app.include_router(epub_highlights.router)
 app.include_router(reading_statistics.router)
+app.include_router(llm_config.router)
 
 if __name__ == "__main__":
     import uvicorn

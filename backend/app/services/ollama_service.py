@@ -1,37 +1,80 @@
-import os
+import logging
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-load_dotenv()
+# Configure logger
+logger = logging.getLogger(__name__)
 
-# get the API key from the environment variables
-API_KEY = os.getenv("OPENAI_API_KEY")
-if not API_KEY:
-    raise ValueError("OPENAI_API_KEY is not set")
-
-# get the LLM URL from the environment variables
-# sometimes we will use the local LLM URL, sometimes we will use the OpenRouter URL
-LLM_URL = os.getenv("LLM_URL")
-if not LLM_URL:
-    raise ValueError("LLM_URL is not set")
-
-# get the LLM model from the environment variables
-LLM_MODEL = os.getenv("LLM_MODEL")
-if not LLM_MODEL:
-    raise ValueError("LLM_MODEL is not set")
+# Default fallback configuration for LM Studio
+DEFAULT_BASE_URL = "http://localhost:1234/v1"
+DEFAULT_API_KEY = "not-needed"
+DEFAULT_MODEL = ""
 
 
 class OllamaService:
-    def __init__(self, base_url: str = LLM_URL, model: str = LLM_MODEL):
-        self.client = AsyncOpenAI(
-            base_url=base_url,
-            api_key=API_KEY,  # Ollama doesn't require a real API key
-        )
-        self.model = model
+    def __init__(self, db_path: str = "data/reading_progress.db"):
+        self.db_path = db_path
+        self.client = None
+        self.model = None
+        self.base_url = None
+        self.api_key = None
         # Session storage for reasoning traces, keyed by filename
         self._reasoning_sessions: Dict[str, list] = {}
+
+        # Load initial configuration
+        self._load_active_configuration()
+
+    def _load_active_configuration(self):
+        """
+        Load the active LLM configuration from database.
+        Falls back to LM Studio defaults if no active configuration exists.
+        """
+        try:
+            # Import here to avoid circular dependency
+            from app.services.llm_config_service import LLMConfigService
+
+            llm_config_service = LLMConfigService(self.db_path)
+            config = llm_config_service.get_active_configuration()
+
+            if config:
+                # Load from database
+                self.base_url = config["base_url"]
+                self.api_key = config["api_key"]
+                self.model = config["model_name"]
+                logger.info(f"Loaded LLM configuration from database: {config['name']}")
+            else:
+                # No active configuration, use LM Studio defaults
+                self.base_url = DEFAULT_BASE_URL
+                self.api_key = DEFAULT_API_KEY
+                self.model = DEFAULT_MODEL
+                logger.warning(
+                    "No active LLM configuration found in database. "
+                    f"Using default fallback: {DEFAULT_BASE_URL}"
+                )
+
+            # Initialize client
+            self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
+
+        except Exception as e:
+            logger.error(f"Error loading LLM configuration: {e}")
+            logger.warning(f"Falling back to default configuration: {DEFAULT_BASE_URL}")
+
+            # Fall back to defaults
+            self.base_url = DEFAULT_BASE_URL
+            self.api_key = DEFAULT_API_KEY
+            self.model = DEFAULT_MODEL
+
+            self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
+
+    def reload_configuration(self):
+        """
+        Reload configuration from database (called when active config changes).
+        This allows switching LLMs without restarting the service.
+        """
+        logger.info("Reloading LLM configuration...")
+        self._load_active_configuration()
+        logger.info(f"Configuration reloaded: {self.base_url} / {self.model}")
 
     async def analyze_page(
         self, text: str, filename: str, page_num: int, context: str = ""
@@ -479,3 +522,10 @@ Provide a helpful analysis that will aid in understanding this content."""
 
         except Exception as e:
             yield f"Error: {str(e)}"
+
+
+# Global instance
+# This creates a singleton instance of the OllamaService that can be imported
+# and used throughout the application. This ensures all parts of the app use
+# the same LLM configuration.
+ollama_service = OllamaService()

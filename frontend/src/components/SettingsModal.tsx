@@ -1,6 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HighlightColor } from '../types/highlights';
 import { useSettings } from '../contexts/SettingsContext';
+import type { LLMConfiguration } from '../types/llm';
+import {
+  listLLMConfigurations,
+  activateLLMConfiguration,
+} from '../api/llmConfig';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -13,12 +18,55 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     'viewer' | 'ui' | 'reading' | 'ai'
   >('viewer');
 
+  // LLM configuration state
+  const [llmConfigs, setLlmConfigs] = useState<LLMConfiguration[]>([]);
+  const [isLoadingLlms, setIsLoadingLlms] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+
   const tabs = [
     { id: 'viewer', label: 'PDF Viewer', icon: '📖' },
     { id: 'ui', label: 'Interface', icon: '🎨' },
     { id: 'reading', label: 'Reading', icon: '📚' },
     { id: 'ai', label: 'AI Assistant', icon: '🤖' },
   ] as const;
+
+  // Fetch LLM configurations when AI tab is opened
+  useEffect(() => {
+    if (activeTab === 'ai' && isOpen) {
+      fetchLLMConfigurations();
+    }
+  }, [activeTab, isOpen]);
+
+  const fetchLLMConfigurations = async () => {
+    setIsLoadingLlms(true);
+    setLlmError(null);
+    try {
+      const configs = await listLLMConfigurations();
+      setLlmConfigs(configs);
+    } catch (error) {
+      console.error('Failed to fetch LLM configurations:', error);
+      setLlmError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to load LLM configurations'
+      );
+    } finally {
+      setIsLoadingLlms(false);
+    }
+  };
+
+  const handleActivateLLM = async (configId: number) => {
+    try {
+      await activateLLMConfiguration(configId);
+      // Refresh configurations to get updated active status
+      await fetchLLMConfigurations();
+    } catch (error) {
+      console.error('Failed to activate LLM:', error);
+      setLlmError(
+        error instanceof Error ? error.message : 'Failed to activate LLM'
+      );
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -391,23 +439,77 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                   <div>
                     <label className="block text-sm font-medium text-slate-200 mb-2">
-                      AI Model
+                      Active LLM Configuration
                     </label>
-                    <select
-                      value={settings.aiModel}
-                      onChange={e =>
-                        updateSettings({ aiModel: e.target.value })
-                      }
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-200"
-                    >
-                      <option value="qwen2.5:3b">Qwen 2.5 3B (Fast)</option>
-                      <option value="qwen2.5:7b">Qwen 2.5 7B (Balanced)</option>
-                      <option value="qwen2.5:14b">
-                        Qwen 2.5 14B (High Quality)
-                      </option>
-                      <option value="llama3.2:3b">Llama 3.2 3B</option>
-                      <option value="phi3:mini">Phi 3 Mini</option>
-                    </select>
+                    <p className="text-xs text-slate-400 mb-3">
+                      Choose which LLM to use for AI features
+                    </p>
+
+                    {isLoadingLlms ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-slate-400">
+                          Loading configurations...
+                        </div>
+                      </div>
+                    ) : llmError ? (
+                      <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+                        <p className="text-red-400 text-sm">{llmError}</p>
+                        <button
+                          onClick={fetchLLMConfigurations}
+                          className="mt-2 text-xs text-red-300 hover:text-red-200 underline"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ) : llmConfigs.length === 0 ? (
+                      <div className="p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
+                        <p className="text-slate-400 text-sm">
+                          No LLM configurations found. Using default fallback
+                          configuration.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {llmConfigs.map(config => (
+                          <button
+                            key={config.id}
+                            onClick={() => handleActivateLLM(config.id)}
+                            disabled={config.is_active}
+                            className={`
+                              w-full p-4 rounded-lg border transition-all text-left
+                              ${
+                                config.is_active
+                                  ? 'bg-purple-600/20 border-purple-500/50 text-purple-300 cursor-default'
+                                  : 'bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500 cursor-pointer'
+                              }
+                            `}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">
+                                    {config.name}
+                                  </span>
+                                  {config.is_active && (
+                                    <span className="text-xs px-2 py-0.5 bg-purple-500/30 rounded">
+                                      Active
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">
+                                  {config.model_name}
+                                </div>
+                                {config.description && (
+                                  <div className="text-xs text-slate-500 mt-1">
+                                    {config.description}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

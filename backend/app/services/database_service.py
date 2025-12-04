@@ -203,6 +203,39 @@ class DatabaseService:
                 ON highlights(pdf_filename)
             """)
 
+            # Create LLM configurations table
+            # Stores multiple LLM endpoint configurations with one active at a time
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS llm_configurations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,                -- User-friendly name
+                    description TEXT,                         -- Optional description
+                    base_url TEXT NOT NULL,                   -- API endpoint URL
+                    api_key TEXT NOT NULL,                    -- Authentication key
+                    model_name TEXT NOT NULL,                 -- Model identifier
+                    is_active BOOLEAN DEFAULT FALSE,          -- Active configuration flag
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Create index for quick lookup of active configuration
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_llm_config_active
+                ON llm_configurations(is_active) WHERE is_active = TRUE
+            """)
+
+            # Create trigger to ensure only one active LLM configuration
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS enforce_single_active_llm
+                BEFORE UPDATE ON llm_configurations
+                FOR EACH ROW
+                WHEN NEW.is_active = 1
+                BEGIN
+                    UPDATE llm_configurations SET is_active = 0 WHERE id != NEW.id;
+                END
+            """)
+
             conn.commit()
 
     def save_reading_progress(
