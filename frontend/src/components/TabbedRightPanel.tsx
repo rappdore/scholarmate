@@ -65,15 +65,15 @@ export default function TabbedRightPanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'ai' && (
+        <div className={`h-full ${activeTab === 'ai' ? '' : 'hidden'}`}>
           <AIPanel
             filename={filename}
             documentType={documentType ?? undefined}
             currentPage={currentPage}
             currentNavId={currentNavId}
           />
-        )}
-        {activeTab === 'chat' && (
+        </div>
+        <div className={`h-full ${activeTab === 'chat' ? '' : 'hidden'}`}>
           <ChatInterface
             filename={filename}
             currentPage={currentPage}
@@ -82,11 +82,15 @@ export default function TabbedRightPanel({
             currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
           />
+        </div>
+        {documentType === 'pdf' && (
+          <div
+            className={`h-full ${activeTab === 'dual-chat' ? '' : 'hidden'}`}
+          >
+            <DualChatInterface filename={filename} currentPage={currentPage} />
+          </div>
         )}
-        {activeTab === 'dual-chat' && documentType === 'pdf' && (
-          <DualChatInterface filename={filename} currentPage={currentPage} />
-        )}
-        {activeTab === 'notes' && (
+        <div className={`h-full ${activeTab === 'notes' ? '' : 'hidden'}`}>
           <NotesPanel
             filename={filename}
             currentPage={currentPage}
@@ -95,14 +99,14 @@ export default function TabbedRightPanel({
             currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
           />
-        )}
-        {activeTab === 'highlights' && (
+        </div>
+        <div className={`h-full ${activeTab === 'highlights' ? '' : 'hidden'}`}>
           <HighlightsPanel
             filename={filename}
             currentPage={currentPage}
             onPageJump={onPageJump}
           />
-        )}
+        </div>
       </div>
     </div>
   );
