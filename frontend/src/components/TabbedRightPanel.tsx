@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AIPanel from './AIPanel';
 import ChatInterface from './ChatInterface';
+import DualChatInterface from './DualChatInterface';
 import NotesPanel from './NotesPanel';
 import HighlightsPanel from './HighlightsPanel';
 import type { DocumentType } from '../types/document';
@@ -15,7 +16,7 @@ interface TabbedRightPanelProps {
   onPageJump?: (pageNumber: number) => void;
 }
 
-type TabType = 'ai' | 'chat' | 'notes' | 'highlights';
+type TabType = 'ai' | 'chat' | 'dual-chat' | 'notes' | 'highlights';
 
 export default function TabbedRightPanel({
   filename,
@@ -28,9 +29,13 @@ export default function TabbedRightPanel({
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
 
+  // Define tabs - Dual Chat only for PDFs
   const tabs = [
     { id: 'ai' as TabType, label: 'AI Analysis', icon: '🧠' },
     { id: 'chat' as TabType, label: 'Chat', icon: '💬' },
+    ...(documentType === 'pdf'
+      ? [{ id: 'dual-chat' as TabType, label: 'Dual Chat', icon: '🤖' }]
+      : []),
     { id: 'notes' as TabType, label: 'Notes', icon: '📝' },
     { id: 'highlights' as TabType, label: 'Highlights', icon: '🖍️' },
   ];
@@ -77,6 +82,9 @@ export default function TabbedRightPanel({
             currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
           />
+        )}
+        {activeTab === 'dual-chat' && documentType === 'pdf' && (
+          <DualChatInterface filename={filename} currentPage={currentPage} />
         )}
         {activeTab === 'notes' && (
           <NotesPanel

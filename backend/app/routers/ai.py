@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..services.dual_chat_service import dual_chat_service
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import ollama_service
 from ..services.pdf_service import PDFService
@@ -45,6 +46,17 @@ class EpubChatRequest(BaseModel):
     nav_id: str
     chat_history: Optional[List[Dict[str, str]]] = None
     request_id: Optional[str] = None
+    is_new_chat: Optional[bool] = False
+
+
+class DualChatRequest(BaseModel):
+    message: str
+    filename: str
+    page_num: int
+    llm1_history: Optional[List[Dict[str, str]]] = []
+    llm2_history: Optional[List[Dict[str, str]]] = []
+    primary_llm_id: int
+    secondary_llm_id: int
     is_new_chat: Optional[bool] = False
 
 
@@ -466,4 +478,51 @@ async def stop_epub_chat(request_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error stopping EPUB chat: {str(e)}"
+        )
+
+
+@router.post("/dual-chat")
+async def dual_chat(request: DualChatRequest):
+    """
+    Chat with two LLMs simultaneously about PDF content with streaming response.
+    Both LLMs receive the same prompt but maintain independent conversation histories.
+    """
+    try:
+        return StreamingResponse(
+            dual_chat_service.stream_dual_chat_response(
+                message=request.message,
+                filename=request.filename,
+                page_num=request.page_num,
+                llm1_history=request.llm1_history or [],
+                llm2_history=request.llm2_history or [],
+                primary_llm_id=request.primary_llm_id,
+                secondary_llm_id=request.secondary_llm_id,
+                is_new_chat=request.is_new_chat or False,
+            ),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream",
+            },
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dual chat failed: {str(e)}")
+
+
+@router.post("/dual-chat/stop/{request_id}")
+async def stop_dual_chat(request_id: str):
+    """
+    Stop an active dual chat streaming request
+    """
+    try:
+        await dual_chat_service.stop_session(request_id)
+        return {"message": f"Dual chat request {request_id} stopped successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error stopping dual chat: {str(e)}"
         )
