@@ -15,6 +15,7 @@ import { getActiveLLMConfiguration } from '../api/llmConfig';
 import type { LLMConfiguration } from '../types/llm';
 import LLMSelectionModal from './LLMSelectionModal';
 import { dualChatService } from '../services/dualChatService';
+import { notesService } from '../services/api';
 
 // Normalize LaTeX math delimiters (same as ChatInterface)
 function normalizeMathDelimiters(markdown: string): string {
@@ -93,6 +94,11 @@ export default function DualChatInterface({
     useState<AbortController | null>(null);
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
 
+  // Save note dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+
   // Refs for auto-scroll
   const llm1ContainerRef = useRef<HTMLDivElement>(null);
   const llm2ContainerRef = useRef<HTMLDivElement>(null);
@@ -143,6 +149,56 @@ export default function DualChatInterface({
   const clearChat = () => {
     setLlm1Messages([]);
     setLlm2Messages([]);
+  };
+
+  const saveChatAsNotes = async () => {
+    if (!filename || !currentPage || !primaryLLM || !secondaryLLM) return;
+    if (llm1Messages.length === 0 && llm2Messages.length === 0) return;
+
+    setSaving(true);
+    try {
+      // Convert LLM1 messages to formatted string
+      const llm1Content = llm1Messages
+        .map(msg => `**${msg.isUser ? 'You' : 'AI'}**: ${msg.text}`)
+        .join('\n\n');
+
+      // Convert LLM2 messages to formatted string
+      const llm2Content = llm2Messages
+        .map(msg => `**${msg.isUser ? 'You' : 'AI'}**: ${msg.text}`)
+        .join('\n\n');
+
+      const baseTitle =
+        noteTitle.trim() ||
+        `Dual Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`;
+
+      // Save both conversations as separate notes
+      const llm1Title = `${baseTitle} - ${primaryLLM.name}`;
+      const llm2Title = `${baseTitle} - ${secondaryLLM.name}`;
+
+      await Promise.all([
+        notesService.saveChatNote(
+          filename,
+          currentPage,
+          llm1Title,
+          llm1Content
+        ),
+        notesService.saveChatNote(
+          filename,
+          currentPage,
+          llm2Title,
+          llm2Content
+        ),
+      ]);
+
+      setShowSaveDialog(false);
+      setNoteTitle('');
+
+      console.log('Both chat conversations saved as notes successfully!');
+    } catch (error) {
+      console.error('Error saving dual chat notes:', error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSelectSecondaryLLM = (llm: LLMConfiguration) => {
@@ -595,13 +651,23 @@ export default function DualChatInterface({
             </div>
           </div>
           {llm1Messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className="px-3 py-1 text-xs bg-gray-600 text-gray-200 rounded hover:bg-gray-500 transition-colors"
-              title="Clear chat"
-            >
-              Clear Chat
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSaveDialog(true)}
+                disabled={!filename}
+                className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+                title="Save both conversations as notes"
+              >
+                Save Notes
+              </button>
+              <button
+                onClick={clearChat}
+                className="px-3 py-1 text-xs bg-gray-600 text-gray-200 rounded hover:bg-gray-500 transition-colors"
+                title="Clear chat"
+              >
+                Clear Chat
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -673,6 +739,90 @@ export default function DualChatInterface({
           excludeLLMId={primaryLLM.id}
           title="Select Second LLM"
         />
+      )}
+
+      {/* Save Note Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-[500px] max-w-90vw">
+            <h3 className="text-lg font-medium text-gray-200 mb-4">
+              Save Dual Chat as Notes
+            </h3>
+
+            <div className="mb-4">
+              <label className="block text-sm text-gray-300 mb-2">
+                Base Note Title (Optional)
+              </label>
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={e => setNoteTitle(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !saving) {
+                    e.preventDefault();
+                    saveChatAsNotes();
+                  }
+                }}
+                placeholder={`Dual Chat on page ${currentPage} - ${new Date().toLocaleDateString()}`}
+                className="w-full px-3 py-2 border border-gray-600 bg-gray-700 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div className="mb-4 p-4 bg-gray-900 rounded-lg border border-gray-700 space-y-3">
+              <div className="text-sm text-gray-300 mb-2">
+                This will create <strong>TWO</strong> separate notes:
+              </div>
+
+              <div className="flex items-start gap-2">
+                <div className="text-blue-400 mt-0.5">📝</div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-200">
+                    Note 1: Conversation with{' '}
+                    {primaryLLM?.name || 'Primary LLM'}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    • {llm1Messages.length} messages
+                    {currentPage && ` • Linked to page ${currentPage}`}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <div className="text-purple-400 mt-0.5">📝</div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-200">
+                    Note 2: Conversation with{' '}
+                    {secondaryLLM?.name || 'Secondary LLM'}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    • {llm2Messages.length} messages
+                    {currentPage && ` • Linked to page ${currentPage}`}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setNoteTitle('');
+                }}
+                disabled={saving}
+                className="px-4 py-2 text-gray-300 border border-gray-600 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveChatAsNotes}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Save Both Notes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
