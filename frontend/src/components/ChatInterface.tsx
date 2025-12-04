@@ -12,6 +12,8 @@ import 'katex/dist/katex.min.css'; // KaTeX CSS for math rendering
 import '../styles/katex-dark.css'; // Custom dark theme for KaTeX
 import type { Components } from 'react-markdown';
 import { chatService, notesService, epubNotesService } from '../services/api';
+import { getActiveLLMConfiguration } from '../api/llmConfig';
+import type { LLMConfiguration } from '../types/llm';
 
 // Normalize LaTeX math delimiters so that remark-math can parse them.
 // - Convert \[ ... \] → $$ ... $$ (block math)
@@ -100,6 +102,42 @@ export default function ChatInterface({
     useState<AbortController | null>(null);
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // LLM configuration state
+  const [activeLLM, setActiveLLM] = useState<LLMConfiguration | null>(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+
+  // Fetch active LLM configuration on mount and when it changes
+  useEffect(() => {
+    const fetchActiveLLM = async () => {
+      setLlmLoading(true);
+      try {
+        const config = await getActiveLLMConfiguration();
+        setActiveLLM(config);
+      } catch (error) {
+        console.error('Failed to fetch active LLM configuration:', error);
+        // Don't set activeLLM if there's an error (will show fallback in UI)
+        setActiveLLM(null);
+      } finally {
+        setLlmLoading(false);
+      }
+    };
+
+    // Fetch on mount
+    fetchActiveLLM();
+
+    // Listen for LLM config changes
+    const handleLLMConfigChange = () => {
+      fetchActiveLLM();
+    };
+
+    window.addEventListener('llm-config-changed', handleLLMConfigChange);
+
+    // Cleanup listener
+    return () => {
+      window.removeEventListener('llm-config-changed', handleLLMConfigChange);
+    };
+  }, []);
 
   const clearChat = () => {
     setMessages([]);
@@ -462,14 +500,33 @@ export default function ChatInterface({
     <div className="h-full flex flex-col bg-gray-900 border-t border-gray-700">
       {/* Header */}
       <div className="border-b border-gray-700 px-4 py-2 bg-gray-800 flex justify-between items-center">
-        <h3 className="text-sm font-medium text-gray-200">
-          Chat about{' '}
-          {filename
-            ? `${filename} (${documentType === 'pdf' ? `Page ${currentPage}` : `Section ${currentNavId}`})`
-            : documentType === 'pdf'
-              ? 'PDF'
-              : 'EPUB'}
-        </h3>
+        <div className="flex flex-col gap-1 flex-1">
+          <h3 className="text-sm font-medium text-gray-200">
+            Chat about{' '}
+            {filename
+              ? `${filename} (${documentType === 'pdf' ? `Page ${currentPage}` : `Section ${currentNavId}`})`
+              : documentType === 'pdf'
+                ? 'PDF'
+                : 'EPUB'}
+          </h3>
+          {/* LLM Configuration Display */}
+          <div className="text-xs text-gray-400">
+            {llmLoading ? (
+              <span className="animate-pulse">Loading LLM info...</span>
+            ) : activeLLM ? (
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                <span className="font-medium">{activeLLM.name}</span>
+                <span className="text-gray-500">•</span>
+                <span>{activeLLM.model_name}</span>
+              </span>
+            ) : (
+              <span className="text-yellow-500">
+                Using default fallback LLM
+              </span>
+            )}
+          </div>
+        </div>
         {messages.length > 0 && (
           <div className="flex gap-2">
             <button

@@ -6,6 +6,7 @@ import {
   listLLMConfigurations,
   activateLLMConfiguration,
   createLLMConfiguration,
+  updateLLMConfiguration,
   deleteLLMConfiguration,
 } from '../api/llmConfig';
 import LLMConfigForm from './LLMConfigForm';
@@ -26,6 +27,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [isLoadingLlms, setIsLoadingLlms] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<LLMConfiguration | null>(
+    null
+  );
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const tabs = [
@@ -65,6 +69,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await activateLLMConfiguration(configId);
       // Refresh configurations to get updated active status
       await fetchLLMConfigurations();
+      // Notify other components that LLM config changed
+      window.dispatchEvent(new CustomEvent('llm-config-changed'));
     } catch (error) {
       console.error('Failed to activate LLM:', error);
       setLlmError(
@@ -78,10 +84,59 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await createLLMConfiguration(config);
       // Refresh configurations to show the new one
       await fetchLLMConfigurations();
+      // If the new config was set as active, notify other components
+      if (config.is_active) {
+        window.dispatchEvent(new CustomEvent('llm-config-changed'));
+      }
     } catch (error) {
       console.error('Failed to create LLM configuration:', error);
       throw error; // Re-throw to let form handle the error
     }
+  };
+
+  const handleUpdateLLM = async (config: LLMConfigCreate) => {
+    if (!editingConfig) return;
+
+    try {
+      // Only send fields that have values (for partial update)
+      const updates: any = {
+        name: config.name,
+        description: config.description,
+        base_url: config.base_url,
+        model_name: config.model_name,
+      };
+
+      // Only include API key if it was changed (not empty)
+      if (config.api_key) {
+        updates.api_key = config.api_key;
+      }
+
+      await updateLLMConfiguration(editingConfig.id, updates);
+      // Refresh configurations to show the updated one
+      await fetchLLMConfigurations();
+      setEditingConfig(null);
+    } catch (error) {
+      console.error('Failed to update LLM configuration:', error);
+      throw error; // Re-throw to let form handle the error
+    }
+  };
+
+  const handleFormSubmit = async (config: LLMConfigCreate) => {
+    if (editingConfig) {
+      await handleUpdateLLM(config);
+    } else {
+      await handleCreateLLM(config);
+    }
+  };
+
+  const handleFormClose = () => {
+    setIsFormOpen(false);
+    setEditingConfig(null);
+  };
+
+  const handleEditClick = (config: LLMConfiguration) => {
+    setEditingConfig(config);
+    setIsFormOpen(true);
   };
 
   const handleDeleteLLM = async (configId: number) => {
@@ -570,28 +625,52 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                   )}
                                 </div>
                                 {!config.is_active && (
-                                  <button
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      setDeleteConfirmId(config.id);
-                                    }}
-                                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100"
-                                    title="Delete configuration"
-                                  >
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        handleEditClick(config);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-purple-400 hover:bg-purple-900/20 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                      title="Edit configuration"
                                     >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                      />
-                                    </svg>
-                                  </button>
+                                      <svg
+                                        className="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                        />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setDeleteConfirmId(config.id);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                      title="Delete configuration"
+                                    >
+                                      <svg
+                                        className="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             </button>
@@ -628,8 +707,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       {/* LLM Configuration Form Modal */}
       <LLMConfigForm
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        onSubmit={handleCreateLLM}
+        onClose={handleFormClose}
+        onSubmit={handleFormSubmit}
+        editingConfig={editingConfig}
       />
 
       {/* Delete Confirmation Dialog */}

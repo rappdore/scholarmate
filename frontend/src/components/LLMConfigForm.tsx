@@ -1,16 +1,18 @@
-import { useState } from 'react';
-import type { LLMConfigCreate } from '../types/llm';
+import { useState, useEffect } from 'react';
+import type { LLMConfigCreate, LLMConfiguration } from '../types/llm';
 
 interface LLMConfigFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (config: LLMConfigCreate) => Promise<void>;
+  editingConfig?: LLMConfiguration | null;
 }
 
 export default function LLMConfigForm({
   isOpen,
   onClose,
   onSubmit,
+  editingConfig,
 }: LLMConfigFormProps) {
   const [formData, setFormData] = useState<LLMConfigCreate>({
     name: '',
@@ -24,14 +26,19 @@ export default function LLMConfigForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await onSubmit(formData);
-      // Reset form and close
+  // Initialize form with editing data
+  useEffect(() => {
+    if (editingConfig) {
+      setFormData({
+        name: editingConfig.name,
+        description: editingConfig.description || '',
+        base_url: editingConfig.base_url,
+        api_key: '', // Don't populate password field
+        model_name: editingConfig.model_name,
+        is_active: editingConfig.is_active,
+      });
+    } else {
+      // Reset form when not editing
       setFormData({
         name: '',
         description: '',
@@ -40,10 +47,23 @@ export default function LLMConfigForm({
         model_name: '',
         is_active: false,
       });
+    }
+    setError(null);
+  }, [editingConfig, isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await onSubmit(formData);
       onClose();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Failed to create configuration'
+        err instanceof Error
+          ? err.message
+          : `Failed to ${editingConfig ? 'update' : 'create'} configuration`
       );
     } finally {
       setIsSubmitting(false);
@@ -65,7 +85,9 @@ export default function LLMConfigForm({
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-100">
-            Add New LLM Configuration
+            {editingConfig
+              ? 'Edit LLM Configuration'
+              : 'Add New LLM Configuration'}
           </h2>
           <button
             onClick={onClose}
@@ -151,19 +173,24 @@ export default function LLMConfigForm({
           {/* API Key */}
           <div>
             <label className="block text-sm font-medium text-slate-200 mb-2">
-              API Key <span className="text-red-400">*</span>
+              API Key{' '}
+              {!editingConfig && <span className="text-red-400">*</span>}
             </label>
             <input
               type="password"
               value={formData.api_key}
               onChange={e => handleChange('api_key', e.target.value)}
-              placeholder="sk-..."
-              required
+              placeholder={
+                editingConfig ? 'Leave blank to keep current key' : 'sk-...'
+              }
+              required={!editingConfig}
               maxLength={500}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <p className="text-xs text-slate-400 mt-1">
-              Your authentication key (use "not-needed" for local instances)
+              {editingConfig
+                ? 'Leave blank to keep the existing API key'
+                : 'Your authentication key (use "not-needed" for local instances)'}
             </p>
           </div>
 
@@ -230,7 +257,13 @@ export default function LLMConfigForm({
             disabled={isSubmitting}
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? 'Creating...' : 'Create Configuration'}
+            {isSubmitting
+              ? editingConfig
+                ? 'Updating...'
+                : 'Creating...'
+              : editingConfig
+                ? 'Update Configuration'
+                : 'Create Configuration'}
           </button>
         </div>
       </div>
