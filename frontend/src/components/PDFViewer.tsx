@@ -56,6 +56,12 @@ export default function PDFViewer({
   onPageChange,
   onTotalPagesChange,
 }: PDFViewerProps) {
+  console.log('📄 [PDF VIEWER INITIALIZED]', {
+    filename,
+    currentPage,
+    timestamp: new Date().toISOString(),
+  });
+
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -252,18 +258,33 @@ export default function PDFViewer({
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
+      console.log('✅ [PDF DOCUMENT LOADED SUCCESSFULLY]', {
+        filename,
+        numPages,
+        currentPage,
+        timestamp: new Date().toISOString(),
+      });
       setNumPages(numPages);
       setLoading(false);
       setError(null);
       onTotalPagesChange?.(numPages);
     },
-    [onTotalPagesChange]
+    [onTotalPagesChange, filename, currentPage]
   );
 
-  const onDocumentLoadError = useCallback((error: Error) => {
-    setError(`Failed to load PDF: ${error.message}`);
-    setLoading(false);
-  }, []);
+  const onDocumentLoadError = useCallback(
+    (error: Error) => {
+      console.error('❌ [PDF DOCUMENT LOAD ERROR]', {
+        filename,
+        error: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+      });
+      setError(`Failed to load PDF: ${error.message}`);
+      setLoading(false);
+    },
+    [filename]
+  );
 
   const goToPrevPage = () => {
     if (viewMode === 'double') {
@@ -735,7 +756,16 @@ export default function PDFViewer({
         ) : (
           <div className="flex justify-center p-4 relative">
             <Document
-              file={`/api/pdf/${filename}/file`}
+              file={(() => {
+                const pdfUrl = `/api/pdf/${filename}/file`;
+                console.log('📄 [PDF DOCUMENT LOADING]', {
+                  filename,
+                  pdfUrl,
+                  fullUrl: `${window.location.origin}${pdfUrl}`,
+                  timestamp: new Date().toISOString(),
+                });
+                return pdfUrl;
+              })()}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={

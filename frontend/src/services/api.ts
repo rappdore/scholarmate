@@ -9,9 +9,66 @@ import type {
   HighlightColor,
 } from '../types/highlights';
 
+const API_BASE_URL = 'http://localhost:8000';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: API_BASE_URL,
 });
+
+// Extensive logging interceptor
+api.interceptors.request.use(
+  config => {
+    console.log('🚀 [API REQUEST]', {
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      fullURL: `${config.baseURL}${config.url}`,
+      headers: config.headers,
+      data: config.data,
+      timestamp: new Date().toISOString(),
+    });
+    return config;
+  },
+  error => {
+    console.error('❌ [API REQUEST ERROR]', {
+      message: error.message,
+      error: error,
+      timestamp: new Date().toISOString(),
+    });
+    return Promise.reject(error);
+  }
+);
+
+api.interceptors.response.use(
+  response => {
+    console.log('✅ [API RESPONSE]', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.config.url,
+      fullURL: `${response.config.baseURL}${response.config.url}`,
+      data: response.data,
+      headers: response.headers,
+      timestamp: new Date().toISOString(),
+    });
+    return response;
+  },
+  error => {
+    console.error('❌ [API RESPONSE ERROR]', {
+      message: error.message,
+      url: error.config?.url,
+      fullURL: error.config
+        ? `${error.config.baseURL}${error.config.url}`
+        : 'unknown',
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      responseData: error.response?.data,
+      code: error.code,
+      isNetworkError: error.message === 'Network Error',
+      isTimeout: error.code === 'ECONNABORTED',
+      timestamp: new Date().toISOString(),
+    });
+    return Promise.reject(error);
+  }
+);
 
 export const pdfService = {
   listPDFs: async (status?: string): Promise<PDF[]> => {
@@ -172,8 +229,18 @@ export const aiService = {
     void,
     unknown
   > {
+    const url = `${API_BASE_URL}/ai/analyze/stream`;
+    console.log('🚀 [FETCH REQUEST - STREAM ANALYZE]', {
+      url,
+      method: 'POST',
+      filename,
+      pageNum,
+      context,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
-      const response = await fetch('http://localhost:8000/ai/analyze/stream', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,22 +252,55 @@ export const aiService = {
         }),
       });
 
+      console.log('✅ [FETCH RESPONSE - STREAM ANALYZE]', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+        timestamp: new Date().toISOString(),
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ [FETCH ERROR - STREAM ANALYZE]', {
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`
+        );
       }
 
       const reader = response.body?.getReader();
       if (!reader) {
-        throw new Error('Failed to get response reader');
+        const error = 'Failed to get response reader';
+        console.error('❌ [STREAM ANALYZE ERROR]', {
+          error,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(error);
       }
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let chunkCount = 0;
 
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          chunkCount++;
+
+          if (done) {
+            console.log('✅ [STREAM ANALYZE COMPLETE]', {
+              totalChunks: chunkCount,
+              timestamp: new Date().toISOString(),
+            });
+            break;
+          }
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
@@ -210,12 +310,20 @@ export const aiService = {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log('📦 [STREAM CHUNK - ANALYZE]', {
+                  chunkNum: chunkCount,
+                  data,
+                });
                 yield data;
                 if (data.done) {
                   return;
                 }
               } catch (e) {
-                console.error('Error parsing SSE data:', e);
+                console.error('❌ [SSE PARSE ERROR]', {
+                  line,
+                  error: e,
+                  timestamp: new Date().toISOString(),
+                });
               }
             }
           }
@@ -224,6 +332,11 @@ export const aiService = {
         reader.releaseLock();
       }
     } catch (error) {
+      console.error('❌ [STREAM ANALYZE FAILED]', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
       throw new Error(
         `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -356,8 +469,21 @@ export const chatService = {
     void,
     unknown
   > {
+    const url = `${API_BASE_URL}/ai/chat`;
+    console.log('🚀 [FETCH REQUEST - STREAM CHAT]', {
+      url,
+      method: 'POST',
+      message,
+      filename,
+      pageNum,
+      isNewChat,
+      hasAbortSignal: !!abortSignal,
+      historyLength: chatHistory?.length || 0,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
-      const response = await fetch('http://localhost:8000/ai/chat', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -372,8 +498,27 @@ export const chatService = {
         signal: abortSignal,
       });
 
+      console.log('✅ [FETCH RESPONSE - STREAM CHAT]', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+        timestamp: new Date().toISOString(),
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ [FETCH ERROR - STREAM CHAT]', {
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`
+        );
       }
 
       const reader = response.body?.getReader();
@@ -543,8 +688,16 @@ export const highlightService = {
   createHighlight: async (
     highlightData: HighlightRequest
   ): Promise<Highlight> => {
+    const url = `${API_BASE_URL}/highlights/`;
+    console.log('🚀 [FETCH REQUEST - CREATE HIGHLIGHT]', {
+      url,
+      method: 'POST',
+      highlightData,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
-      const response = await fetch('http://localhost:8000/highlights/', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -560,18 +713,39 @@ export const highlightService = {
         }),
       });
 
+      console.log('✅ [FETCH RESPONSE - CREATE HIGHLIGHT]', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        timestamp: new Date().toISOString(),
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ [CREATE HIGHLIGHT ERROR]', {
+          url,
+          status: response.status,
+          errorText,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`
+        );
       }
 
       const backendHighlight = await response.json();
       const highlight =
         highlightService._convertBackendHighlight(backendHighlight);
 
-      console.log('Created highlight:', highlight);
+      console.log('✅ [HIGHLIGHT CREATED]', highlight);
       return highlight;
     } catch (error) {
-      console.error('Error creating highlight:', error);
+      console.error('❌ [CREATE HIGHLIGHT FAILED]', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
       throw new Error(
         `Failed to create highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -582,16 +756,40 @@ export const highlightService = {
     filename: string,
     pageNumber?: number
   ): Promise<Highlight[]> => {
-    try {
-      const url =
-        pageNumber !== undefined
-          ? `http://localhost:8000/highlights/${encodeURIComponent(filename)}/page/${pageNumber}`
-          : `http://localhost:8000/highlights/${encodeURIComponent(filename)}`;
+    const url =
+      pageNumber !== undefined
+        ? `${API_BASE_URL}/highlights/${encodeURIComponent(filename)}/page/${pageNumber}`
+        : `${API_BASE_URL}/highlights/${encodeURIComponent(filename)}`;
 
+    console.log('🚀 [FETCH REQUEST - GET HIGHLIGHTS]', {
+      url,
+      filename,
+      pageNumber,
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
       const response = await fetch(url);
 
+      console.log('✅ [FETCH RESPONSE - GET HIGHLIGHTS]', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        timestamp: new Date().toISOString(),
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ [GET HIGHLIGHTS ERROR]', {
+          url,
+          status: response.status,
+          errorText,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`
+        );
       }
 
       const backendHighlights = await response.json();
@@ -599,12 +797,21 @@ export const highlightService = {
         highlightService._convertBackendHighlight
       );
 
-      console.log(
-        `Retrieved ${highlights.length} highlights for ${filename}${pageNumber !== undefined ? ` page ${pageNumber}` : ''}`
-      );
+      console.log('✅ [HIGHLIGHTS RETRIEVED]', {
+        count: highlights.length,
+        filename,
+        pageNumber,
+        timestamp: new Date().toISOString(),
+      });
       return highlights;
     } catch (error) {
-      console.error('Error retrieving highlights:', error);
+      console.error('❌ [GET HIGHLIGHTS FAILED]', {
+        filename,
+        pageNumber,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
       throw new Error(
         `Failed to retrieve highlights: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
