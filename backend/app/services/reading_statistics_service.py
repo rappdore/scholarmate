@@ -131,3 +131,88 @@ class ReadingStatisticsService(BaseDatabaseService):
         except Exception as e:
             logger.error(f"Error upserting session {session_id}: {e}")
             return False
+
+    def get_sessions_by_pdf(
+        self, pdf_filename: str, limit: int = None, offset: int = None
+    ) -> dict:
+        """
+        Get all reading sessions for a specific PDF.
+
+        Args:
+            pdf_filename (str): Name of the PDF file
+            limit (int, optional): Maximum number of sessions to return
+            offset (int, optional): Number of sessions to skip (for pagination)
+
+        Returns:
+            dict: Dictionary containing:
+                - pdf_filename (str): The PDF filename
+                - total_sessions (int): Total number of sessions for this PDF
+                - sessions (list): List of session dictionaries, each containing:
+                    - session_id (str)
+                    - session_start (str): ISO timestamp
+                    - last_updated (str): ISO timestamp
+                    - pages_read (int)
+                    - average_time_per_page (float)
+        """
+        try:
+            with self.get_connection() as conn:
+                # Get total count
+                count_query = """
+                    SELECT COUNT(*) as total_sessions
+                    FROM reading_sessions
+                    WHERE pdf_filename = ?
+                """
+                count_result = conn.execute(count_query, (pdf_filename,)).fetchone()
+                total_sessions = count_result[0] if count_result else 0
+
+                # Get sessions (ordered by most recent first)
+                sessions_query = """
+                    SELECT session_id, session_start, last_updated, pages_read, average_time_per_page
+                    FROM reading_sessions
+                    WHERE pdf_filename = ?
+                    ORDER BY session_start DESC
+                """
+
+                params = [pdf_filename]
+
+                # Add limit/offset if provided
+                if limit is not None:
+                    sessions_query += " LIMIT ?"
+                    params.append(limit)
+
+                if offset is not None:
+                    sessions_query += " OFFSET ?"
+                    params.append(offset)
+
+                sessions_result = conn.execute(sessions_query, params).fetchall()
+
+                # Convert to list of dictionaries
+                sessions = [
+                    {
+                        "session_id": row[0],
+                        "session_start": row[1],
+                        "last_updated": row[2],
+                        "pages_read": row[3],
+                        "average_time_per_page": row[4],
+                    }
+                    for row in sessions_result
+                ]
+
+                logger.info(
+                    f"Retrieved {len(sessions)} sessions for {pdf_filename} "
+                    f"(total: {total_sessions})"
+                )
+
+                return {
+                    "pdf_filename": pdf_filename,
+                    "total_sessions": total_sessions,
+                    "sessions": sessions,
+                }
+
+        except Exception as e:
+            logger.error(f"Error retrieving sessions for {pdf_filename}: {e}")
+            return {
+                "pdf_filename": pdf_filename,
+                "total_sessions": 0,
+                "sessions": [],
+            }
