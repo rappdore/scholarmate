@@ -106,6 +106,9 @@ export const pdfService = {
     last_page: number;
     total_pages: number | null;
     last_updated: string | null;
+    status: string;
+    status_updated_at: string | null;
+    manually_set: boolean;
   }> => {
     const response = await api.get(`/pdf/${filename}/progress`);
     return response.data;

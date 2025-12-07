@@ -9,14 +9,17 @@ import SessionHistoryTable from '../components/statistics/SessionHistoryTable';
 export default function Statistics() {
   const { filename } = useParams<{ filename: string }>();
 
-  const { sessions, aggregateStats, streakData, calendarData, loading, error } =
+  const { sessions, documentInfo, aggregateStats, streakData, loading, error } =
     useStatistics(filename || '');
 
   return (
     <div className="min-h-screen px-4 py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <StatisticsHeader filename={decodeURIComponent(filename || '')} />
+        <StatisticsHeader
+          filename={decodeURIComponent(filename || '')}
+          documentInfo={documentInfo}
+        />
 
         {/* Loading State */}
         {loading && (

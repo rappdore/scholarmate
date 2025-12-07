@@ -9,7 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import type { ReadingSession } from '../../types/statistics';
 
 interface PagesPerSessionChartProps {
@@ -18,20 +18,38 @@ interface PagesPerSessionChartProps {
 
 type ViewMode = 'session' | 'day';
 
+const VIEW_MODE = {
+  SESSION: 'session' as const,
+  DAY: 'day' as const,
+};
+
 export default function PagesPerSessionChart({
   sessions,
 }: PagesPerSessionChartProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('session');
+  const [viewMode, setViewMode] = useState<ViewMode>(VIEW_MODE.DAY);
+
+  // Helper function to parse local timestamps from backend
+  const parseLocalTimestamp = (timestamp: string): Date => {
+    // Backend sends timestamps in format "YYYY-MM-DD HH:MM:SS" as local time
+    // Split and construct Date object directly to avoid timezone issues
+    const [datePart, timePart] = timestamp.split(' ');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds] = timePart.split(':').map(Number);
+    return new Date(year, month - 1, day, hours, minutes, seconds);
+  };
 
   // Transform data for session view
   const getSessionData = () => {
     const recentSessions = sessions.slice(0, 20).reverse();
-    return recentSessions.map(session => ({
-      label: format(parseISO(session.session_start), 'MMM d'),
-      fullDate: format(parseISO(session.session_start), 'MMM d, yyyy h:mm a'),
-      pages: session.pages_read,
-      sessions: 1,
-    }));
+    return recentSessions.map(session => {
+      const localDate = parseLocalTimestamp(session.session_start);
+      return {
+        label: format(localDate, 'MMM d'),
+        fullDate: format(localDate, 'MMM d, yyyy h:mm a'),
+        pages: session.pages_read,
+        sessions: 1,
+      };
+    });
   };
 
   // Transform data for day view (aggregate by day)
@@ -42,18 +60,19 @@ export default function PagesPerSessionChart({
     >();
 
     sessions.forEach(session => {
-      const dateKey = format(parseISO(session.session_start), 'yyyy-MM-dd');
+      const localDate = parseLocalTimestamp(session.session_start);
+      const dateKey = format(localDate, 'yyyy-MM-dd');
       const existing = dayMap.get(dateKey);
 
       if (existing) {
         existing.pages += session.pages_read;
         existing.sessions += 1;
-        existing.dates.push(format(parseISO(session.session_start), 'h:mm a'));
+        existing.dates.push(format(localDate, 'h:mm a'));
       } else {
         dayMap.set(dateKey, {
           pages: session.pages_read,
           sessions: 1,
-          dates: [format(parseISO(session.session_start), 'h:mm a')],
+          dates: [format(localDate, 'h:mm a')],
         });
       }
     });
@@ -63,15 +82,16 @@ export default function PagesPerSessionChart({
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-30)
       .map(([dateKey, data]) => ({
-        label: format(parseISO(dateKey), 'MMM d'),
-        fullDate: format(parseISO(dateKey), 'MMM d, yyyy'),
+        label: format(new Date(dateKey), 'MMM d'),
+        fullDate: format(new Date(dateKey), 'MMM d, yyyy'),
         pages: data.pages,
         sessions: data.sessions,
         sessionTimes: data.dates.join(', '),
       }));
   };
 
-  const chartData = viewMode === 'session' ? getSessionData() : getDayData();
+  const chartData =
+    viewMode === VIEW_MODE.SESSION ? getSessionData() : getDayData();
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload }: any) => {
@@ -85,7 +105,7 @@ export default function PagesPerSessionChart({
           <p className="text-green-400 text-sm">
             <span className="font-semibold">{data.pages} pages</span> read
           </p>
-          {viewMode === 'day' && data.sessions > 1 && (
+          {viewMode === VIEW_MODE.DAY && data.sessions > 1 && (
             <p className="text-slate-400 text-xs mt-1">
               {data.sessions} sessions: {data.sessionTimes}
             </p>
@@ -100,13 +120,13 @@ export default function PagesPerSessionChart({
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700/50 p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-slate-200">
-          Pages Per {viewMode === 'session' ? 'Session' : 'Day'}
-          {viewMode === 'session' && sessions.length > 20 && (
+          Pages Per {viewMode === VIEW_MODE.SESSION ? 'Session' : 'Day'}
+          {viewMode === VIEW_MODE.SESSION && sessions.length > 20 && (
             <span className="text-sm text-slate-400 ml-2">
               (Last 20 sessions)
             </span>
           )}
-          {viewMode === 'day' && (
+          {viewMode === VIEW_MODE.DAY && (
             <span className="text-sm text-slate-400 ml-2">(Last 30 days)</span>
           )}
         </h2>
@@ -114,9 +134,9 @@ export default function PagesPerSessionChart({
         {/* View Mode Toggle */}
         <div className="flex items-center gap-2 bg-slate-700/30 rounded-lg p-1">
           <button
-            onClick={() => setViewMode('session')}
+            onClick={() => setViewMode(VIEW_MODE.SESSION)}
             className={`px-3 py-1 rounded text-sm transition-all ${
-              viewMode === 'session'
+              viewMode === VIEW_MODE.SESSION
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                 : 'text-slate-400 hover:text-slate-300'
             }`}
@@ -124,9 +144,9 @@ export default function PagesPerSessionChart({
             By Session
           </button>
           <button
-            onClick={() => setViewMode('day')}
+            onClick={() => setViewMode(VIEW_MODE.DAY)}
             className={`px-3 py-1 rounded text-sm transition-all ${
-              viewMode === 'day'
+              viewMode === VIEW_MODE.DAY
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                 : 'text-slate-400 hover:text-slate-300'
             }`}
