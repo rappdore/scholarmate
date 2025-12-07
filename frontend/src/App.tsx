@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import Library from './pages/Library';
 import Reader from './pages/Reader';
+import Statistics from './pages/Statistics';
 import Header from './components/Header';
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Library />} />
           <Route path="/read/:filename" element={<Reader />} />
+          <Route path="/statistics/:filename" element={<Statistics />} />
         </Routes>
       </div>
     </div>
