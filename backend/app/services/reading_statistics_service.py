@@ -8,6 +8,7 @@ It handles tracking session data including pages read and average reading time p
 import logging
 
 from .base_database_service import BaseDatabaseService
+from .reading_progress_service import ReadingProgressService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class ReadingStatisticsService(BaseDatabaseService):
         """
         super().__init__(db_path)
         self._init_table()
+        self.progress_service = ReadingProgressService(db_path)
 
     def _init_table(self):
         """
@@ -98,8 +100,27 @@ class ReadingStatisticsService(BaseDatabaseService):
 
         Returns:
             bool: True if the operation was successful, False otherwise
+
+        Raises:
+            ValueError: If the PDF doesn't exist in reading_progress table
         """
         try:
+            # Check if the PDF exists in reading_progress table
+            progress = self.progress_service.get_progress(pdf_filename)
+            if not progress:
+                raise ValueError(
+                    f"PDF '{pdf_filename}' does not exist in reading_progress table. "
+                    "Statistics updates are only allowed for tracked PDFs."
+                )
+
+            # Check if the book status is "finished"
+            if progress.get("status") == "finished":
+                logger.info(
+                    f"Skipping statistics update for finished book: {pdf_filename} "
+                    f"(session: {session_id})"
+                )
+                return True
+
             query = """
                 INSERT INTO reading_sessions
                     (session_id, pdf_filename, pages_read, average_time_per_page, last_updated)
@@ -128,6 +149,9 @@ class ReadingStatisticsService(BaseDatabaseService):
                 )
                 return True
 
+        except ValueError:
+            # Re-raise ValueError for PDF not existing
+            raise
         except Exception as e:
             logger.error(f"Error upserting session {session_id}: {e}")
             return False
