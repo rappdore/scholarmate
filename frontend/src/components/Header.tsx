@@ -1,46 +1,22 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 
 export default function Header() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const location = useLocation();
   const navigate = useNavigate();
-
-  const isReaderPage = location.pathname.startsWith('/read/');
 
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700/50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+            <h1
+              onClick={() => navigate('/')}
+              className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent cursor-pointer hover:opacity-80 transition-opacity"
+            >
               📚 Scholarmate
             </h1>
-            {isReaderPage && (
-              <>
-                <span className="text-slate-400 text-sm">• Book Reader</span>
-                <button
-                  onClick={() => navigate('/')}
-                  className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded transition-colors flex items-center space-x-1"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
-                  <span>Back to Library</span>
-                </button>
-              </>
-            )}
           </div>
 
           <div className="flex items-center space-x-4">
