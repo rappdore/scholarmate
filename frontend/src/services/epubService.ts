@@ -203,4 +203,18 @@ export const epubService = {
   deleteEPUBHighlight: async (highlightId: string): Promise<void> => {
     await api.delete(`/epub-highlights/${highlightId}`);
   },
+
+  // ========================================
+  // EPUB CACHE MANAGEMENT METHODS
+  // ========================================
+
+  refreshEPUBCache: async (): Promise<{
+    success: boolean;
+    cache_built_at: string;
+    epub_count: number;
+    message: string;
+  }> => {
+    const response = await api.post('/epub/refresh-cache');
+    return response.data;
+  },
 };

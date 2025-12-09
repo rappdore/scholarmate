@@ -433,3 +433,35 @@ async def get_epub_chapter_progress(filename: str, chapter_id: str) -> Dict[str,
         raise HTTPException(
             status_code=500, detail=f"Error getting chapter progress: {str(e)}"
         )
+
+
+# ========================================
+# EPUB CACHE MANAGEMENT ENDPOINTS
+# ========================================
+
+
+class CacheRefreshResponse(BaseModel):
+    success: bool
+    cache_built_at: str
+    epub_count: int
+    message: str
+
+
+@router.post("/refresh-cache")
+async def refresh_epub_cache() -> CacheRefreshResponse:
+    """
+    Refresh the EPUB cache by rebuilding from filesystem.
+    This will rescan all EPUBs and regenerate thumbnails.
+    """
+    try:
+        cache_info = epub_service.refresh_cache()
+
+        return CacheRefreshResponse(
+            success=True,
+            cache_built_at=cache_info["cache_built_at"],
+            epub_count=cache_info["epub_count"],
+            message=f"Cache refreshed successfully. {cache_info['epub_count']} EPUBs cached.",
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing cache: {str(e)}")

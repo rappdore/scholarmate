@@ -11,6 +11,7 @@ from .epub import (
     EPUBStyleProcessor,
 )
 from .epub.epub_url_helper import EPUBURLHelper
+from .epub_cache import EPUBCache
 
 
 class EPUBService:
@@ -32,18 +33,22 @@ class EPUBService:
         self.image_service = EPUBImageService("thumbnails")
         self.style_processor = EPUBStyleProcessor()
 
+        # Initialize cache (must be after other services are initialized)
+        self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self)
+
     def list_epubs(self) -> List[Dict[str, Any]]:
         """
-        List all EPUB files in the epubs directory with metadata
+        List all EPUB files in the epubs directory with metadata (from cache)
         """
-        return self.metadata_extractor.list_epubs()
+        return self.cache.get_all_epubs()
 
     def get_epub_info(self, filename: str) -> Dict[str, Any]:
         """
-        Get detailed information about a specific EPUB
+        Get detailed information about a specific EPUB (with lazy-loaded extended metadata)
         """
-        file_path = self.get_epub_path(filename)
-        return self.metadata_extractor.get_epub_info(file_path)
+        # Decode filename to handle URL-encoded filenames
+        decoded_filename = EPUBURLHelper.decode_filename_from_url(filename)
+        return self.cache.get_epub_info(decoded_filename)
 
     def get_epub_path(self, filename: str) -> Path:
         """
@@ -84,8 +89,18 @@ class EPUBService:
         self, filename: str, width: int = 200, height: int = 280
     ) -> Path:
         """
-        Get the path to the thumbnail for an EPUB file
+        Get the path to the thumbnail for an EPUB file (from cache, pre-generated)
         """
+        # Try to get from cache first
+        decoded_filename = EPUBURLHelper.decode_filename_from_url(filename)
+        try:
+            thumbnail_path_str = self.cache.get_thumbnail_path(decoded_filename)
+            if thumbnail_path_str:
+                return Path(thumbnail_path_str)
+        except FileNotFoundError:
+            pass
+
+        # Fallback: generate if not in cache (shouldn't happen normally)
         file_path = self.get_epub_path(filename)
         return self.image_service.get_thumbnail_path(file_path, width, height)
 
@@ -139,3 +154,16 @@ class EPUBService:
         file_path = self.get_epub_path(filename)
         book = epub.read_epub(str(file_path))
         return self.image_service.get_epub_images_list(book)
+
+    def refresh_cache(self) -> Dict[str, Any]:
+        """
+        Refresh the EPUB cache by rebuilding from filesystem
+        """
+        self.cache.refresh()
+        return self.cache.get_cache_info()
+
+    def get_cache_info(self) -> Dict[str, Any]:
+        """
+        Get metadata about the EPUB cache
+        """
+        return self.cache.get_cache_info()

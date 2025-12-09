@@ -195,18 +195,23 @@ export default function Library() {
   const handleRefreshCache = async () => {
     try {
       setRefreshing(true);
-      console.log('Refreshing PDF cache...');
+      console.log('Refreshing library cache (PDFs and EPUBs)...');
 
-      // Call the refresh cache API
-      const result = await pdfService.refreshPDFCache();
-      console.log('Cache refreshed:', result);
+      // Refresh both PDF and EPUB caches in parallel
+      const [pdfResult, epubResult] = await Promise.all([
+        pdfService.refreshPDFCache(),
+        epubService.refreshEPUBCache(),
+      ]);
+
+      console.log('PDF cache refreshed:', pdfResult);
+      console.log('EPUB cache refreshed:', epubResult);
 
       // Reload documents and status counts
       await loadDocuments();
       await loadStatusCounts();
 
       console.log(
-        `✅ Cache refreshed successfully! ${result.pdf_count} PDFs cached.`
+        `✅ Library cache refreshed successfully! ${pdfResult.pdf_count} PDFs and ${epubResult.epub_count} EPUBs cached.`
       );
     } catch (err) {
       console.error('Error refreshing cache:', err);
