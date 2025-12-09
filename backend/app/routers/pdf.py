@@ -342,3 +342,29 @@ async def get_status_counts() -> Dict[str, int]:
         raise HTTPException(
             status_code=500, detail=f"Error getting status counts: {str(e)}"
         )
+
+
+class CacheRefreshResponse(BaseModel):
+    success: bool
+    cache_built_at: str
+    pdf_count: int
+    message: str
+
+
+@router.post("/refresh-cache")
+async def refresh_pdf_cache() -> CacheRefreshResponse:
+    """
+    Refresh the PDF cache by rebuilding from filesystem.
+    This will rescan all PDFs and regenerate thumbnails.
+    """
+    try:
+        cache_info = pdf_service.refresh_cache()
+
+        return CacheRefreshResponse(
+            success=True,
+            cache_built_at=cache_info["cache_built_at"],
+            pdf_count=cache_info["pdf_count"],
+            message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing cache: {str(e)}")

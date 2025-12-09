@@ -1,5 +1,4 @@
 import io
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -7,6 +6,8 @@ import fitz  # PyMuPDF
 import pdfplumber
 from PIL import Image
 from PyPDF2 import PdfReader
+
+from .pdf_cache import PDFCache
 
 
 class PDFService:
@@ -18,99 +19,20 @@ class PDFService:
         if not self.thumbnails_dir.exists():
             self.thumbnails_dir.mkdir(exist_ok=True)
 
+        # Initialize cache
+        self.cache = PDFCache(self.pdf_dir, self.thumbnails_dir, self)
+
     def list_pdfs(self) -> List[Dict[str, Any]]:
         """
-        List all PDF files in the pdfs directory with metadata
+        List all PDF files in the pdfs directory with metadata (from cache)
         """
-        pdfs = []
-
-        for file_path in self.pdf_dir.glob("*.pdf"):
-            try:
-                # Get file stats
-                stat = file_path.stat()
-
-                # Get basic PDF info
-                with open(file_path, "rb") as file:
-                    reader = PdfReader(file)
-                    num_pages = len(reader.pages)
-
-                    # Try to get metadata
-                    metadata = reader.metadata or {}
-                    title = metadata.get("/Title", file_path.stem)
-                    author = metadata.get("/Author", "Unknown")
-
-                pdf_info = {
-                    "filename": file_path.name,
-                    "type": "pdf",
-                    "title": str(title) if title else file_path.stem,
-                    "author": str(author) if author else "Unknown",
-                    "num_pages": num_pages,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                }
-
-                pdfs.append(pdf_info)
-
-            except Exception as e:
-                # If we can't read a PDF, still include it but with limited info
-                stat = file_path.stat()
-                pdf_info = {
-                    "filename": file_path.name,
-                    "type": "pdf",
-                    "title": file_path.stem,
-                    "author": "Unknown",
-                    "num_pages": 0,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "error": f"Could not read PDF: {str(e)}",
-                }
-                pdfs.append(pdf_info)
-
-        # Sort by modified date (newest first)
-        pdfs.sort(key=lambda x: x["modified_date"], reverse=True)
-
-        return pdfs
+        return self.cache.get_all_pdfs()
 
     def get_pdf_info(self, filename: str) -> Dict[str, Any]:
         """
-        Get detailed information about a specific PDF
+        Get detailed information about a specific PDF (with lazy-loaded extended metadata)
         """
-        file_path = self.pdf_dir / filename
-
-        if not file_path.exists():
-            raise FileNotFoundError(f"PDF {filename} not found")
-
-        if not file_path.suffix.lower() == ".pdf":
-            raise ValueError(f"{filename} is not a PDF file")
-
-        stat = file_path.stat()
-
-        with open(file_path, "rb") as file:
-            reader = PdfReader(file)
-            num_pages = len(reader.pages)
-
-            # Get metadata
-            metadata = reader.metadata or {}
-
-            pdf_info = {
-                "filename": file_path.name,
-                "type": "pdf",
-                "title": str(metadata.get("/Title", file_path.stem)),
-                "author": str(metadata.get("/Author", "Unknown")),
-                "subject": str(metadata.get("/Subject", "")),
-                "creator": str(metadata.get("/Creator", "")),
-                "producer": str(metadata.get("/Producer", "")),
-                "creation_date": str(metadata.get("/CreationDate", "")),
-                "modification_date": str(metadata.get("/ModDate", "")),
-                "num_pages": num_pages,
-                "file_size": stat.st_size,
-                "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            }
-
-            return pdf_info
+        return self.cache.get_pdf_info(filename)
 
     def get_pdf_path(self, filename: str) -> Path:
         """
@@ -234,6 +156,24 @@ class PDFService:
 
     def get_thumbnail_path(self, filename: str) -> Path:
         """
-        Get the path to a PDF thumbnail, generating it if it doesn't exist
+        Get the path to a PDF thumbnail from cache (pre-generated)
         """
-        return self.generate_thumbnail(filename)
+        thumbnail_path_str = self.cache.get_thumbnail_path(filename)
+        if thumbnail_path_str:
+            return Path(thumbnail_path_str)
+        else:
+            # Fallback: generate if not in cache (shouldn't happen normally)
+            return self.generate_thumbnail(filename)
+
+    def refresh_cache(self) -> Dict[str, Any]:
+        """
+        Refresh the PDF cache by rebuilding from filesystem
+        """
+        self.cache.refresh()
+        return self.cache.get_cache_info()
+
+    def get_cache_info(self) -> Dict[str, Any]:
+        """
+        Get metadata about the PDF cache
+        """
+        return self.cache.get_cache_info()

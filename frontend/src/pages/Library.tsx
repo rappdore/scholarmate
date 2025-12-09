@@ -24,6 +24,7 @@ export default function Library() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | BookStatus>('reading');
   const [hoveredBook, setHoveredBook] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
     new: 0,
@@ -191,6 +192,30 @@ export default function Library() {
     }
   };
 
+  const handleRefreshCache = async () => {
+    try {
+      setRefreshing(true);
+      console.log('Refreshing PDF cache...');
+
+      // Call the refresh cache API
+      const result = await pdfService.refreshPDFCache();
+      console.log('Cache refreshed:', result);
+
+      // Reload documents and status counts
+      await loadDocuments();
+      await loadStatusCounts();
+
+      console.log(
+        `✅ Cache refreshed successfully! ${result.pdf_count} PDFs cached.`
+      );
+    } catch (err) {
+      console.error('Error refreshing cache:', err);
+      setError('Failed to refresh cache. Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const filteredDocuments = documents
     .filter(doc => matchesStatusFilter(doc as any, activeTab))
     .sort((a, b) => {
@@ -348,12 +373,32 @@ export default function Library() {
         </div>
       ) : (
         <>
-          {/* Library Tabs */}
-          <LibraryTabs
-            activeTab={activeTab}
-            counts={statusCounts}
-            onTabChange={setActiveTab}
-          />
+          {/* Header with Tabs and Refresh Button */}
+          <div className="flex items-center justify-between mb-6">
+            <LibraryTabs
+              activeTab={activeTab}
+              counts={statusCounts}
+              onTabChange={setActiveTab}
+            />
+            <button
+              onClick={handleRefreshCache}
+              disabled={refreshing}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium shadow-lg hover:shadow-purple-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Refresh library cache"
+            >
+              {refreshing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <span>🔄</span>
+                  <span>Refresh Cache</span>
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Books Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">

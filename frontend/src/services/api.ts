@@ -152,6 +152,16 @@ export const pdfService = {
   getThumbnailUrl: (filename: string): string => {
     return `http://localhost:8000/pdf/${encodeURIComponent(filename)}/thumbnail`;
   },
+
+  refreshPDFCache: async (): Promise<{
+    success: boolean;
+    cache_built_at: string;
+    pdf_count: number;
+    message: string;
+  }> => {
+    const response = await api.post('/pdf/refresh-cache');
+    return response.data;
+  },
 };
 
 export const notesService = {
