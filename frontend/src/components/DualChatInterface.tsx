@@ -76,16 +76,6 @@ export default function DualChatInterface({
   filename,
   currentPage,
 }: DualChatInterfaceProps) {
-  // Extend sanitize schema to allow custom <think> tag
-  const sanitizeSchema = {
-    ...defaultSchema,
-    tagNames: [...(defaultSchema.tagNames || []), 'think'],
-    attributes: {
-      ...(defaultSchema.attributes || {}),
-      think: ['className'],
-    },
-  };
-
   // LLM state
   const [primaryLLM, setPrimaryLLM] = useState<LLMConfiguration | null>(null);
   const [secondaryLLM, setSecondaryLLM] = useState<LLMConfiguration | null>(
@@ -508,7 +498,6 @@ export default function DualChatInterface({
         </code>
       );
     },
-    // Note: <think> blocks are now rendered separately using ThinkingBlock component
     span: ({ className, children, ...props }) => {
       if (className?.includes('katex')) {
         return (
@@ -639,7 +628,7 @@ export default function DualChatInterface({
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[
                             rehypeRaw,
-                            [rehypeSanitize, sanitizeSchema],
+                            [rehypeSanitize, defaultSchema],
                             rehypeHighlight,
                             rehypeKatex,
                           ]}
@@ -656,7 +645,7 @@ export default function DualChatInterface({
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[
                             rehypeRaw,
-                            [rehypeSanitize, sanitizeSchema],
+                            [rehypeSanitize, defaultSchema],
                             rehypeHighlight,
                             rehypeKatex,
                           ]}
