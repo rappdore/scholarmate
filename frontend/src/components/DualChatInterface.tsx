@@ -16,6 +16,7 @@ import type { LLMConfiguration } from '../types/llm';
 import LLMSelectionModal from './LLMSelectionModal';
 import { dualChatService } from '../services/dualChatService';
 import { notesService } from '../services/api';
+import { ThinkingBlock } from './ThinkBlock';
 
 // Normalize LaTeX math delimiters (same as ChatInterface)
 function normalizeMathDelimiters(markdown: string): string {
@@ -52,9 +53,17 @@ function normalizeMathDelimiters(markdown: string): string {
 
 interface DualMessage {
   id: string;
-  text: string;
   isUser: boolean;
   timestamp: Date;
+
+  // NEW: Separate thinking and response content
+  thinkingContent: string;
+  responseContent: string;
+  isThinkingComplete: boolean;
+  hasThinking: boolean;
+
+  // DEPRECATED: Keep for backward compatibility with user messages
+  text?: string;
 }
 
 interface DualChatInterfaceProps {
@@ -157,14 +166,28 @@ export default function DualChatInterface({
 
     setSaving(true);
     try {
-      // Convert LLM1 messages to formatted string
+      // CRITICAL: Convert LLM1 messages, omit thinking content
       const llm1Content = llm1Messages
-        .map(msg => `**${msg.isUser ? 'You' : 'AI'}**: ${msg.text}`)
+        .map(msg => {
+          if (msg.isUser) {
+            return `**You**: ${msg.text}`;
+          } else {
+            // Only save the response content, omit thinking
+            return `**AI**: ${msg.responseContent}`;
+          }
+        })
         .join('\n\n');
 
-      // Convert LLM2 messages to formatted string
+      // CRITICAL: Convert LLM2 messages, omit thinking content
       const llm2Content = llm2Messages
-        .map(msg => `**${msg.isUser ? 'You' : 'AI'}**: ${msg.text}`)
+        .map(msg => {
+          if (msg.isUser) {
+            return `**You**: ${msg.text}`;
+          } else {
+            // Only save the response content, omit thinking
+            return `**AI**: ${msg.responseContent}`;
+          }
+        })
         .join('\n\n');
 
       const baseTitle =
@@ -193,7 +216,7 @@ export default function DualChatInterface({
       setShowSaveDialog(false);
       setNoteTitle('');
 
-      console.log('Both chat conversations saved as notes successfully!');
+      console.log('Both chat conversations saved as notes (thinking omitted)!');
     } catch (error) {
       console.error('Error saving dual chat notes:', error);
     } finally {
@@ -211,9 +234,13 @@ export default function DualChatInterface({
 
     const userMessage: DualMessage = {
       id: Date.now().toString(),
-      text: inputText,
+      text: inputText, // User messages still use text field
       isUser: true,
       timestamp: new Date(),
+      thinkingContent: '',
+      responseContent: '',
+      isThinkingComplete: false,
+      hasThinking: false,
     };
 
     // Add user message to both conversations
@@ -231,14 +258,20 @@ export default function DualChatInterface({
 
     const aiMessage1: DualMessage = {
       id: aiMessage1Id,
-      text: '',
+      thinkingContent: '',
+      responseContent: '',
+      isThinkingComplete: false,
+      hasThinking: false,
       isUser: false,
       timestamp: new Date(),
     };
 
     const aiMessage2: DualMessage = {
       id: aiMessage2Id,
-      text: '',
+      thinkingContent: '',
+      responseContent: '',
+      isThinkingComplete: false,
+      hasThinking: false,
       isUser: false,
       timestamp: new Date(),
     };
@@ -252,26 +285,25 @@ export default function DualChatInterface({
 
     try {
       // Convert messages to chat history format
+      // CRITICAL: Only send response content, NOT thinking content
       const llm1History = llm1Messages
         .filter(msg => !msg.isUser || msg.text !== currentInput)
         .map(msg => ({
           role: msg.isUser ? 'user' : 'assistant',
-          content: msg.text,
+          content: msg.isUser ? msg.text || '' : msg.responseContent,
         }));
 
       const llm2History = llm2Messages
         .filter(msg => !msg.isUser || msg.text !== currentInput)
         .map(msg => ({
           role: msg.isUser ? 'user' : 'assistant',
-          content: msg.text,
+          content: msg.isUser ? msg.text || '' : msg.responseContent,
         }));
 
       // Detect if this is a new chat
       const isNewChat = llm1Messages.length === 0 && llm2Messages.length === 0;
 
-      // Stream from real backend
-      let llm1FullResponse = '';
-      let llm2FullResponse = '';
+      // Stream from backend with structured thinking/response separation
       let requestId: string | null = null;
 
       for await (const data of dualChatService.streamDualChat(
@@ -292,49 +324,107 @@ export default function DualChatInterface({
           continue;
         }
 
-        // Handle LLM 1 content
+        // Handle LLM 1 structured data
         if (data.llm1) {
-          if (data.llm1.content) {
-            llm1FullResponse += data.llm1.content;
-            setLlm1Messages(prev =>
-              prev.map(msg =>
-                msg.id === aiMessage1Id
-                  ? { ...msg, text: llm1FullResponse }
-                  : msg
-              )
-            );
-          }
           if (data.llm1.error) {
             setLlm1Messages(prev =>
               prev.map(msg =>
                 msg.id === aiMessage1Id
-                  ? { ...msg, text: `Error: ${data.llm1!.error}` }
+                  ? { ...msg, responseContent: `Error: ${data.llm1!.error}` }
                   : msg
               )
             );
+          } else if (data.llm1.type === 'thinking') {
+            setLlm1Messages(prev =>
+              prev.map(msg =>
+                msg.id === aiMessage1Id
+                  ? {
+                      ...msg,
+                      thinkingContent:
+                        msg.thinkingContent + (data.llm1!.content || ''),
+                      hasThinking: true,
+                    }
+                  : msg
+              )
+            );
+          } else if (data.llm1.type === 'response') {
+            setLlm1Messages(prev =>
+              prev.map(msg =>
+                msg.id === aiMessage1Id
+                  ? {
+                      ...msg,
+                      responseContent:
+                        msg.responseContent + (data.llm1!.content || ''),
+                    }
+                  : msg
+              )
+            );
+          } else if (data.llm1.type === 'metadata') {
+            if (data.llm1.metadata?.thinking_complete !== undefined) {
+              setLlm1Messages(prev =>
+                prev.map(msg =>
+                  msg.id === aiMessage1Id
+                    ? {
+                        ...msg,
+                        isThinkingComplete:
+                          data.llm1!.metadata?.thinking_complete ?? false,
+                      }
+                    : msg
+                )
+              );
+            }
           }
         }
 
-        // Handle LLM 2 content
+        // Handle LLM 2 structured data
         if (data.llm2) {
-          if (data.llm2.content) {
-            llm2FullResponse += data.llm2.content;
-            setLlm2Messages(prev =>
-              prev.map(msg =>
-                msg.id === aiMessage2Id
-                  ? { ...msg, text: llm2FullResponse }
-                  : msg
-              )
-            );
-          }
           if (data.llm2.error) {
             setLlm2Messages(prev =>
               prev.map(msg =>
                 msg.id === aiMessage2Id
-                  ? { ...msg, text: `Error: ${data.llm2!.error}` }
+                  ? { ...msg, responseContent: `Error: ${data.llm2!.error}` }
                   : msg
               )
             );
+          } else if (data.llm2.type === 'thinking') {
+            setLlm2Messages(prev =>
+              prev.map(msg =>
+                msg.id === aiMessage2Id
+                  ? {
+                      ...msg,
+                      thinkingContent:
+                        msg.thinkingContent + (data.llm2!.content || ''),
+                      hasThinking: true,
+                    }
+                  : msg
+              )
+            );
+          } else if (data.llm2.type === 'response') {
+            setLlm2Messages(prev =>
+              prev.map(msg =>
+                msg.id === aiMessage2Id
+                  ? {
+                      ...msg,
+                      responseContent:
+                        msg.responseContent + (data.llm2!.content || ''),
+                    }
+                  : msg
+              )
+            );
+          } else if (data.llm2.type === 'metadata') {
+            if (data.llm2.metadata?.thinking_complete !== undefined) {
+              setLlm2Messages(prev =>
+                prev.map(msg =>
+                  msg.id === aiMessage2Id
+                    ? {
+                        ...msg,
+                        isThinkingComplete:
+                          data.llm2!.metadata?.thinking_complete ?? false,
+                      }
+                    : msg
+                )
+              );
+            }
           }
         }
 
@@ -351,24 +441,32 @@ export default function DualChatInterface({
         const abortText = 'Message generation stopped by user.';
         setLlm1Messages(prev =>
           prev.map(msg =>
-            msg.id === aiMessage1Id ? { ...msg, text: abortText } : msg
+            msg.id === aiMessage1Id
+              ? { ...msg, responseContent: abortText }
+              : msg
           )
         );
         setLlm2Messages(prev =>
           prev.map(msg =>
-            msg.id === aiMessage2Id ? { ...msg, text: abortText } : msg
+            msg.id === aiMessage2Id
+              ? { ...msg, responseContent: abortText }
+              : msg
           )
         );
       } else {
         const errorText = `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`;
         setLlm1Messages(prev =>
           prev.map(msg =>
-            msg.id === aiMessage1Id ? { ...msg, text: errorText } : msg
+            msg.id === aiMessage1Id
+              ? { ...msg, responseContent: errorText }
+              : msg
           )
         );
         setLlm2Messages(prev =>
           prev.map(msg =>
-            msg.id === aiMessage2Id ? { ...msg, text: errorText } : msg
+            msg.id === aiMessage2Id
+              ? { ...msg, responseContent: errorText }
+              : msg
           )
         );
       }
@@ -378,28 +476,6 @@ export default function DualChatInterface({
       setAbortController(null);
       setCurrentRequestId(null);
     }
-  };
-
-  // Collapsible renderer for <think> blocks
-  const ThinkBlock = ({ children }: { children: React.ReactNode }) => {
-    const [open, setOpen] = useState(false);
-    return (
-      <div className="my-2 border border-yellow-700/60 bg-yellow-900/20 rounded">
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          className="w-full text-left px-2 py-1 text-xs font-medium text-yellow-200 flex items-center justify-between hover:bg-yellow-800/30"
-        >
-          <span>Model thoughts</span>
-          <span className="text-yellow-300">{open ? '−' : '+'}</span>
-        </button>
-        {open && (
-          <div className="px-2 pb-2 text-xs text-gray-200 space-y-1">
-            {children}
-          </div>
-        )}
-      </div>
-    );
   };
 
   const markdownComponents = {
@@ -413,9 +489,7 @@ export default function DualChatInterface({
         </code>
       );
     },
-    think: ({ children }: { children: React.ReactNode }) => (
-      <ThinkBlock>{children}</ThinkBlock>
-    ),
+    // Note: <think> blocks are now rendered separately using ThinkingBlock component
     span: ({ className, children, ...props }) => {
       if (className?.includes('katex')) {
         return (
@@ -525,19 +599,55 @@ export default function DualChatInterface({
                   message.text
                 ) : (
                   <div className="max-w-none text-gray-200">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm, remarkMath]}
-                      rehypePlugins={[
-                        rehypeRaw,
-                        [rehypeSanitize, sanitizeSchema],
-                        rehypeHighlight,
-                        rehypeKatex,
-                      ]}
-                      skipHtml={false}
-                      components={markdownComponents}
-                    >
-                      {normalizeMathDelimiters(message.text)}
-                    </ReactMarkdown>
+                    {/* Show thinking content if present */}
+                    {message.hasThinking && (
+                      <ThinkingBlock
+                        content={message.thinkingContent}
+                        isStreaming={streaming && !message.isThinkingComplete}
+                        isComplete={message.isThinkingComplete}
+                      />
+                    )}
+                    {/* Show response content */}
+                    {message.responseContent ? (
+                      streaming && !message.isUser ? (
+                        // Show plain text while streaming for performance
+                        <div className="whitespace-pre-wrap">
+                          {message.responseContent}
+                        </div>
+                      ) : (
+                        // Parse markdown when streaming is complete
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[
+                            rehypeRaw,
+                            [rehypeSanitize, sanitizeSchema],
+                            rehypeHighlight,
+                            rehypeKatex,
+                          ]}
+                          skipHtml={false}
+                          components={markdownComponents}
+                        >
+                          {normalizeMathDelimiters(message.responseContent)}
+                        </ReactMarkdown>
+                      )
+                    ) : (
+                      // Fallback to old text field for backward compatibility
+                      message.text && (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[
+                            rehypeRaw,
+                            [rehypeSanitize, sanitizeSchema],
+                            rehypeHighlight,
+                            rehypeKatex,
+                          ]}
+                          skipHtml={false}
+                          components={markdownComponents}
+                        >
+                          {normalizeMathDelimiters(message.text)}
+                        </ReactMarkdown>
+                      )
+                    )}
                   </div>
                 )}
               </div>

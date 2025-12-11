@@ -183,9 +183,17 @@ export default function ChatInterface({
 
     setSaving(true);
     try {
-      // Convert messages to a formatted string
+      // CRITICAL: Convert messages to formatted string
+      // ONLY include response content, NOT thinking content
       const chatContent = messages
-        .map(msg => `**${msg.isUser ? 'You' : 'AI'}**: ${msg.text}`)
+        .map(msg => {
+          if (msg.isUser) {
+            return `**You**: ${msg.text}`;
+          } else {
+            // Only save the response content, omit thinking
+            return `**AI**: ${msg.responseContent}`;
+          }
+        })
         .join('\n\n');
 
       const title =
@@ -222,7 +230,9 @@ export default function ChatInterface({
       setNoteTitle('');
 
       // Show success message (you could add a toast notification here)
-      console.log('Chat saved as note successfully!');
+      console.log(
+        'Chat saved as note successfully (thinking content omitted)!'
+      );
     } catch (error) {
       console.error('Error saving chat note:', error);
       // Show error message (you could add a toast notification here)
