@@ -283,19 +283,15 @@ export default function DualChatInterface({
     try {
       // Convert messages to chat history format
       // CRITICAL: Only send response content, NOT thinking content
-      const llm1History = llm1Messages
-        .filter(msg => !msg.isUser || msg.text !== currentInput)
-        .map(msg => ({
-          role: msg.isUser ? 'user' : 'assistant',
-          content: msg.isUser ? msg.text || '' : msg.responseContent,
-        }));
+      const llm1History = llm1Messages.map(msg => ({
+        role: msg.isUser ? 'user' : 'assistant',
+        content: msg.isUser ? msg.text || '' : msg.responseContent,
+      }));
 
-      const llm2History = llm2Messages
-        .filter(msg => !msg.isUser || msg.text !== currentInput)
-        .map(msg => ({
-          role: msg.isUser ? 'user' : 'assistant',
-          content: msg.isUser ? msg.text || '' : msg.responseContent,
-        }));
+      const llm2History = llm2Messages.map(msg => ({
+        role: msg.isUser ? 'user' : 'assistant',
+        content: msg.isUser ? msg.text || '' : msg.responseContent,
+      }));
 
       // Stream from backend with structured thinking/response separation
       let requestId: string | null = null;
