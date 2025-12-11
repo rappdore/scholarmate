@@ -60,6 +60,7 @@ interface DualMessage {
   thinkingContent: string;
   responseContent: string;
   isThinkingComplete: boolean;
+  isResponseComplete: boolean;
   hasThinking: boolean;
 
   // DEPRECATED: Keep for backward compatibility with user messages
@@ -232,6 +233,9 @@ export default function DualChatInterface({
   const sendMessage = async () => {
     if (!inputText.trim() || !filename || !secondaryLLM) return;
 
+    // Detect if this is a new chat BEFORE adding messages
+    const isNewChat = llm1Messages.length === 0 && llm2Messages.length === 0;
+
     const userMessage: DualMessage = {
       id: Date.now().toString(),
       text: inputText, // User messages still use text field
@@ -240,6 +244,7 @@ export default function DualChatInterface({
       thinkingContent: '',
       responseContent: '',
       isThinkingComplete: false,
+      isResponseComplete: true, // User messages are always complete
       hasThinking: false,
     };
 
@@ -261,6 +266,7 @@ export default function DualChatInterface({
       thinkingContent: '',
       responseContent: '',
       isThinkingComplete: false,
+      isResponseComplete: false,
       hasThinking: false,
       isUser: false,
       timestamp: new Date(),
@@ -271,6 +277,7 @@ export default function DualChatInterface({
       thinkingContent: '',
       responseContent: '',
       isThinkingComplete: false,
+      isResponseComplete: false,
       hasThinking: false,
       isUser: false,
       timestamp: new Date(),
@@ -299,9 +306,6 @@ export default function DualChatInterface({
           role: msg.isUser ? 'user' : 'assistant',
           content: msg.isUser ? msg.text || '' : msg.responseContent,
         }));
-
-      // Detect if this is a new chat
-      const isNewChat = llm1Messages.length === 0 && llm2Messages.length === 0;
 
       // Stream from backend with structured thinking/response separation
       let requestId: string | null = null;
@@ -430,6 +434,21 @@ export default function DualChatInterface({
 
         // Handle completion
         if (data.done) {
+          // Mark both messages as complete
+          setLlm1Messages(prev =>
+            prev.map(msg =>
+              msg.id === aiMessage1Id
+                ? { ...msg, isResponseComplete: true }
+                : msg
+            )
+          );
+          setLlm2Messages(prev =>
+            prev.map(msg =>
+              msg.id === aiMessage2Id
+                ? { ...msg, isResponseComplete: true }
+                : msg
+            )
+          );
           break;
         }
       }
@@ -442,14 +461,14 @@ export default function DualChatInterface({
         setLlm1Messages(prev =>
           prev.map(msg =>
             msg.id === aiMessage1Id
-              ? { ...msg, responseContent: abortText }
+              ? { ...msg, responseContent: abortText, isResponseComplete: true }
               : msg
           )
         );
         setLlm2Messages(prev =>
           prev.map(msg =>
             msg.id === aiMessage2Id
-              ? { ...msg, responseContent: abortText }
+              ? { ...msg, responseContent: abortText, isResponseComplete: true }
               : msg
           )
         );
@@ -458,14 +477,14 @@ export default function DualChatInterface({
         setLlm1Messages(prev =>
           prev.map(msg =>
             msg.id === aiMessage1Id
-              ? { ...msg, responseContent: errorText }
+              ? { ...msg, responseContent: errorText, isResponseComplete: true }
               : msg
           )
         );
         setLlm2Messages(prev =>
           prev.map(msg =>
             msg.id === aiMessage2Id
-              ? { ...msg, responseContent: errorText }
+              ? { ...msg, responseContent: errorText, isResponseComplete: true }
               : msg
           )
         );
@@ -609,13 +628,13 @@ export default function DualChatInterface({
                     )}
                     {/* Show response content */}
                     {message.responseContent ? (
-                      streaming && !message.isUser ? (
-                        // Show plain text while streaming for performance
+                      !message.isResponseComplete ? (
+                        // Show plain text while this message is streaming
                         <div className="whitespace-pre-wrap">
                           {message.responseContent}
                         </div>
                       ) : (
-                        // Parse markdown when streaming is complete
+                        // Parse markdown when this message is complete
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[
