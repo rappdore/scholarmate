@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +13,7 @@ from ..services.ollama_service import ollama_service
 from ..services.pdf_service import PDFService
 from ..services.request_tracking_service import request_tracking_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 # Initialize services
@@ -273,7 +275,15 @@ async def analyze_page_stream(request: AnalyzePageRequest):
 @router.post("/chat")
 async def chat_with_ai(request: ChatRequest):
     """
-    Chat with AI about the PDF content with streaming response
+    Chat with AI about the PDF content with streaming response.
+    Returns structured data with separated thinking/response content.
+
+    Stream format:
+        data: {"request_id": "..."}
+        data: {"type": "metadata", "content": null, "metadata": {"thinking_started": true}}
+        data: {"type": "thinking", "content": "chunk", "metadata": {...}}
+        data: {"type": "response", "content": "chunk", "metadata": {...}}
+        data: {"done": true}
     """
     try:
         # Register the request for tracking
@@ -282,6 +292,9 @@ async def chat_with_ai(request: ChatRequest):
             document_type="pdf",
             page_num=request.page_num,
             request_id=request.request_id,
+        )
+        logger.info(
+            f"[AI Router] Registered chat request {request_id} for {request.filename}"
         )
 
         # Extract text from current page for context
@@ -292,7 +305,8 @@ async def chat_with_ai(request: ChatRequest):
                 # Send the request ID first
                 yield f"data: {json.dumps({'request_id': request_id})}\n\n"
 
-                async for chunk in ollama_service.chat_stream(
+                # CHANGED: ollama_service now yields structured StreamChunk dictionaries
+                async for structured_data in ollama_service.chat_stream(
                     message=request.message,
                     filename=request.filename,
                     page_num=request.page_num,
@@ -303,17 +317,30 @@ async def chat_with_ai(request: ChatRequest):
                 ):
                     # Check if request was cancelled
                     if request_tracking_service.is_cancelled(request_id):
+                        logger.info(f"[AI Router] Request {request_id} cancelled")
                         yield f"data: {json.dumps({'cancelled': True})}\n\n"
                         break
 
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    # CHANGED: Send structured data directly
+                    # structured_data is a StreamChunk TypedDict:
+                    # {
+                    #   "type": "thinking" | "response" | "metadata",
+                    #   "content": "...",
+                    #   "metadata": {...}
+                    # }
+                    yield f"data: {json.dumps(structured_data)}\n\n"
 
                 # Send end-of-stream marker
                 yield f"data: {json.dumps({'done': True})}\n\n"
+                logger.info(f"[AI Router] Completed chat request {request_id}")
 
             except asyncio.CancelledError:
+                logger.warning(f"[AI Router] Request {request_id} asyncio cancelled")
                 yield f"data: {json.dumps({'cancelled': True})}\n\n"
             except Exception as e:
+                logger.error(
+                    f"[AI Router] Error in chat stream: {str(e)}", exc_info=True
+                )
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
                 # Clean up the request
@@ -334,13 +361,17 @@ async def chat_with_ai(request: ChatRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"[AI Router] Chat endpoint error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 
 @router.post("/chat/epub")
 async def chat_with_ai_epub(request: EpubChatRequest):
     """
-    Chat with AI about the EPUB content with streaming response
+    Chat with AI about the EPUB content with streaming response.
+    Returns structured data with separated thinking/response content.
+
+    Stream format: Same as /chat endpoint (see above)
     """
     try:
         # Register the request for tracking
@@ -349,6 +380,9 @@ async def chat_with_ai_epub(request: EpubChatRequest):
             document_type="epub",
             nav_id=request.nav_id,
             request_id=request.request_id,
+        )
+        logger.info(
+            f"[AI Router] Registered EPUB chat request {request_id} for {request.filename}"
         )
 
         # Extract text from current section for context
@@ -361,7 +395,8 @@ async def chat_with_ai_epub(request: EpubChatRequest):
                 # Send the request ID first
                 yield f"data: {json.dumps({'request_id': request_id})}\n\n"
 
-                async for chunk in ollama_service.chat_epub_stream(
+                # CHANGED: ollama_service now yields structured StreamChunk dictionaries
+                async for structured_data in ollama_service.chat_epub_stream(
                     message=request.message,
                     filename=request.filename,
                     nav_id=request.nav_id,
@@ -372,17 +407,26 @@ async def chat_with_ai_epub(request: EpubChatRequest):
                 ):
                     # Check if request was cancelled
                     if request_tracking_service.is_cancelled(request_id):
+                        logger.info(f"[AI Router] EPUB request {request_id} cancelled")
                         yield f"data: {json.dumps({'cancelled': True})}\n\n"
                         break
 
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    # CHANGED: Send structured data directly
+                    yield f"data: {json.dumps(structured_data)}\n\n"
 
                 # Send end-of-stream marker
                 yield f"data: {json.dumps({'done': True})}\n\n"
+                logger.info(f"[AI Router] Completed EPUB chat request {request_id}")
 
             except asyncio.CancelledError:
+                logger.warning(
+                    f"[AI Router] EPUB request {request_id} asyncio cancelled"
+                )
                 yield f"data: {json.dumps({'cancelled': True})}\n\n"
             except Exception as e:
+                logger.error(
+                    f"[AI Router] Error in EPUB chat stream: {str(e)}", exc_info=True
+                )
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
                 # Clean up the request
@@ -403,6 +447,7 @@ async def chat_with_ai_epub(request: EpubChatRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"[AI Router] EPUB chat endpoint error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"EPUB chat failed: {str(e)}")
 
 

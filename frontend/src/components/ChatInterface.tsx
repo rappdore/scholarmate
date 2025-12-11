@@ -14,6 +14,7 @@ import type { Components } from 'react-markdown';
 import { chatService, notesService, epubNotesService } from '../services/api';
 import { getActiveLLMConfiguration } from '../api/llmConfig';
 import type { LLMConfiguration } from '../types/llm';
+import { ThinkingBlock } from './ThinkBlock';
 
 // Normalize LaTeX math delimiters so that remark-math can parse them.
 // - Convert \[ ... \] → $$ ... $$ (block math)
@@ -59,9 +60,17 @@ function normalizeMathDelimiters(markdown: string): string {
 
 interface Message {
   id: string;
-  text: string;
   isUser: boolean;
   timestamp: Date;
+
+  // NEW: Separate thinking and response content
+  thinkingContent: string;
+  responseContent: string;
+  isThinkingComplete: boolean;
+  hasThinking: boolean;
+
+  // DEPRECATED: Keep for backward compatibility with user messages
+  text?: string;
 }
 
 interface ChatInterfaceProps {
@@ -239,9 +248,13 @@ export default function ChatInterface({
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputText,
+      text: inputText, // User messages still use text field
       isUser: true,
       timestamp: new Date(),
+      thinkingContent: '',
+      responseContent: '',
+      isThinkingComplete: false,
+      hasThinking: false,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -258,7 +271,10 @@ export default function ChatInterface({
     const aiMessageId = (Date.now() + 1).toString();
     const aiMessage: Message = {
       id: aiMessageId,
-      text: '',
+      thinkingContent: '',
+      responseContent: '',
+      isThinkingComplete: false,
+      hasThinking: false,
       isUser: false,
       timestamp: new Date(),
     };
@@ -268,7 +284,9 @@ export default function ChatInterface({
       // Convert messages to chat history format
       const chatHistory = messages.map(msg => ({
         role: msg.isUser ? 'user' : 'assistant',
-        content: msg.text,
+        // CRITICAL: Only send response content, NOT thinking content
+        // This ensures thinking doesn't pollute conversation history
+        content: msg.isUser ? msg.text || '' : msg.responseContent,
       }));
 
       // Detect if this is a new chat (no messages yet)
@@ -294,7 +312,6 @@ export default function ChatInterface({
               isNewChat
             );
 
-      let fullResponse = '';
       for await (const data of stream) {
         // Handle request_id from backend
         if (data.request_id) {
@@ -307,20 +324,52 @@ export default function ChatInterface({
           const cancelText = 'Message generation stopped by user.';
           setMessages(prev =>
             prev.map(msg =>
-              msg.id === aiMessageId ? { ...msg, text: cancelText } : msg
+              msg.id === aiMessageId
+                ? { ...msg, responseContent: cancelText }
+                : msg
             )
           );
           break;
         }
 
-        // Handle content
-        if (data.content) {
-          fullResponse += data.content;
+        // NEW: Handle structured thinking data
+        if (data.type === 'thinking') {
           setMessages(prev =>
             prev.map(msg =>
-              msg.id === aiMessageId ? { ...msg, text: fullResponse } : msg
+              msg.id === aiMessageId
+                ? {
+                    ...msg,
+                    thinkingContent: msg.thinkingContent + (data.content || ''),
+                    hasThinking: true,
+                  }
+                : msg
             )
           );
+        } else if (data.type === 'response') {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === aiMessageId
+                ? {
+                    ...msg,
+                    responseContent: msg.responseContent + (data.content || ''),
+                  }
+                : msg
+            )
+          );
+        } else if (data.type === 'metadata') {
+          if (data.metadata?.thinking_complete !== undefined) {
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === aiMessageId
+                  ? {
+                      ...msg,
+                      isThinkingComplete:
+                        data.metadata?.thinking_complete ?? false,
+                    }
+                  : msg
+              )
+            );
+          }
         }
 
         // Handle completion
@@ -330,6 +379,7 @@ export default function ChatInterface({
       }
     } catch (error) {
       console.error('Chat failed:', error);
+
       // Check if the error is due to abort
       if (error instanceof Error && error.name === 'AbortError') {
         const abortText = 'Message generation stopped by user.';
@@ -576,19 +626,55 @@ export default function ChatInterface({
                   message.text
                 ) : (
                   <div className="max-w-none text-gray-200">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm, remarkMath]}
-                      rehypePlugins={[
-                        rehypeRaw,
-                        [rehypeSanitize, sanitizeSchema],
-                        rehypeHighlight,
-                        rehypeKatex,
-                      ]}
-                      skipHtml={false}
-                      components={markdownComponents}
-                    >
-                      {normalizeMathDelimiters(message.text)}
-                    </ReactMarkdown>
+                    {/* Show thinking content if present */}
+                    {message.hasThinking && (
+                      <ThinkingBlock
+                        content={message.thinkingContent}
+                        isStreaming={streaming && !message.isThinkingComplete}
+                        isComplete={message.isThinkingComplete}
+                      />
+                    )}
+                    {/* Show response content */}
+                    {message.responseContent ? (
+                      streaming && !message.isUser ? (
+                        // Show plain text while streaming for performance
+                        <div className="whitespace-pre-wrap">
+                          {message.responseContent}
+                        </div>
+                      ) : (
+                        // Parse markdown when streaming is complete
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[
+                            rehypeRaw,
+                            [rehypeSanitize, sanitizeSchema],
+                            rehypeHighlight,
+                            rehypeKatex,
+                          ]}
+                          skipHtml={false}
+                          components={markdownComponents}
+                        >
+                          {normalizeMathDelimiters(message.responseContent)}
+                        </ReactMarkdown>
+                      )
+                    ) : (
+                      // Fallback to old text field for backward compatibility
+                      message.text && (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[
+                            rehypeRaw,
+                            [rehypeSanitize, sanitizeSchema],
+                            rehypeHighlight,
+                            rehypeKatex,
+                          ]}
+                          skipHtml={false}
+                          components={markdownComponents}
+                        >
+                          {normalizeMathDelimiters(message.text)}
+                        </ReactMarkdown>
+                      )
+                    )}
                   </div>
                 )}
               </div>

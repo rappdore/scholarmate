@@ -3,6 +3,9 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from openai import AsyncOpenAI
 
+from app.models.stream_types import StreamChunk
+from app.services.stream_parser import ThinkingStreamParser
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -187,9 +190,12 @@ Provide a helpful analysis that will aid in understanding this content."""
         chat_history: list = None,
         request_id: Optional[str] = None,
         is_new_chat: bool = False,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
-        Stream chat responses about the PDF content with reasoning trace preservation
+        Stream chat responses about the PDF content with structured thinking/response separation.
+
+        Returns:
+            AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
         """
         logger.info(
             f"[LLM] chat_stream - Using model: {self.model}, base_url: {self.base_url}"
@@ -259,6 +265,10 @@ Keep responses conversational but informative. When explaining a concept, emphas
         messages.append({"role": "user", "content": message})
 
         try:
+            # NEW: Create parser for this stream
+            parser = ThinkingStreamParser()
+            logger.debug("[LLM] Initialized ThinkingStreamParser")
+
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -276,10 +286,17 @@ Keep responses conversational but informative. When explaining a concept, emphas
                     from .request_tracking_service import request_tracking_service
 
                     if request_tracking_service.is_cancelled(request_id):
+                        logger.info(
+                            f"[LLM] Request {request_id} cancelled, stopping stream"
+                        )
                         break
 
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    raw_content = chunk.choices[0].delta.content
+
+                    # NEW: Process through thinking parser
+                    async for structured_chunk in parser.process_chunk(raw_content):
+                        yield structured_chunk
 
                 # Capture reasoning_details from the response
                 if hasattr(chunk.choices[0], "message") and hasattr(
@@ -291,19 +308,28 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 ):
                     reasoning_details = chunk.choices[0].delta.reasoning_details
 
+            # NEW: Finalize parser to flush buffer
+            async for final_chunk in parser.finalize():
+                yield final_chunk
+
             # Store the reasoning_details for this response
             if reasoning_details:
                 self._reasoning_sessions[filename].append(reasoning_details)
-                print(
-                    f"[DEBUG] Stored reasoning_details for {filename}: {reasoning_details}"
-                )
+                logger.debug(f"[LLM] Stored reasoning_details for {filename}")
             else:
                 # Store None to keep indexing aligned
                 self._reasoning_sessions[filename].append(None)
-                print(f"[DEBUG] No reasoning_details in response for {filename}")
+                logger.debug(f"[LLM] No reasoning_details in response for {filename}")
+
+            logger.info(f"[LLM] Stream complete for {filename}")
 
         except Exception as e:
-            yield f"Error: {str(e)}"
+            logger.error(f"Chat stream error: {str(e)}", exc_info=True)
+            yield StreamChunk(
+                type="response",
+                content=f"Error: {str(e)}",
+                metadata={"thinking_started": False, "thinking_complete": False},
+            )
 
     async def chat_epub_stream(
         self,
@@ -314,9 +340,12 @@ Keep responses conversational but informative. When explaining a concept, emphas
         chat_history: list = None,
         request_id: Optional[str] = None,
         is_new_chat: bool = False,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
-        Stream chat responses about the EPUB content with reasoning trace preservation
+        Stream chat responses about the EPUB content with structured thinking/response separation.
+
+        Returns:
+            AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
         """
         logger.info(
             f"[LLM] chat_epub_stream - Using model: {self.model}, base_url: {self.base_url}"
@@ -386,6 +415,10 @@ Keep responses conversational but informative."""
         messages.append({"role": "user", "content": message})
 
         try:
+            # NEW: Create parser for this stream
+            parser = ThinkingStreamParser()
+            logger.debug("[LLM] Initialized ThinkingStreamParser for EPUB")
+
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -402,10 +435,17 @@ Keep responses conversational but informative."""
                     from .request_tracking_service import request_tracking_service
 
                     if request_tracking_service.is_cancelled(request_id):
+                        logger.info(
+                            f"[LLM] Request {request_id} cancelled, stopping EPUB stream"
+                        )
                         break
 
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    raw_content = chunk.choices[0].delta.content
+
+                    # NEW: Process through thinking parser
+                    async for structured_chunk in parser.process_chunk(raw_content):
+                        yield structured_chunk
 
                 # Capture reasoning_details from the response
                 if hasattr(chunk.choices[0], "message") and hasattr(
@@ -417,19 +457,28 @@ Keep responses conversational but informative."""
                 ):
                     reasoning_details = chunk.choices[0].delta.reasoning_details
 
+            # NEW: Finalize parser to flush buffer
+            async for final_chunk in parser.finalize():
+                yield final_chunk
+
             # Store the reasoning_details for this response
             if reasoning_details:
                 self._reasoning_sessions[filename].append(reasoning_details)
-                print(
-                    f"[DEBUG] Stored reasoning_details for {filename}: {reasoning_details}"
-                )
+                logger.debug(f"[LLM] Stored reasoning_details for {filename}")
             else:
                 # Store None to keep indexing aligned
                 self._reasoning_sessions[filename].append(None)
-                print(f"[DEBUG] No reasoning_details in response for {filename}")
+                logger.debug(f"[LLM] No reasoning_details in response for {filename}")
+
+            logger.info(f"[LLM] EPUB stream complete for {filename}")
 
         except Exception as e:
-            yield f"Error: {str(e)}"
+            logger.error(f"EPUB chat stream error: {str(e)}", exc_info=True)
+            yield StreamChunk(
+                type="response",
+                content=f"Error: {str(e)}",
+                metadata={"thinking_started": False, "thinking_complete": False},
+            )
 
     async def test_connection(self) -> Dict[str, Any]:
         """
