@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 
 from .llm_config_service import LLMConfigService
 from .pdf_service import PDFService
+from .stream_parser import ThinkingStreamParser
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ class DualChatService:
         filename: str,
         page_num: int,
     ):
-        """Stream from a single LLM and put chunks in the queue"""
+        """Stream from a single LLM and put structured chunks in the queue"""
         try:
             # Build system prompt with context
             system_prompt = self._build_system_prompt(context, filename, page_num)
@@ -152,12 +153,28 @@ class DualChatService:
                 {"role": "user", "content": message},
             ]
 
-            # Stream from LLM
+            # NEW: Create parser for this stream
+            parser = ThinkingStreamParser()
+            logger.debug(
+                f"[DualChat] Initialized ThinkingStreamParser for {llm_config.get('name', 'unknown')}"
+            )
+
+            # Stream from LLM and process through parser
             async for chunk in self._call_llm_stream(llm_config, messages):
-                await queue.put({"content": chunk, "done": False})
+                # Process raw chunk through thinking parser
+                async for structured_chunk in parser.process_chunk(chunk):
+                    await queue.put(structured_chunk)
+
+            # Finalize parser to flush buffer
+            async for final_chunk in parser.finalize():
+                await queue.put(final_chunk)
 
             # Signal completion
             await queue.put({"done": True})
+
+            logger.info(
+                f"[DualChat] Stream complete for {llm_config.get('name', 'unknown')}"
+            )
 
         except asyncio.CancelledError:
             logger.info(f"LLM stream cancelled for {llm_config.get('name', 'unknown')}")

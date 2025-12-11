@@ -473,7 +473,14 @@ export const chatService = {
     isNewChat?: boolean
   ): AsyncGenerator<
     {
+      // Structured streaming fields
+      type?: 'thinking' | 'response' | 'metadata';
       content?: string;
+      metadata?: {
+        thinking_started?: boolean;
+        thinking_complete?: boolean;
+      };
+      // Legacy/control fields
       request_id?: string;
       done?: boolean;
       cancelled?: boolean;
@@ -590,7 +597,14 @@ export const chatService = {
     isNewChat?: boolean
   ): AsyncGenerator<
     {
+      // Structured streaming fields
+      type?: 'thinking' | 'response' | 'metadata';
       content?: string;
+      metadata?: {
+        thinking_started?: boolean;
+        thinking_complete?: boolean;
+      };
+      // Legacy/control fields
       request_id?: string;
       done?: boolean;
       cancelled?: boolean;
