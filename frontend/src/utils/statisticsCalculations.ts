@@ -54,7 +54,7 @@ export function calculateAggregateStats(
     fastest_page_time: Math.min(...avgTimesPerPage),
     slowest_page_time: Math.max(...avgTimesPerPage),
     first_read_date: sessions[sessions.length - 1].session_start, // Sessions are DESC
-    last_read_date: sessions[0].last_updated,
+    last_read_date: sessions[0].session_start, // Most recent session start time
     longest_session_pages: Math.max(...pagesPerSession),
     shortest_session_pages: Math.min(...pagesPerSession),
     avg_pages_per_session: totalPages / sessions.length,

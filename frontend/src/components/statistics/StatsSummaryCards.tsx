@@ -3,6 +3,7 @@ import {
   formatDuration,
   formatReadableDate,
 } from '../../utils/statisticsCalculations';
+import { format, parseISO } from 'date-fns';
 
 interface StatsSummaryCardsProps {
   aggregateStats: AggregateStats;
@@ -125,7 +126,7 @@ export default function StatsSummaryCards({
         icon="📖"
         subtitle={
           aggregateStats.first_read_date
-            ? `Started ${new Date(aggregateStats.first_read_date).toLocaleDateString()}`
+            ? `Started ${format(parseISO(aggregateStats.first_read_date), 'MMM d, yyyy')}`
             : undefined
         }
       />
