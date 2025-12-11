@@ -9,7 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import type { ReadingSession } from '../../types/statistics';
 
 interface PagesPerSessionChartProps {
@@ -28,21 +28,11 @@ export default function PagesPerSessionChart({
 }: PagesPerSessionChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(VIEW_MODE.DAY);
 
-  // Helper function to parse local timestamps from backend
-  const parseLocalTimestamp = (timestamp: string): Date => {
-    // Backend sends timestamps in format "YYYY-MM-DD HH:MM:SS" as local time
-    // Split and construct Date object directly to avoid timezone issues
-    const [datePart, timePart] = timestamp.split(' ');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const [hours, minutes, seconds] = timePart.split(':').map(Number);
-    return new Date(year, month - 1, day, hours, minutes, seconds);
-  };
-
   // Transform data for session view
   const getSessionData = () => {
     const recentSessions = sessions.slice(0, 20).reverse();
     return recentSessions.map(session => {
-      const localDate = parseLocalTimestamp(session.session_start);
+      const localDate = parseISO(session.session_start);
       return {
         label: format(localDate, 'MMM d'),
         fullDate: format(localDate, 'MMM d, yyyy h:mm a'),
@@ -60,7 +50,7 @@ export default function PagesPerSessionChart({
     >();
 
     sessions.forEach(session => {
-      const localDate = parseLocalTimestamp(session.session_start);
+      const localDate = parseISO(session.session_start);
       const dateKey = format(localDate, 'yyyy-MM-dd');
       const existing = dayMap.get(dateKey);
 
@@ -81,13 +71,18 @@ export default function PagesPerSessionChart({
     return Array.from(dayMap.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-30)
-      .map(([dateKey, data]) => ({
-        label: format(new Date(dateKey), 'MMM d'),
-        fullDate: format(new Date(dateKey), 'MMM d, yyyy'),
-        pages: data.pages,
-        sessions: data.sessions,
-        sessionTimes: data.dates.join(', '),
-      }));
+      .map(([dateKey, data]) => {
+        // Parse date key (YYYY-MM-DD format)
+        const dateObj = parseISO(dateKey);
+
+        return {
+          label: format(dateObj, 'MMM d'),
+          fullDate: format(dateObj, 'MMM d, yyyy'),
+          pages: data.pages,
+          sessions: data.sessions,
+          sessionTimes: data.dates.join(', '),
+        };
+      });
   };
 
   const chartData =

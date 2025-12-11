@@ -138,3 +138,23 @@ class BaseDatabaseService:
             str: Current timestamp in SQLite format
         """
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def format_timestamp_iso(self, timestamp_str: str) -> str:
+        """
+        Convert SQLite timestamp string to ISO 8601 format with UTC indicator.
+
+        SQLite stores timestamps as local time strings (YYYY-MM-DD HH:MM:SS).
+        This method converts them to ISO 8601 format with 'Z' suffix to indicate UTC.
+
+        Args:
+            timestamp_str (str): SQLite timestamp string (e.g., "2025-12-11 11:08:40")
+
+        Returns:
+            str: ISO 8601 timestamp with UTC indicator (e.g., "2025-12-11T11:08:40Z")
+        """
+        if not timestamp_str:
+            return timestamp_str
+
+        # Replace space with 'T' and append 'Z' for UTC
+        # "2025-12-11 11:08:40" -> "2025-12-11T11:08:40Z"
+        return timestamp_str.replace(" ", "T") + "Z"

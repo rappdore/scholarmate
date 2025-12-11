@@ -210,12 +210,12 @@ class ReadingStatisticsService(BaseDatabaseService):
 
                 sessions_result = conn.execute(sessions_query, params).fetchall()
 
-                # Convert to list of dictionaries
+                # Convert to list of dictionaries with ISO 8601 formatted timestamps
                 sessions = [
                     {
                         "session_id": row[0],
-                        "session_start": row[1],
-                        "last_updated": row[2],
+                        "session_start": self.format_timestamp_iso(row[1]),
+                        "last_updated": self.format_timestamp_iso(row[2]),
                         "pages_read": row[3],
                         "average_time_per_page": row[4],
                     }
