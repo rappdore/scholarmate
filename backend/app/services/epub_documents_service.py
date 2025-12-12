@@ -274,7 +274,7 @@ class EPUBDocumentsService:
         # Import here to avoid circular dependency
         from .epub_service import EPUBService
 
-        epub_service = EPUBService()
+        epub_service = EPUBService(epub_dir=epubs_dir, db_path=self.db_path)
         stats = {"added": 0, "removed": 0, "updated": 0}
 
         # Get all EPUBs from filesystem
