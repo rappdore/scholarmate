@@ -5,31 +5,47 @@ from typing import Any, Dict, List, Optional
 
 from PyPDF2 import PdfReader
 
+from .pdf_documents_service import PDFDocumentsService
+
 logger = logging.getLogger(__name__)
 
 
 class PDFCache:
     """
-    In-memory cache for PDF metadata to eliminate redundant filesystem operations.
+    In-memory cache for PDF metadata with database backing.
 
     Caches:
     - Basic metadata (title, author, pages, sizes, dates) - loaded on initialization
     - Thumbnail paths (pre-generated) - loaded on initialization
     - Extended metadata (subject, creator, producer) - lazy-loaded on first request
+
+    Database backing (Phase 1a):
+    - All cache data is also persisted to the pdf_documents table
+    - Ensures metadata survives service restarts
     """
 
-    def __init__(self, pdf_dir: Path, thumbnails_dir: Path, pdf_service: Any):
+    def __init__(
+        self,
+        pdf_dir: Path,
+        thumbnails_dir: Path,
+        pdf_service: Any,
+        db_path: str = "data/reading_progress.db",
+    ):
         """
-        Initialize the PDF cache.
+        Initialize the PDF cache with database backing.
 
         Args:
             pdf_dir: Directory containing PDF files
             thumbnails_dir: Directory for thumbnail storage
             pdf_service: Reference to PDFService for thumbnail generation
+            db_path: Path to SQLite database file (default: "data/reading_progress.db")
         """
         self.pdf_dir = pdf_dir
         self.thumbnails_dir = thumbnails_dir
         self.pdf_service = pdf_service
+
+        # Phase 1a: Database service for persistence
+        self._db_service = PDFDocumentsService(db_path)
 
         # Cache storage: Dict[filename, metadata_dict]
         self._cache: Dict[str, Dict[str, Any]] = {}
@@ -39,7 +55,7 @@ class PDFCache:
         self._cache_pdf_count: int = 0
 
         # Build cache on initialization
-        logger.info("Initializing PDF cache...")
+        logger.info("Initializing PDF cache with database backing...")
         self._build_cache()
         logger.info(f"PDF cache initialized with {self._cache_pdf_count} PDFs")
 
@@ -47,6 +63,8 @@ class PDFCache:
         """
         Build the cache by scanning filesystem and extracting basic metadata.
         Pre-generates thumbnails for all PDFs.
+
+        Phase 1a: Also persists metadata to database for durability.
         """
         start_time = datetime.now()
         self._cache = {}
@@ -98,6 +116,25 @@ class PDFCache:
                 self._cache[file_path.name] = pdf_info
                 logger.debug(f"Cached metadata for: {file_path.name}")
 
+                # Phase 1a: Persist to database
+                try:
+                    self._db_service.create_or_update(
+                        filename=file_path.name,
+                        title=pdf_info["title"],
+                        author=pdf_info["author"],
+                        num_pages=num_pages,
+                        file_size=stat.st_size,
+                        file_path=str(file_path),
+                        thumbnail_path=thumbnail_path_str,
+                        created_date=pdf_info["created_date"],
+                        modified_date=pdf_info["modified_date"],
+                    )
+                except Exception as db_error:
+                    logger.error(
+                        f"Error persisting {file_path.name} to database: {db_error}"
+                    )
+                    # Continue even if DB write fails - cache still works
+
             except Exception as e:
                 # If we can't read a PDF, still include it but with limited info
                 logger.error(f"Error processing {file_path.name}: {e}")
@@ -147,6 +184,8 @@ class PDFCache:
         First call: Reads extended metadata from filesystem and caches it
         Subsequent calls: Returns cached data
 
+        Phase 1a: Also persists extended metadata to database when lazy-loaded.
+
         Args:
             filename: Name of the PDF file
 
@@ -185,6 +224,28 @@ class PDFCache:
                     pdf_info["modification_date"] = str(metadata.get("/ModDate", ""))
 
                     logger.debug(f"Extended metadata cached for: {filename}")
+
+                    # Phase 1a: Persist extended metadata to database
+                    try:
+                        self._db_service.create_or_update(
+                            filename=filename,
+                            num_pages=pdf_info["num_pages"],
+                            title=pdf_info["title"],
+                            author=pdf_info["author"],
+                            subject=pdf_info["subject"],
+                            creator=pdf_info["creator"],
+                            producer=pdf_info["producer"],
+                            file_size=pdf_info.get("file_size"),
+                            file_path=str(file_path),
+                            thumbnail_path=pdf_info.get("thumbnail_path", ""),
+                            created_date=pdf_info.get("created_date"),
+                            modified_date=pdf_info.get("modified_date"),
+                        )
+                    except Exception as db_error:
+                        logger.error(
+                            f"Error persisting extended metadata for {filename} to database: {db_error}"
+                        )
+                        # Continue even if DB write fails
 
             except Exception as e:
                 logger.error(f"Error loading extended metadata for {filename}: {e}")
