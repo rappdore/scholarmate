@@ -11,7 +11,9 @@ from .pdf_cache import PDFCache
 
 
 class PDFService:
-    def __init__(self, pdf_dir: str = "pdfs"):
+    def __init__(
+        self, pdf_dir: str = "pdfs", db_path: str = "data/reading_progress.db"
+    ):
         self.pdf_dir = Path(pdf_dir)
         self.thumbnails_dir = Path("thumbnails")
         if not self.pdf_dir.exists():
@@ -19,8 +21,8 @@ class PDFService:
         if not self.thumbnails_dir.exists():
             self.thumbnails_dir.mkdir(exist_ok=True)
 
-        # Initialize cache
-        self.cache = PDFCache(self.pdf_dir, self.thumbnails_dir, self)
+        # Initialize cache with database backing (Phase 1a)
+        self.cache = PDFCache(self.pdf_dir, self.thumbnails_dir, self, db_path)
 
     def list_pdfs(self) -> List[Dict[str, Any]]:
         """

@@ -203,6 +203,50 @@ class DatabaseService:
                 ON highlights(pdf_filename)
             """)
 
+            # Create pdf_documents table (Phase 1a: PDF Cache Database Backing)
+            # Stores persistent metadata for PDF documents to support database-backed caching
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pdf_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL UNIQUE,
+
+                    -- Basic metadata (loaded on cache initialization)
+                    title TEXT,
+                    author TEXT,
+                    num_pages INTEGER NOT NULL,
+
+                    -- Extended metadata (lazy-loaded on first request)
+                    subject TEXT,
+                    creator TEXT,
+                    producer TEXT,
+
+                    -- File information
+                    file_size INTEGER,
+                    file_path TEXT,
+                    thumbnail_path TEXT,
+
+                    -- Timestamps
+                    created_date TEXT,          -- ISO format datetime from filesystem
+                    modified_date TEXT,         -- ISO format datetime from filesystem
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- Extensibility
+                    metadata_json TEXT          -- Full PDF metadata as JSON for future use
+                )
+            """)
+
+            # Create indexes for pdf_documents table
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pdf_documents_filename
+                ON pdf_documents(filename)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pdf_documents_accessed
+                ON pdf_documents(last_accessed)
+            """)
+
             # Create LLM configurations table
             # Stores multiple LLM endpoint configurations with one active at a time
             conn.execute("""
