@@ -1,11 +1,11 @@
 """
-PDF Documents Service - Database-backed PDF registry
+EPUB Documents Service - Database-backed EPUB registry
 
-This service manages the pdf_documents table and provides persistent storage
-for PDF metadata. It replaces the in-memory-only cache with a database-backed
+This service manages the epub_documents table and provides persistent storage
+for EPUB metadata. It replaces the in-memory-only cache with a database-backed
 solution that persists across service restarts.
 
-Part of Phase 1a: PDF Cache Database Backing
+Part of Phase 1b: EPUB Cache Database Backing
 """
 
 import json
@@ -19,18 +19,18 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-class PDFDocumentsService:
+class EPUBDocumentsService:
     """
-    Service for managing the pdf_documents table.
+    Service for managing the epub_documents table.
 
     This service provides CRUD operations and filesystem sync functionality
-    for the PDF documents registry. It serves as the persistent backend for
-    the PDF cache.
+    for the EPUB documents registry. It serves as the persistent backend for
+    the EPUB cache.
     """
 
     def __init__(self, db_path: str = "data/reading_progress.db"):
         """
-        Initialize the PDF Documents Service.
+        Initialize the EPUB Documents Service.
 
         Args:
             db_path: Path to the SQLite database file
@@ -49,19 +49,19 @@ class PDFDocumentsService:
 
     def get_by_filename(self, filename: str) -> Optional[Dict]:
         """
-        Get PDF document by filename.
+        Get EPUB document by filename.
 
         Args:
-            filename: Name of the PDF file
+            filename: Name of the EPUB file
 
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            Dictionary with EPUB metadata, or None if not found
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM pdf_documents WHERE filename = ?
+                SELECT * FROM epub_documents WHERE filename = ?
                 """,
                 (filename,),
             )
@@ -70,23 +70,23 @@ class PDFDocumentsService:
                 return dict(row)
             return None
 
-    def get_by_id(self, pdf_id: int) -> Optional[Dict]:
+    def get_by_id(self, epub_id: int) -> Optional[Dict]:
         """
-        Get PDF document by ID.
+        Get EPUB document by ID.
 
         Args:
-            pdf_id: Unique identifier of the PDF document
+            epub_id: Unique identifier of the EPUB document
 
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            Dictionary with EPUB metadata, or None if not found
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM pdf_documents WHERE id = ?
+                SELECT * FROM epub_documents WHERE id = ?
                 """,
-                (pdf_id,),
+                (epub_id,),
             )
             row = cursor.fetchone()
             if row:
@@ -96,12 +96,12 @@ class PDFDocumentsService:
     def create_or_update(
         self,
         filename: str,
-        num_pages: int,
+        chapters: int,
         title: Optional[str] = None,
         author: Optional[str] = None,
         subject: Optional[str] = None,
-        creator: Optional[str] = None,
-        producer: Optional[str] = None,
+        publisher: Optional[str] = None,
+        language: Optional[str] = None,
         file_size: Optional[int] = None,
         file_path: Optional[str] = None,
         thumbnail_path: Optional[str] = None,
@@ -110,26 +110,26 @@ class PDFDocumentsService:
         metadata: Optional[Dict] = None,
     ) -> int:
         """
-        Create new PDF document record or update existing one.
+        Create new EPUB document record or update existing one.
         This method is idempotent - safe to call multiple times.
 
         Args:
-            filename: PDF filename (unique identifier)
-            num_pages: Total number of pages in the PDF
-            title: PDF title from metadata
-            author: PDF author from metadata
-            subject: PDF subject from metadata
-            creator: PDF creator application
-            producer: PDF producer application
+            filename: EPUB filename (unique identifier)
+            chapters: Total number of chapters in the EPUB
+            title: EPUB title from metadata
+            author: EPUB author from metadata
+            subject: EPUB subject/tags from metadata
+            publisher: EPUB publisher from metadata
+            language: EPUB language from metadata
             file_size: File size in bytes
-            file_path: Full path to PDF file
+            file_path: Full path to EPUB file
             thumbnail_path: Path to thumbnail image
             created_date: File creation date (ISO format)
             modified_date: File modification date (ISO format)
             metadata: Full metadata dictionary for extensibility
 
         Returns:
-            The pdf_id (integer primary key)
+            The epub_id (integer primary key)
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -138,8 +138,8 @@ class PDFDocumentsService:
             # Use UPSERT for atomic insert-or-update (concurrency-safe)
             cursor.execute(
                 """
-                INSERT INTO pdf_documents (
-                    filename, title, author, subject, creator, producer, num_pages,
+                INSERT INTO epub_documents (
+                    filename, title, author, subject, publisher, language, chapters,
                     file_size, file_path, thumbnail_path, created_date, modified_date, metadata_json
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -147,9 +147,9 @@ class PDFDocumentsService:
                     title=excluded.title,
                     author=excluded.author,
                     subject=excluded.subject,
-                    creator=excluded.creator,
-                    producer=excluded.producer,
-                    num_pages=excluded.num_pages,
+                    publisher=excluded.publisher,
+                    language=excluded.language,
+                    chapters=excluded.chapters,
                     file_size=excluded.file_size,
                     file_path=excluded.file_path,
                     thumbnail_path=excluded.thumbnail_path,
@@ -164,9 +164,9 @@ class PDFDocumentsService:
                     title,
                     author,
                     subject,
-                    creator,
-                    producer,
-                    num_pages,
+                    publisher,
+                    language,
+                    chapters,
                     file_size,
                     file_path,
                     thumbnail_path,
@@ -175,128 +175,128 @@ class PDFDocumentsService:
                     metadata_json,
                 ),
             )
-            pdf_id = cursor.fetchone()["id"]
+            epub_id = cursor.fetchone()["id"]
             conn.commit()
-            logger.info(f"Saved PDF document: {filename} (ID: {pdf_id})")
-            return pdf_id
+            logger.info(f"Saved EPUB document: {filename} (ID: {epub_id})")
+            return epub_id
 
-    def update_last_accessed(self, pdf_id: int):
+    def update_last_accessed(self, epub_id: int):
         """
-        Update the last_accessed timestamp for a PDF document.
+        Update the last_accessed timestamp for an EPUB document.
 
         Args:
-            pdf_id: Unique identifier of the PDF document
+            epub_id: Unique identifier of the EPUB document
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE pdf_documents
+                UPDATE epub_documents
                 SET last_accessed = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (pdf_id,),
+                (epub_id,),
             )
             conn.commit()
 
     def delete_by_filename(self, filename: str) -> bool:
         """
-        Delete PDF document by filename.
+        Delete EPUB document by filename.
 
         Args:
-            filename: Name of the PDF file to delete
+            filename: Name of the EPUB file to delete
 
         Returns:
             True if a document was deleted, False otherwise
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM pdf_documents WHERE filename = ?", (filename,))
+            cursor.execute("DELETE FROM epub_documents WHERE filename = ?", (filename,))
             conn.commit()
             return cursor.rowcount > 0
 
     def list_all(self) -> List[Dict]:
         """
-        List all PDF documents in the registry.
+        List all EPUB documents in the registry.
 
         Returns:
-            List of dictionaries containing PDF metadata,
+            List of dictionaries containing EPUB metadata,
             sorted by last_accessed (most recent first)
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM pdf_documents
+                SELECT * FROM epub_documents
                 ORDER BY last_accessed DESC
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def sync_from_filesystem(self, pdfs_dir: str) -> Dict[str, int]:
+    def sync_from_filesystem(self, epubs_dir: str) -> Dict[str, int]:
         """
         Sync database with filesystem.
 
         This method:
-        - Adds new PDFs found in filesystem to database
-        - Updates metadata for existing PDFs
-        - Removes PDFs from database that no longer exist in filesystem
+        - Adds new EPUBs found in filesystem to database
+        - Updates metadata for existing EPUBs
+        - Removes EPUBs from database that no longer exist in filesystem
 
         Args:
-            pdfs_dir: Directory containing PDF files
+            epubs_dir: Directory containing EPUB files
 
         Returns:
             Dictionary with sync statistics:
             {'added': count, 'removed': count, 'updated': count}
         """
         # Validate directory exists to prevent mass deletion on misconfiguration
-        pdfs_path = Path(pdfs_dir)
-        if not pdfs_path.exists() or not pdfs_path.is_dir():
-            raise FileNotFoundError(f"PDF directory not found: {pdfs_dir}")
+        epubs_path = Path(epubs_dir)
+        if not epubs_path.exists() or not epubs_path.is_dir():
+            raise FileNotFoundError(f"EPUB directory not found: {epubs_dir}")
 
         # Import here to avoid circular dependency
-        from .pdf_service import PDFService
+        from .epub_service import EPUBService
 
-        pdf_service = PDFService(pdf_dir=pdfs_dir, db_path=self.db_path)
+        epub_service = EPUBService(epub_dir=epubs_dir, db_path=self.db_path)
         stats = {"added": 0, "removed": 0, "updated": 0}
 
-        # Get all PDFs from filesystem
-        filesystem_pdfs = {f.name for f in pdfs_path.glob("*.pdf")}
+        # Get all EPUBs from filesystem
+        filesystem_epubs = {f.name for f in epubs_path.glob("*.epub")}
 
-        # Get all PDFs from database
-        db_pdfs = {doc["filename"]: doc["id"] for doc in self.list_all()}
+        # Get all EPUBs from database
+        db_epubs = {doc["filename"]: doc["id"] for doc in self.list_all()}
 
-        # Add/update PDFs from filesystem
-        for pdf_filename in filesystem_pdfs:
+        # Add/update EPUBs from filesystem
+        for epub_filename in filesystem_epubs:
             try:
-                # Get PDF metadata
-                pdf_info = pdf_service.cache.get_pdf_info(pdf_filename)
-                file_path = pdfs_path / pdf_filename
+                # Get EPUB metadata
+                epub_info = epub_service.cache.get_epub_info(epub_filename)
+                file_path = epubs_path / epub_filename
                 file_size = os.path.getsize(file_path) if file_path.exists() else None
 
                 # Get thumbnail path if it exists
                 thumbnail_path = None
                 try:
-                    thumb_path = pdf_service.cache.get_thumbnail_path(pdf_filename)
+                    thumb_path = epub_service.cache.get_thumbnail_path(epub_filename)
                     thumbnail_path = str(thumb_path) if thumb_path else None
                 except Exception:
                     pass  # Thumbnail may not exist yet
 
-                is_new = pdf_filename not in db_pdfs
+                is_new = epub_filename not in db_epubs
                 self.create_or_update(
-                    filename=pdf_filename,
-                    num_pages=pdf_info["num_pages"],
-                    title=pdf_info.get("title"),
-                    author=pdf_info.get("author"),
-                    subject=pdf_info.get("subject", ""),
-                    creator=pdf_info.get("creator", ""),
-                    producer=pdf_info.get("producer", ""),
+                    filename=epub_filename,
+                    chapters=epub_info.get("chapters", 0),
+                    title=epub_info.get("title"),
+                    author=epub_info.get("author"),
+                    subject=epub_info.get("subject", ""),
+                    publisher=epub_info.get("publisher", ""),
+                    language=epub_info.get("language", ""),
                     file_size=file_size,
                     file_path=str(file_path),
                     thumbnail_path=thumbnail_path,
-                    created_date=pdf_info.get("created_date"),
-                    modified_date=pdf_info.get("modified_date"),
-                    metadata=pdf_info,
+                    created_date=epub_info.get("created_date"),
+                    modified_date=epub_info.get("modified_date"),
+                    metadata=epub_info,
                 )
 
                 if is_new:
@@ -305,14 +305,14 @@ class PDFDocumentsService:
                     stats["updated"] += 1
 
             except Exception as e:
-                logger.error(f"Error syncing PDF {pdf_filename}: {e}")
+                logger.error(f"Error syncing EPUB {epub_filename}: {e}")
 
-        # Remove PDFs from database that no longer exist
-        for db_filename, pdf_id in db_pdfs.items():
-            if db_filename not in filesystem_pdfs:
+        # Remove EPUBs from database that no longer exist
+        for db_filename, epub_id in db_epubs.items():
+            if db_filename not in filesystem_epubs:
                 self.delete_by_filename(db_filename)
                 stats["removed"] += 1
-                logger.info(f"Removed missing PDF from DB: {db_filename}")
+                logger.info(f"Removed missing EPUB from DB: {db_filename}")
 
         logger.info(
             f"Filesystem sync complete: {stats['added']} added, "
