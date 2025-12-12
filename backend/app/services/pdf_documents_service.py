@@ -133,73 +133,51 @@ class PDFDocumentsService:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-
-            # Check if document exists
-            cursor.execute(
-                "SELECT id FROM pdf_documents WHERE filename = ?", (filename,)
-            )
-            existing = cursor.fetchone()
-
             metadata_json = json.dumps(metadata) if metadata else None
 
-            if existing:
-                # Update existing record
-                pdf_id = existing["id"]
-                cursor.execute(
-                    """
-                    UPDATE pdf_documents
-                    SET title = ?, author = ?, subject = ?, creator = ?, producer = ?,
-                        num_pages = ?, file_size = ?, file_path = ?, thumbnail_path = ?,
-                        created_date = ?, modified_date = ?, metadata_json = ?,
-                        last_accessed = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        title,
-                        author,
-                        subject,
-                        creator,
-                        producer,
-                        num_pages,
-                        file_size,
-                        file_path,
-                        thumbnail_path,
-                        created_date,
-                        modified_date,
-                        metadata_json,
-                        pdf_id,
-                    ),
+            # Use UPSERT for atomic insert-or-update (concurrency-safe)
+            cursor.execute(
+                """
+                INSERT INTO pdf_documents (
+                    filename, title, author, subject, creator, producer, num_pages,
+                    file_size, file_path, thumbnail_path, created_date, modified_date, metadata_json
                 )
-                logger.info(f"Updated PDF document: {filename} (ID: {pdf_id})")
-            else:
-                # Insert new record
-                cursor.execute(
-                    """
-                    INSERT INTO pdf_documents
-                    (filename, title, author, subject, creator, producer, num_pages,
-                     file_size, file_path, thumbnail_path, created_date, modified_date, metadata_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        filename,
-                        title,
-                        author,
-                        subject,
-                        creator,
-                        producer,
-                        num_pages,
-                        file_size,
-                        file_path,
-                        thumbnail_path,
-                        created_date,
-                        modified_date,
-                        metadata_json,
-                    ),
-                )
-                pdf_id = cursor.lastrowid
-                logger.info(f"Created PDF document: {filename} (ID: {pdf_id})")
-
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(filename) DO UPDATE SET
+                    title=excluded.title,
+                    author=excluded.author,
+                    subject=excluded.subject,
+                    creator=excluded.creator,
+                    producer=excluded.producer,
+                    num_pages=excluded.num_pages,
+                    file_size=excluded.file_size,
+                    file_path=excluded.file_path,
+                    thumbnail_path=excluded.thumbnail_path,
+                    created_date=excluded.created_date,
+                    modified_date=excluded.modified_date,
+                    metadata_json=excluded.metadata_json,
+                    last_accessed=CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (
+                    filename,
+                    title,
+                    author,
+                    subject,
+                    creator,
+                    producer,
+                    num_pages,
+                    file_size,
+                    file_path,
+                    thumbnail_path,
+                    created_date,
+                    modified_date,
+                    metadata_json,
+                ),
+            )
+            pdf_id = cursor.fetchone()["id"]
             conn.commit()
+            logger.info(f"Saved PDF document: {filename} (ID: {pdf_id})")
             return pdf_id
 
     def update_last_accessed(self, pdf_id: int):
@@ -274,7 +252,7 @@ class PDFDocumentsService:
         # Import here to avoid circular dependency
         from .pdf_service import PDFService
 
-        pdf_service = PDFService()
+        pdf_service = PDFService(pdf_dir=pdfs_dir, db_path=self.db_path)
         stats = {"added": 0, "removed": 0, "updated": 0}
 
         # Get all PDFs from filesystem

@@ -133,73 +133,51 @@ class EPUBDocumentsService:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-
-            # Check if document exists
-            cursor.execute(
-                "SELECT id FROM epub_documents WHERE filename = ?", (filename,)
-            )
-            existing = cursor.fetchone()
-
             metadata_json = json.dumps(metadata) if metadata else None
 
-            if existing:
-                # Update existing record
-                epub_id = existing["id"]
-                cursor.execute(
-                    """
-                    UPDATE epub_documents
-                    SET title = ?, author = ?, subject = ?, publisher = ?, language = ?,
-                        chapters = ?, file_size = ?, file_path = ?, thumbnail_path = ?,
-                        created_date = ?, modified_date = ?, metadata_json = ?,
-                        last_accessed = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        title,
-                        author,
-                        subject,
-                        publisher,
-                        language,
-                        chapters,
-                        file_size,
-                        file_path,
-                        thumbnail_path,
-                        created_date,
-                        modified_date,
-                        metadata_json,
-                        epub_id,
-                    ),
+            # Use UPSERT for atomic insert-or-update (concurrency-safe)
+            cursor.execute(
+                """
+                INSERT INTO epub_documents (
+                    filename, title, author, subject, publisher, language, chapters,
+                    file_size, file_path, thumbnail_path, created_date, modified_date, metadata_json
                 )
-                logger.info(f"Updated EPUB document: {filename} (ID: {epub_id})")
-            else:
-                # Insert new record
-                cursor.execute(
-                    """
-                    INSERT INTO epub_documents
-                    (filename, title, author, subject, publisher, language, chapters,
-                     file_size, file_path, thumbnail_path, created_date, modified_date, metadata_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        filename,
-                        title,
-                        author,
-                        subject,
-                        publisher,
-                        language,
-                        chapters,
-                        file_size,
-                        file_path,
-                        thumbnail_path,
-                        created_date,
-                        modified_date,
-                        metadata_json,
-                    ),
-                )
-                epub_id = cursor.lastrowid
-                logger.info(f"Created EPUB document: {filename} (ID: {epub_id})")
-
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(filename) DO UPDATE SET
+                    title=excluded.title,
+                    author=excluded.author,
+                    subject=excluded.subject,
+                    publisher=excluded.publisher,
+                    language=excluded.language,
+                    chapters=excluded.chapters,
+                    file_size=excluded.file_size,
+                    file_path=excluded.file_path,
+                    thumbnail_path=excluded.thumbnail_path,
+                    created_date=excluded.created_date,
+                    modified_date=excluded.modified_date,
+                    metadata_json=excluded.metadata_json,
+                    last_accessed=CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (
+                    filename,
+                    title,
+                    author,
+                    subject,
+                    publisher,
+                    language,
+                    chapters,
+                    file_size,
+                    file_path,
+                    thumbnail_path,
+                    created_date,
+                    modified_date,
+                    metadata_json,
+                ),
+            )
+            epub_id = cursor.fetchone()["id"]
             conn.commit()
+            logger.info(f"Saved EPUB document: {filename} (ID: {epub_id})")
             return epub_id
 
     def update_last_accessed(self, epub_id: int):
