@@ -249,6 +249,11 @@ class EPUBDocumentsService:
             Dictionary with sync statistics:
             {'added': count, 'removed': count, 'updated': count}
         """
+        # Validate directory exists to prevent mass deletion on misconfiguration
+        epubs_path = Path(epubs_dir)
+        if not epubs_path.exists() or not epubs_path.is_dir():
+            raise FileNotFoundError(f"EPUB directory not found: {epubs_dir}")
+
         # Import here to avoid circular dependency
         from .epub_service import EPUBService
 
@@ -256,7 +261,6 @@ class EPUBDocumentsService:
         stats = {"added": 0, "removed": 0, "updated": 0}
 
         # Get all EPUBs from filesystem
-        epubs_path = Path(epubs_dir)
         filesystem_epubs = {f.name for f in epubs_path.glob("*.epub")}
 
         # Get all EPUBs from database

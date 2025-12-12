@@ -249,6 +249,11 @@ class PDFDocumentsService:
             Dictionary with sync statistics:
             {'added': count, 'removed': count, 'updated': count}
         """
+        # Validate directory exists to prevent mass deletion on misconfiguration
+        pdfs_path = Path(pdfs_dir)
+        if not pdfs_path.exists() or not pdfs_path.is_dir():
+            raise FileNotFoundError(f"PDF directory not found: {pdfs_dir}")
+
         # Import here to avoid circular dependency
         from .pdf_service import PDFService
 
@@ -256,7 +261,6 @@ class PDFDocumentsService:
         stats = {"added": 0, "removed": 0, "updated": 0}
 
         # Get all PDFs from filesystem
-        pdfs_path = Path(pdfs_dir)
         filesystem_pdfs = {f.name for f in pdfs_path.glob("*.pdf")}
 
         # Get all PDFs from database
