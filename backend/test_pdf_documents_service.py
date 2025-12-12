@@ -17,7 +17,15 @@ from app.services.pdf_documents_service import PDFDocumentsService
 
 
 def test_pdf_documents_service():
-    """Test basic CRUD operations"""
+    """
+    Execute a sequence of basic CRUD integration tests for PDFDocumentsService using a temporary SQLite test database.
+    
+    Performs create, read (by filename and id), update, list, delete, and last-accessed-update operations against PDFDocumentsService and asserts expected outcomes to verify service behavior. Initializes the pdf_documents schema in a test database before running tests and removes the test database afterward.
+    
+    Side effects:
+    - Creates a test database at data/test_pdf_documents.db and the data/ directory if needed.
+    - Deletes the test database file when finished.
+    """
     print("Testing PDFDocumentsService...")
 
     # Use test database to avoid affecting real data

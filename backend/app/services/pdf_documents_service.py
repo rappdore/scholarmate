@@ -30,16 +30,23 @@ class PDFDocumentsService:
 
     def __init__(self, db_path: str = "data/reading_progress.db"):
         """
-        Initialize the PDF Documents Service.
-
-        Args:
-            db_path: Path to the SQLite database file
+        Create a PDFDocumentsService configured to use the specified SQLite database file.
+        
+        Parameters:
+            db_path (str): Filesystem path to the SQLite database used to store PDF metadata.
         """
         self.db_path = db_path
 
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections"""
+        """
+        Provide a context-managed SQLite connection to the service's database.
+        
+        The yielded connection has its row_factory set to sqlite3.Row so rows support dict-like access. The connection is automatically closed when exiting the context.
+        
+        Returns:
+            sqlite3.Connection: An open SQLite connection configured for dict-like row access.
+        """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -49,13 +56,10 @@ class PDFDocumentsService:
 
     def get_by_filename(self, filename: str) -> Optional[Dict]:
         """
-        Get PDF document by filename.
-
-        Args:
-            filename: Name of the PDF file
-
+        Retrieve the PDF document record matching the given filename.
+        
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            dict: PDF metadata as a dictionary if a matching record exists, `None` otherwise.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -72,13 +76,10 @@ class PDFDocumentsService:
 
     def get_by_id(self, pdf_id: int) -> Optional[Dict]:
         """
-        Get PDF document by ID.
-
-        Args:
-            pdf_id: Unique identifier of the PDF document
-
+        Get a PDF document record by its database id.
+        
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            dict: PDF metadata keyed by column name if found, `None` otherwise.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -110,26 +111,25 @@ class PDFDocumentsService:
         metadata: Optional[Dict] = None,
     ) -> int:
         """
-        Create new PDF document record or update existing one.
-        This method is idempotent - safe to call multiple times.
-
-        Args:
-            filename: PDF filename (unique identifier)
-            num_pages: Total number of pages in the PDF
-            title: PDF title from metadata
-            author: PDF author from metadata
-            subject: PDF subject from metadata
-            creator: PDF creator application
-            producer: PDF producer application
-            file_size: File size in bytes
-            file_path: Full path to PDF file
-            thumbnail_path: Path to thumbnail image
-            created_date: File creation date (ISO format)
-            modified_date: File modification date (ISO format)
-            metadata: Full metadata dictionary for extensibility
-
+        Create a new PDF document record or update an existing record identified by filename.
+        
+        Parameters:
+            filename (str): Unique PDF filename used to identify the record.
+            num_pages (int): Total number of pages in the PDF.
+            title (Optional[str]): PDF title from metadata.
+            author (Optional[str]): PDF author from metadata.
+            subject (Optional[str]): PDF subject from metadata.
+            creator (Optional[str]): PDF creator application.
+            producer (Optional[str]): PDF producer application.
+            file_size (Optional[int]): File size in bytes.
+            file_path (Optional[str]): Full filesystem path to the PDF.
+            thumbnail_path (Optional[str]): Filesystem path to the thumbnail image, if available.
+            created_date (Optional[str]): File creation date (ISO format), if known.
+            modified_date (Optional[str]): File modification date (ISO format), if known.
+            metadata (Optional[Dict]): Arbitrary metadata that will be stored as a JSON blob.
+        
         Returns:
-            The pdf_id (integer primary key)
+            int: The primary key (`id`) of the created or updated PDF document.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -204,10 +204,10 @@ class PDFDocumentsService:
 
     def update_last_accessed(self, pdf_id: int):
         """
-        Update the last_accessed timestamp for a PDF document.
-
-        Args:
-            pdf_id: Unique identifier of the PDF document
+        Updates the last_accessed timestamp for the PDF document with the given id.
+        
+        Parameters:
+            pdf_id (int): Identifier of the PDF document whose last_accessed will be set to the current time.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -223,13 +223,13 @@ class PDFDocumentsService:
 
     def delete_by_filename(self, filename: str) -> bool:
         """
-        Delete PDF document by filename.
-
-        Args:
-            filename: Name of the PDF file to delete
-
+        Delete the PDF document record with the given filename from the database.
+        
+        Parameters:
+            filename (str): Filename of the PDF to remove.
+        
         Returns:
-            True if a document was deleted, False otherwise
+            bool: `True` if a document was deleted, `False` otherwise.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -239,11 +239,10 @@ class PDFDocumentsService:
 
     def list_all(self) -> List[Dict]:
         """
-        List all PDF documents in the registry.
-
+        Retrieve all PDF document records ordered by most recently accessed.
+        
         Returns:
-            List of dictionaries containing PDF metadata,
-            sorted by last_accessed (most recent first)
+            List[Dict]: A list of dictionaries representing rows from `pdf_documents`, ordered by `last_accessed` descending.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()

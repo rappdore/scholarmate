@@ -32,13 +32,17 @@ class PDFCache:
         db_path: str = "data/reading_progress.db",
     ):
         """
-        Initialize the PDF cache with database backing.
-
-        Args:
-            pdf_dir: Directory containing PDF files
-            thumbnails_dir: Directory for thumbnail storage
-            pdf_service: Reference to PDFService for thumbnail generation
-            db_path: Path to SQLite database file (default: "data/reading_progress.db")
+        Initialize the PDFCache, set up database-backed persistence, and build the in-memory cache of PDF metadata.
+        
+        Parameters:
+            pdf_dir (Path): Directory containing PDF files to scan and cache.
+            thumbnails_dir (Path): Directory where generated thumbnails are stored.
+            pdf_service (Any): Service used to generate thumbnails and read PDF metadata.
+            db_path (str): Path to the SQLite database file used to persist metadata (default: "data/reading_progress.db").
+        
+        Side effects:
+            - Creates a PDFDocumentsService for persistence.
+            - Builds the in-memory cache of basic PDF metadata and persists that basic metadata to the database.
         """
         self.pdf_dir = pdf_dir
         self.thumbnails_dir = thumbnails_dir
@@ -61,10 +65,9 @@ class PDFCache:
 
     def _build_cache(self) -> None:
         """
-        Build the cache by scanning filesystem and extracting basic metadata.
-        Pre-generates thumbnails for all PDFs.
-
-        Phase 1a: Also persists metadata to database for durability.
+        Populate the in-memory PDF cache by scanning the configured pdf_dir and extracting each file's basic metadata.
+        
+        For each PDF file, basic metadata (filename, title, author, page count, size, creation and modification timestamps, and thumbnail path) is stored in the cache and a thumbnail is pre-generated. Basic metadata is also persisted to the configured database service; database write failures are non-fatal and do not stop the cache build. If a file cannot be read, a fallback cache entry with limited information and an error message is stored. After completion, cache metadata fields (_cache_built_at and _cache_pdf_count) are updated.
         """
         start_time = datetime.now()
         self._cache = {}
@@ -179,21 +182,15 @@ class PDFCache:
 
     def get_pdf_info(self, filename: str) -> Dict[str, Any]:
         """
-        Get detailed PDF info with lazy-loaded extended metadata.
-
-        First call: Reads extended metadata from filesystem and caches it
-        Subsequent calls: Returns cached data
-
-        Phase 1a: Also persists extended metadata to database when lazy-loaded.
-
-        Args:
-            filename: Name of the PDF file
-
+        Return detailed metadata for a cached PDF, lazily loading and caching extended fields on first access.
+        
+        If extended metadata is not present in the in-memory cache, reads the PDF file to extract subject, creator, producer, creation_date, and modification_date, stores those fields in the cache, and attempts to persist the extended metadata to the database (database errors are logged and ignored).
+        
         Returns:
-            Dictionary with full PDF metadata
-
+            dict: Full PDF metadata dictionary containing both basic fields (e.g., filename, title, author, num_pages, file_size, thumbnail_path, created_date, modified_date) and extended fields (subject, creator, producer, creation_date, modification_date).
+        
         Raises:
-            FileNotFoundError: If PDF not found in cache
+            FileNotFoundError: If the specified filename is not present in the in-memory cache.
         """
         # Check if PDF exists in cache
         if filename not in self._cache:

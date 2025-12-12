@@ -14,6 +14,15 @@ class PDFService:
     def __init__(
         self, pdf_dir: str = "pdfs", db_path: str = "data/reading_progress.db"
     ):
+        """
+        Initialize the PDFService, ensure required directories exist, and create the database-backed PDF cache.
+        
+        Ensures the PDF directory and a thumbnails directory are present (created if missing), then initializes the PDFCache using those directories and the provided database path.
+        
+        Parameters:
+            pdf_dir (str): Path to the directory containing PDF files (default "pdfs").
+            db_path (str): Path to the SQLite database used by the cache (default "data/reading_progress.db").
+        """
         self.pdf_dir = Path(pdf_dir)
         self.thumbnails_dir = Path("thumbnails")
         if not self.pdf_dir.exists():
@@ -26,7 +35,10 @@ class PDFService:
 
     def list_pdfs(self) -> List[Dict[str, Any]]:
         """
-        List all PDF files in the pdfs directory with metadata (from cache)
+        List available PDF files and their metadata.
+        
+        Returns:
+            List[Dict[str, Any]]: A list of metadata dictionaries for each PDF. Each dictionary contains information such as filename, full path, file size, page count, thumbnail path, and other cached attributes.
         """
         return self.cache.get_all_pdfs()
 

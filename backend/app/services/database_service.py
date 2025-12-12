@@ -100,14 +100,9 @@ class DatabaseService:
 
     def _init_database(self):
         """
-        Initialize the database with required tables and indexes.
-
-        Creates three main tables:
-        1. reading_progress: Stores the last page read for each PDF
-        2. chat_notes: Stores conversation notes linked to specific PDF pages
-        3. highlights: Stores text highlights with coordinates and metadata
-
-        Also creates indexes for optimal query performance.
+        Create and initialize the SQLite database schema used by the service.
+        
+        This initializes all required tables, indexes, and schema-level constraints for reading progress, notes, highlights, EPUB progress, PDF document metadata (cache), and LLM configurations, and commits the schema to the configured database file. Created schema elements include: reading_progress, chat_notes, highlights, epub_reading_progress, pdf_documents, llm_configurations, several performance indexes, and a trigger that enforces a single active LLM configuration.
         """
         with sqlite3.connect(self.db_path) as conn:
             # Create reading progress table
