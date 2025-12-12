@@ -15,7 +15,12 @@ from .epub_cache import EPUBCache
 
 
 class EPUBService:
-    def __init__(self, epub_dir: str = "epubs", base_url: str = None):
+    def __init__(
+        self,
+        epub_dir: str = "epubs",
+        base_url: str = None,
+        db_path: str = "data/reading_progress.db",
+    ):
         self.epub_dir = Path(epub_dir)
         self.thumbnails_dir = Path("thumbnails")
         # Make base URL configurable for different deployment environments
@@ -33,8 +38,8 @@ class EPUBService:
         self.image_service = EPUBImageService("thumbnails")
         self.style_processor = EPUBStyleProcessor()
 
-        # Initialize cache (must be after other services are initialized)
-        self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self)
+        # Initialize cache with database backing (must be after other services are initialized)
+        self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self, db_path)
 
     def list_epubs(self) -> List[Dict[str, Any]]:
         """

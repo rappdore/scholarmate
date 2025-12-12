@@ -6,20 +6,30 @@ from typing import Any, Dict, List, Optional
 import ebooklib
 from ebooklib import epub
 
+from .epub_documents_service import EPUBDocumentsService
+
 logger = logging.getLogger(__name__)
 
 
 class EPUBCache:
     """
-    In-memory cache for EPUB metadata to eliminate redundant filesystem operations.
+    In-memory cache for EPUB metadata with database backing.
 
     Caches:
     - Basic metadata (title, author, chapters, sizes, dates) - loaded on initialization
     - Thumbnail paths (pre-generated) - loaded on initialization
     - Extended metadata (subject, publisher, language) - lazy-loaded on first request
+
+    Database backing ensures cache persists between service restarts.
     """
 
-    def __init__(self, epub_dir: Path, thumbnails_dir: Path, epub_service: Any):
+    def __init__(
+        self,
+        epub_dir: Path,
+        thumbnails_dir: Path,
+        epub_service: Any,
+        db_path: str = "data/reading_progress.db",
+    ):
         """
         Initialize the EPUB cache.
 
@@ -27,10 +37,14 @@ class EPUBCache:
             epub_dir: Directory containing EPUB files
             thumbnails_dir: Directory for thumbnail storage
             epub_service: Reference to EPUBService for thumbnail generation
+            db_path: Path to SQLite database for persistent storage
         """
         self.epub_dir = epub_dir
         self.thumbnails_dir = thumbnails_dir
         self.epub_service = epub_service
+
+        # Database service for persistence
+        self._db_service = EPUBDocumentsService(db_path)
 
         # Cache storage: Dict[filename, metadata_dict]
         self._cache: Dict[str, Dict[str, Any]] = {}
@@ -40,7 +54,7 @@ class EPUBCache:
         self._cache_epub_count: int = 0
 
         # Build cache on initialization
-        logger.info("Initializing EPUB cache...")
+        logger.info("Initializing EPUB cache with database backing...")
         self._build_cache()
         logger.info(f"EPUB cache initialized with {self._cache_epub_count} EPUBs")
 
@@ -138,6 +152,24 @@ class EPUBCache:
                 self._cache[file_path.name] = epub_info
                 logger.debug(f"Cached metadata for: {file_path.name}")
 
+                # Persist to database
+                try:
+                    self._db_service.create_or_update(
+                        filename=file_path.name,
+                        title=epub_info["title"],
+                        author=epub_info["author"],
+                        chapters=chapter_count,
+                        file_size=stat.st_size,
+                        file_path=str(file_path),
+                        thumbnail_path=thumbnail_path_str,
+                        created_date=epub_info["created_date"],
+                        modified_date=epub_info["modified_date"],
+                    )
+                except Exception as db_error:
+                    logger.warning(
+                        f"Failed to persist EPUB metadata to database for {file_path.name}: {db_error}"
+                    )
+
             except Exception as e:
                 # If we can't read an EPUB, still include it but with limited info
                 logger.error(f"Error processing {file_path.name}: {e}")
@@ -227,6 +259,27 @@ class EPUBCache:
                 )
 
                 logger.debug(f"Extended metadata cached for: {filename}")
+
+                # Persist extended metadata to database
+                try:
+                    self._db_service.create_or_update(
+                        filename=filename,
+                        chapters=epub_info.get("chapters", 0),
+                        title=epub_info.get("title"),
+                        author=epub_info.get("author"),
+                        subject=epub_info.get("subject", ""),
+                        publisher=epub_info.get("publisher", ""),
+                        language=epub_info.get("language", ""),
+                        file_size=epub_info.get("file_size"),
+                        file_path=str(self.epub_dir / filename),
+                        thumbnail_path=epub_info.get("thumbnail_path", ""),
+                        created_date=epub_info.get("created_date"),
+                        modified_date=epub_info.get("modified_date"),
+                    )
+                except Exception as db_error:
+                    logger.warning(
+                        f"Failed to persist extended metadata to database for {filename}: {db_error}"
+                    )
 
             except Exception as e:
                 logger.error(f"Error loading extended metadata for {filename}: {e}")

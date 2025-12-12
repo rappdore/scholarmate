@@ -247,6 +247,50 @@ class DatabaseService:
                 ON pdf_documents(last_accessed)
             """)
 
+            # Create epub_documents table (Phase 1b: EPUB Cache Database Backing)
+            # Stores persistent metadata for EPUB documents to support database-backed caching
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS epub_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL UNIQUE,
+
+                    -- Basic metadata (loaded on cache initialization)
+                    title TEXT,
+                    author TEXT,
+                    chapters INTEGER NOT NULL DEFAULT 0,
+
+                    -- Extended metadata (lazy-loaded on first request)
+                    subject TEXT,
+                    publisher TEXT,
+                    language TEXT,
+
+                    -- File information
+                    file_size INTEGER,
+                    file_path TEXT,
+                    thumbnail_path TEXT,
+
+                    -- Timestamps
+                    created_date TEXT,          -- ISO format datetime from filesystem
+                    modified_date TEXT,         -- ISO format datetime from filesystem
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- Extensibility
+                    metadata_json TEXT          -- Full EPUB metadata as JSON for future use
+                )
+            """)
+
+            # Create indexes for epub_documents table
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_documents_filename
+                ON epub_documents(filename)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_documents_accessed
+                ON epub_documents(last_accessed)
+            """)
+
             # Create LLM configurations table
             # Stores multiple LLM endpoint configurations with one active at a time
             conn.execute("""
