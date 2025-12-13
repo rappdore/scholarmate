@@ -102,12 +102,54 @@ class ThinkingStreamParser:
 
     async def _process_before_think(self) -> AsyncGenerator[StreamChunk, None]:
         """Process content before <think> tag appears"""
-        # Look for <think> opening tag (case-insensitive)
-        match = self._THINK_OPEN_PATTERN.search(self.buffer)
 
-        if match:
+        # Look for <think> opening tag (case-insensitive)
+        open_match = self._THINK_OPEN_PATTERN.search(self.buffer)
+
+        # TODO: TEMPORARY FIX - Replace with config-based solution later
+        # Check for orphaned </think> tag (closing tag without opening tag)
+        # This happens with some models that don't emit <think> opening tags
+        # IMPORTANT: Only treat as orphaned if we found </think> BEFORE any <think>
+        close_match = self._THINK_CLOSE_PATTERN.search(self.buffer)
+
+        if close_match and (not open_match or close_match.start() < open_match.start()):
+            # Found </think> before any <think> (orphaned closing tag)
+            # Send everything before it as response, then insert <hr/> divider
+            before_close = self.buffer[: close_match.start()]
+            if before_close.strip():
+                yield StreamChunk(
+                    type="response",
+                    content=before_close,
+                    metadata=StreamMetadata(
+                        thinking_started=False, thinking_complete=False
+                    ),
+                )
+                logger.warning(
+                    f"[ThinkingParser] Orphaned </think> detected! "
+                    f"Sent {len(before_close)} chars before tag. "
+                    f"Consider using 'always_starts_with_thinking' config flag."
+                )
+
+            # Insert horizontal rule as visual separator with extra spacing
+            yield StreamChunk(
+                type="response",
+                content="\n\n---\n\n&nbsp;\n\n",
+                metadata=StreamMetadata(
+                    thinking_started=False, thinking_complete=False
+                ),
+            )
+            logger.info(
+                "[ThinkingParser] Inserted <hr/> divider for orphaned </think> tag"
+            )
+
+            # Move past the </think> tag and continue as response
+            self.buffer = self.buffer[close_match.end() :]
+            # Stay in BEFORE_THINK state (treat rest as normal response)
+            return
+
+        if open_match:
             # Send any content before <think> as response
-            before = self.buffer[: match.start()]
+            before = self.buffer[: open_match.start()]
             if before.strip():
                 yield StreamChunk(
                     type="response",
@@ -121,7 +163,7 @@ class ThinkingStreamParser:
                 )
 
             # Move past the <think> tag
-            self.buffer = self.buffer[match.end() :]
+            self.buffer = self.buffer[open_match.end() :]
             self.state = StreamState.INSIDE_THINK
             self.thinking_started = True
 
@@ -133,11 +175,12 @@ class ThinkingStreamParser:
             )
             logger.info("[ThinkingParser] Detected <think> tag, entering thinking mode")
         else:
-            # No <think> tag yet, but might be split across chunks
-            # Keep last 7 chars in buffer (length of "<think>")
-            if len(self.buffer) > 7:
-                to_send = self.buffer[:-7]
-                self.buffer = self.buffer[-7:]
+            # No tags yet, but might be split across chunks
+            # Keep last 8 chars in buffer (max length of "</think>")
+            # This handles both <think> (7 chars) and </think> (8 chars) being split
+            if len(self.buffer) > 8:
+                to_send = self.buffer[:-8]
+                self.buffer = self.buffer[-8:]
                 if to_send.strip():
                     yield StreamChunk(
                         type="response",
