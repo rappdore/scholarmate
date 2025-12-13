@@ -92,8 +92,10 @@ class EPUBCache:
 
     def _build_cache(self) -> None:
         """
-        Build the cache by scanning filesystem and extracting basic metadata.
-        Pre-generates thumbnails for all EPUBs.
+        Build the cache by scanning filesystem and loading from database when possible.
+        Only extracts metadata and generates thumbnails for new EPUBs not in database.
+
+        Leverages database backing for fast cache initialization.
         """
         start_time = datetime.now()
         self._cache = {}
@@ -103,90 +105,132 @@ class EPUBCache:
         epub_files = list(self.epub_dir.glob("*.epub"))
         logger.info(f"Found {len(epub_files)} EPUB files")
 
+        db_hits = 0
+        db_misses = 0
+
         for file_path in epub_files:
-            try:
-                # Get file stats
-                stat = file_path.stat()
+            filename = file_path.name
 
-                # Extract basic metadata
-                book = epub.read_epub(str(file_path))
+            # Check if EPUB exists in database
+            db_record = self._db_service.get_by_filename(filename)
 
-                # Extract metadata using robust method
-                title = self._extract_metadata_values(book, "DC", "title")
-                if not title:
-                    title = file_path.stem
-
-                author = self._extract_metadata_values(book, "DC", "creator")
-
-                # Count chapters (spine items that are documents)
-                chapter_count = len(
-                    [item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)]
-                )
-
-                # Pre-generate thumbnail
-                try:
-                    thumbnail_path = self.epub_service.generate_thumbnail(
-                        file_path.name
-                    )
-                    thumbnail_path_str = str(thumbnail_path)
-                except Exception as thumb_error:
-                    logger.warning(
-                        f"Failed to generate thumbnail for {file_path.name}: {thumb_error}"
-                    )
-                    thumbnail_path_str = ""
-
-                # Store basic metadata in cache
+            if db_record:
+                # Load from database (fast path)
+                logger.debug(f"Loading from database: {filename}")
                 epub_info = {
-                    "filename": file_path.name,
+                    "filename": filename,
                     "type": "epub",
-                    "title": str(title),
-                    "author": str(author) if author else "Unknown",
-                    "chapters": chapter_count,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "thumbnail_path": thumbnail_path_str,
+                    "title": db_record.get("title", file_path.stem),
+                    "author": db_record.get("author", "Unknown"),
+                    "chapters": db_record.get("chapters", 0),
+                    "file_size": db_record.get("file_size", 0),
+                    "modified_date": db_record.get("modified_date", ""),
+                    "created_date": db_record.get("created_date", ""),
+                    "thumbnail_path": db_record.get("thumbnail_path", ""),
                     "error": None,
                 }
+                self._cache[filename] = epub_info
+                db_hits += 1
 
-                self._cache[file_path.name] = epub_info
-                logger.debug(f"Cached metadata for: {file_path.name}")
-
-                # Persist to database
+            else:
+                # Not in database - extract from file (slow path)
+                logger.debug(f"Extracting metadata from file: {filename}")
                 try:
-                    self._db_service.create_or_update(
-                        filename=file_path.name,
-                        title=epub_info["title"],
-                        author=epub_info["author"],
-                        chapters=chapter_count,
-                        file_size=stat.st_size,
-                        file_path=str(file_path),
-                        thumbnail_path=thumbnail_path_str,
-                        created_date=epub_info["created_date"],
-                        modified_date=epub_info["modified_date"],
-                    )
-                except Exception as db_error:
-                    logger.warning(
-                        f"Failed to persist EPUB metadata to database for {file_path.name}: {db_error}"
+                    # Get file stats
+                    stat = file_path.stat()
+
+                    # Extract basic metadata
+                    book = epub.read_epub(str(file_path))
+
+                    # Extract metadata using robust method
+                    title = self._extract_metadata_values(book, "DC", "title")
+                    if not title:
+                        title = file_path.stem
+
+                    author = self._extract_metadata_values(book, "DC", "creator")
+
+                    # Count chapters (spine items that are documents)
+                    chapter_count = len(
+                        [
+                            item
+                            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
+                        ]
                     )
 
-            except Exception as e:
-                # If we can't read an EPUB, still include it but with limited info
-                logger.error(f"Error processing {file_path.name}: {e}")
-                stat = file_path.stat()
-                epub_info = {
-                    "filename": file_path.name,
-                    "type": "epub",
-                    "title": file_path.stem,
-                    "author": "Unknown",
-                    "chapters": 0,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "thumbnail_path": "",
-                    "error": f"Could not read EPUB: {str(e)}",
-                }
-                self._cache[file_path.name] = epub_info
+                    # Pre-generate thumbnail
+                    try:
+                        thumbnail_path = self.epub_service.generate_thumbnail(
+                            file_path.name
+                        )
+                        thumbnail_path_str = str(thumbnail_path)
+                    except Exception as thumb_error:
+                        logger.warning(
+                            f"Failed to generate thumbnail for {file_path.name}: {thumb_error}"
+                        )
+                        thumbnail_path_str = ""
+
+                    # Store basic metadata in cache
+                    epub_info = {
+                        "filename": file_path.name,
+                        "type": "epub",
+                        "title": str(title),
+                        "author": str(author) if author else "Unknown",
+                        "chapters": chapter_count,
+                        "file_size": stat.st_size,
+                        "modified_date": datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).isoformat(),
+                        "created_date": datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        "thumbnail_path": thumbnail_path_str,
+                        "error": None,
+                    }
+
+                    self._cache[file_path.name] = epub_info
+
+                    # Persist to database
+                    try:
+                        self._db_service.create_or_update(
+                            filename=file_path.name,
+                            title=epub_info["title"],
+                            author=epub_info["author"],
+                            chapters=chapter_count,
+                            file_size=stat.st_size,
+                            file_path=str(file_path),
+                            thumbnail_path=thumbnail_path_str,
+                            created_date=epub_info["created_date"],
+                            modified_date=epub_info["modified_date"],
+                        )
+                    except Exception as db_error:
+                        logger.warning(
+                            f"Failed to persist EPUB metadata to database for {file_path.name}: {db_error}"
+                        )
+
+                    db_misses += 1
+
+                except Exception as e:
+                    # If we can't read an EPUB, still include it but with limited info
+                    logger.error(f"Error processing {file_path.name}: {e}")
+                    stat = file_path.stat()
+                    epub_info = {
+                        "filename": file_path.name,
+                        "type": "epub",
+                        "title": file_path.stem,
+                        "author": "Unknown",
+                        "chapters": 0,
+                        "file_size": stat.st_size,
+                        "modified_date": datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).isoformat(),
+                        "created_date": datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        "thumbnail_path": "",
+                        "error": f"Could not read EPUB: {str(e)}",
+                    }
+                    self._cache[file_path.name] = epub_info
+                    db_misses += 1
 
         # Update cache metadata
         self._cache_built_at = datetime.now().isoformat()
@@ -194,7 +238,8 @@ class EPUBCache:
 
         elapsed_time = (datetime.now() - start_time).total_seconds()
         logger.info(
-            f"Cache build completed in {elapsed_time:.2f}s - {self._cache_epub_count} EPUBs cached"
+            f"Cache build completed in {elapsed_time:.2f}s - {self._cache_epub_count} EPUBs cached "
+            f"(DB hits: {db_hits}, new: {db_misses})"
         )
 
     def get_all_epubs(self) -> List[Dict[str, Any]]:
