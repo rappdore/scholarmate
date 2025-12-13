@@ -245,3 +245,66 @@ async def test_buffer_management_with_similar_text():
     thinking_chunks = [r for r in results if r.get("type") == "thinking"]
     thinking_text = "".join([c["content"] for c in thinking_chunks if c["content"]])
     assert "real thinking" in thinking_text
+
+
+@pytest.mark.asyncio
+async def test_orphaned_closing_think_tag():
+    """Test orphaned </think> tag (no opening tag) - inserts <hr/> divider"""
+    parser = ThinkingStreamParser()
+    input_text = (
+        "This is thinking content without opening tag</think>This is the actual answer"
+    )
+
+    results = []
+    async for chunk in parser.process_chunk(input_text):
+        results.append(chunk)
+    async for chunk in parser.finalize():
+        results.append(chunk)
+
+    # All content should be type "response" (no thinking block created)
+    response_chunks = [r for r in results if r.get("type") == "response"]
+    assert len(response_chunks) >= 2
+
+    # Should have content before </think>
+    response_text = "".join([c["content"] for c in response_chunks if c["content"]])
+    assert "thinking content without opening tag" in response_text
+    assert "actual answer" in response_text
+
+    # Should have inserted an <hr/> divider with spacing
+    assert "---" in response_text
+    assert "&nbsp;" in response_text  # Extra spacing after hr
+
+    # Should NOT have created any thinking chunks
+    thinking_chunks = [r for r in results if r.get("type") == "thinking"]
+    assert len(thinking_chunks) == 0
+
+    # No thinking metadata should be set
+    assert parser.thinking_started is False
+
+
+@pytest.mark.asyncio
+async def test_orphaned_closing_tag_split_across_chunks():
+    """Test orphaned </think> tag split across chunks"""
+    parser = ThinkingStreamParser()
+
+    results = []
+    async for chunk in parser.process_chunk("Reasoning content here</thi"):
+        results.append(chunk)
+    async for chunk in parser.process_chunk("nk>Actual answer"):
+        results.append(chunk)
+    async for chunk in parser.finalize():
+        results.append(chunk)
+
+    # All should be response chunks
+    response_chunks = [r for r in results if r.get("type") == "response"]
+    response_text = "".join([c["content"] for c in response_chunks if c["content"]])
+
+    # Should contain both parts and the divider with spacing
+    assert "Reasoning content" in response_text
+    assert "Actual answer" in response_text
+    assert "---" in response_text
+    assert "&nbsp;" in response_text  # Extra spacing after hr
+
+    # No thinking chunks
+    thinking_chunks = [r for r in results if r.get("type") == "thinking"]
+    assert len(thinking_chunks) == 0
