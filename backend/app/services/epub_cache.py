@@ -117,6 +117,39 @@ class EPUBCache:
             if db_record:
                 # Load from database (fast path)
                 logger.debug(f"Loading from database: {filename}")
+
+                # Get thumbnail path from database
+                thumbnail_path_str = db_record.get("thumbnail_path", "")
+
+                # Only generate thumbnail if DB has no path or file doesn't exist
+                if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
+                    try:
+                        thumbnail_path = self.epub_service.generate_thumbnail(filename)
+                        thumbnail_path_str = str(thumbnail_path)
+
+                        # Update database with new thumbnail path
+                        try:
+                            self._db_service.create_or_update(
+                                filename=filename,
+                                chapters=db_record.get("chapters", 0),
+                                title=db_record.get("title"),
+                                author=db_record.get("author"),
+                                file_size=db_record.get("file_size"),
+                                file_path=db_record.get("file_path"),
+                                thumbnail_path=thumbnail_path_str,
+                                created_date=db_record.get("created_date"),
+                                modified_date=db_record.get("modified_date"),
+                            )
+                        except Exception as db_error:
+                            logger.warning(
+                                f"Failed to update thumbnail path in database for {filename}: {db_error}"
+                            )
+                    except Exception as thumb_error:
+                        logger.warning(
+                            f"Failed to generate thumbnail for {filename}: {thumb_error}"
+                        )
+                        thumbnail_path_str = ""
+
                 epub_info = {
                     "filename": filename,
                     "type": "epub",
@@ -126,7 +159,7 @@ class EPUBCache:
                     "file_size": db_record.get("file_size", 0),
                     "modified_date": db_record.get("modified_date", ""),
                     "created_date": db_record.get("created_date", ""),
-                    "thumbnail_path": db_record.get("thumbnail_path", ""),
+                    "thumbnail_path": thumbnail_path_str,
                     "error": None,
                 }
                 self._cache[filename] = epub_info
