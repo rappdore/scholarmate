@@ -9,34 +9,11 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import regression from 'regression';
 import type { ReadingSession } from '../../types/statistics';
 
 interface ReadingSpeedChartProps {
   sessions: ReadingSession[];
-}
-
-// Calculate linear regression for trend line
-function calculateLinearRegression(data: number[]): {
-  slope: number;
-  intercept: number;
-} {
-  const n = data.length;
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumXX = 0;
-
-  for (let i = 0; i < n; i++) {
-    sumX += i;
-    sumY += data[i];
-    sumXY += i * data[i];
-    sumXX += i * i;
-  }
-
-  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-  const intercept = (sumY - slope * sumX) / n;
-
-  return { slope, intercept };
 }
 
 export default function ReadingSpeedChart({
@@ -45,15 +22,20 @@ export default function ReadingSpeedChart({
   // Transform data for chart (reverse to show chronological order)
   const reversedSessions = sessions.slice().reverse();
 
-  // Calculate regression line
+  // Calculate polynomial regression using the regression library
   const speeds = reversedSessions.map(s => s.average_time_per_page);
-  const { slope, intercept } = calculateLinearRegression(speeds);
+  const regressionData = speeds.map((y, x) => [x, y] as [number, number]);
+  const result = regression.polynomial(regressionData, { order: 2 });
+
+  // Extract coefficients (result.equation is [a, b, c] for ax² + bx + c)
+  const [a, b] = result.equation;
+  const rSquared = result.r2;
 
   const chartData = reversedSessions.map((session, index) => ({
     date: format(parseISO(session.session_start), 'MMM d'),
     fullDate: format(parseISO(session.session_start), 'MMM d, yyyy h:mm a'),
     speed: parseFloat(session.average_time_per_page.toFixed(1)),
-    trend: parseFloat((slope * index + intercept).toFixed(1)),
+    trend: parseFloat(result.predict(index)[1].toFixed(1)),
   }));
 
   // Custom tooltip
@@ -76,11 +58,15 @@ export default function ReadingSpeedChart({
     return null;
   };
 
-  // Determine trend direction for display
+  // Determine trend direction for display based on polynomial derivative at the end
   const getTrendInfo = () => {
-    if (slope < -0.5) {
+    // Calculate derivative at the last point: f'(x) = 2ax + b
+    const lastIndex = speeds.length - 1;
+    const derivative = 2 * a * lastIndex + b;
+
+    if (derivative < -0.5) {
       return { direction: 'Improving', icon: '📈', color: 'text-green-400' };
-    } else if (slope > 0.5) {
+    } else if (derivative > 0.5) {
       return { direction: 'Slowing', icon: '📉', color: 'text-yellow-400' };
     } else {
       return { direction: 'Stable', icon: '➡️', color: 'text-blue-400' };
@@ -96,9 +82,16 @@ export default function ReadingSpeedChart({
           Reading Speed Over Time
         </h2>
         {sessions.length >= 2 && (
-          <div className={`flex items-center gap-1 text-sm ${trendInfo.color}`}>
-            <span>{trendInfo.icon}</span>
-            <span>{trendInfo.direction}</span>
+          <div className="flex items-center gap-3">
+            <div
+              className={`flex items-center gap-1 text-sm ${trendInfo.color}`}
+            >
+              <span>{trendInfo.icon}</span>
+              <span>{trendInfo.direction}</span>
+            </div>
+            <div className="text-sm text-slate-400">
+              R² = {rSquared.toFixed(3)}
+            </div>
           </div>
         )}
       </div>
@@ -143,7 +136,7 @@ export default function ReadingSpeedChart({
               wrapperStyle={{ fontSize: '12px', color: '#94a3b8' }}
               iconType="line"
             />
-            {/* Trend line (regression) */}
+            {/* Trend line (polynomial regression) */}
             <Line
               type="monotone"
               dataKey="trend"
@@ -151,7 +144,7 @@ export default function ReadingSpeedChart({
               strokeWidth={2}
               strokeDasharray="5 5"
               dot={false}
-              name="Trend"
+              name="Polynomial Trend"
               opacity={0.6}
             />
             {/* Actual reading speed */}
