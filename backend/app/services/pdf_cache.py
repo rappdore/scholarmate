@@ -61,10 +61,10 @@ class PDFCache:
 
     def _build_cache(self) -> None:
         """
-        Build the cache by scanning filesystem and extracting basic metadata.
-        Pre-generates thumbnails for all PDFs.
+        Build the cache by scanning filesystem and loading from database when possible.
+        Only extracts metadata and generates thumbnails for new PDFs not in database.
 
-        Phase 1a: Also persists metadata to database for durability.
+        Phase 1a: Leverages database backing for fast cache initialization.
         """
         start_time = datetime.now()
         self._cache = {}
@@ -74,84 +74,158 @@ class PDFCache:
         pdf_files = list(self.pdf_dir.glob("*.pdf"))
         logger.info(f"Found {len(pdf_files)} PDF files")
 
+        db_hits = 0
+        db_misses = 0
+
         for file_path in pdf_files:
-            try:
-                # Get file stats
-                stat = file_path.stat()
+            filename = file_path.name
 
-                # Extract basic metadata
-                with open(file_path, "rb") as file:
-                    reader = PdfReader(file)
-                    num_pages = len(reader.pages)
+            # Check if PDF exists in database
+            db_record = self._db_service.get_by_filename(filename)
 
-                    # Try to get metadata
-                    metadata = reader.metadata or {}
-                    title = metadata.get("/Title", file_path.stem)
-                    author = metadata.get("/Author", "Unknown")
+            if db_record:
+                # Load from database (fast path)
+                logger.debug(f"Loading from database: {filename}")
 
-                # Pre-generate thumbnail
-                try:
-                    thumbnail_path = self.pdf_service.generate_thumbnail(file_path.name)
-                    thumbnail_path_str = str(thumbnail_path)
-                except Exception as thumb_error:
-                    logger.warning(
-                        f"Failed to generate thumbnail for {file_path.name}: {thumb_error}"
-                    )
-                    thumbnail_path_str = ""
+                # Get thumbnail path from database
+                thumbnail_path_str = db_record.get("thumbnail_path", "")
 
-                # Store basic metadata in cache
+                # Only generate thumbnail if DB has no path or file doesn't exist
+                if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
+                    try:
+                        thumbnail_path = self.pdf_service.generate_thumbnail(filename)
+                        thumbnail_path_str = str(thumbnail_path)
+
+                        # Update database with new thumbnail path
+                        try:
+                            self._db_service.create_or_update(
+                                filename=filename,
+                                num_pages=db_record.get("num_pages", 0),
+                                title=db_record.get("title"),
+                                author=db_record.get("author"),
+                                file_size=db_record.get("file_size"),
+                                file_path=db_record.get("file_path"),
+                                thumbnail_path=thumbnail_path_str,
+                                created_date=db_record.get("created_date"),
+                                modified_date=db_record.get("modified_date"),
+                            )
+                        except Exception as db_error:
+                            logger.warning(
+                                f"Failed to update thumbnail path in database for {filename}: {db_error}"
+                            )
+                    except Exception as thumb_error:
+                        logger.warning(
+                            f"Failed to generate thumbnail for {filename}: {thumb_error}"
+                        )
+                        thumbnail_path_str = ""
+
                 pdf_info = {
-                    "filename": file_path.name,
+                    "filename": filename,
                     "type": "pdf",
-                    "title": str(title) if title else file_path.stem,
-                    "author": str(author) if author else "Unknown",
-                    "num_pages": num_pages,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "title": db_record.get("title", file_path.stem),
+                    "author": db_record.get("author", "Unknown"),
+                    "num_pages": db_record.get("num_pages", 0),
+                    "file_size": db_record.get("file_size", 0),
+                    "modified_date": db_record.get("modified_date", ""),
+                    "created_date": db_record.get("created_date", ""),
                     "thumbnail_path": thumbnail_path_str,
                     "error": None,
                 }
+                self._cache[filename] = pdf_info
+                db_hits += 1
 
-                self._cache[file_path.name] = pdf_info
-                logger.debug(f"Cached metadata for: {file_path.name}")
-
-                # Phase 1a: Persist to database
+            else:
+                # Not in database - extract from file (slow path)
+                logger.debug(f"Extracting metadata from file: {filename}")
                 try:
-                    self._db_service.create_or_update(
-                        filename=file_path.name,
-                        title=pdf_info["title"],
-                        author=pdf_info["author"],
-                        num_pages=num_pages,
-                        file_size=stat.st_size,
-                        file_path=str(file_path),
-                        thumbnail_path=thumbnail_path_str,
-                        created_date=pdf_info["created_date"],
-                        modified_date=pdf_info["modified_date"],
-                    )
-                except Exception as db_error:
-                    logger.error(
-                        f"Error persisting {file_path.name} to database: {db_error}"
-                    )
-                    # Continue even if DB write fails - cache still works
+                    # Get file stats
+                    stat = file_path.stat()
 
-            except Exception as e:
-                # If we can't read a PDF, still include it but with limited info
-                logger.error(f"Error processing {file_path.name}: {e}")
-                stat = file_path.stat()
-                pdf_info = {
-                    "filename": file_path.name,
-                    "type": "pdf",
-                    "title": file_path.stem,
-                    "author": "Unknown",
-                    "num_pages": 0,
-                    "file_size": stat.st_size,
-                    "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "thumbnail_path": "",
-                    "error": f"Could not read PDF: {str(e)}",
-                }
-                self._cache[file_path.name] = pdf_info
+                    # Extract basic metadata
+                    with open(file_path, "rb") as file:
+                        reader = PdfReader(file)
+                        num_pages = len(reader.pages)
+
+                        # Try to get metadata
+                        metadata = reader.metadata or {}
+                        title = metadata.get("/Title", file_path.stem)
+                        author = metadata.get("/Author", "Unknown")
+
+                    # Pre-generate thumbnail
+                    try:
+                        thumbnail_path = self.pdf_service.generate_thumbnail(
+                            file_path.name
+                        )
+                        thumbnail_path_str = str(thumbnail_path)
+                    except Exception as thumb_error:
+                        logger.warning(
+                            f"Failed to generate thumbnail for {file_path.name}: {thumb_error}"
+                        )
+                        thumbnail_path_str = ""
+
+                    # Store basic metadata in cache
+                    pdf_info = {
+                        "filename": file_path.name,
+                        "type": "pdf",
+                        "title": str(title) if title else file_path.stem,
+                        "author": str(author) if author else "Unknown",
+                        "num_pages": num_pages,
+                        "file_size": stat.st_size,
+                        "modified_date": datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).isoformat(),
+                        "created_date": datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        "thumbnail_path": thumbnail_path_str,
+                        "error": None,
+                    }
+
+                    self._cache[file_path.name] = pdf_info
+
+                    # Persist to database
+                    try:
+                        self._db_service.create_or_update(
+                            filename=file_path.name,
+                            title=pdf_info["title"],
+                            author=pdf_info["author"],
+                            num_pages=num_pages,
+                            file_size=stat.st_size,
+                            file_path=str(file_path),
+                            thumbnail_path=thumbnail_path_str,
+                            created_date=pdf_info["created_date"],
+                            modified_date=pdf_info["modified_date"],
+                        )
+                    except Exception as db_error:
+                        logger.error(
+                            f"Error persisting {file_path.name} to database: {db_error}"
+                        )
+                        # Continue even if DB write fails - cache still works
+
+                    db_misses += 1
+
+                except Exception as e:
+                    # If we can't read a PDF, still include it but with limited info
+                    logger.error(f"Error processing {file_path.name}: {e}")
+                    stat = file_path.stat()
+                    pdf_info = {
+                        "filename": file_path.name,
+                        "type": "pdf",
+                        "title": file_path.stem,
+                        "author": "Unknown",
+                        "num_pages": 0,
+                        "file_size": stat.st_size,
+                        "modified_date": datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).isoformat(),
+                        "created_date": datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        "thumbnail_path": "",
+                        "error": f"Could not read PDF: {str(e)}",
+                    }
+                    self._cache[file_path.name] = pdf_info
+                    db_misses += 1
 
         # Update cache metadata
         self._cache_built_at = datetime.now().isoformat()
@@ -159,7 +233,8 @@ class PDFCache:
 
         elapsed_time = (datetime.now() - start_time).total_seconds()
         logger.info(
-            f"Cache build completed in {elapsed_time:.2f}s - {self._cache_pdf_count} PDFs cached"
+            f"Cache build completed in {elapsed_time:.2f}s - {self._cache_pdf_count} PDFs cached "
+            f"(DB hits: {db_hits}, new: {db_misses})"
         )
 
     def get_all_pdfs(self) -> List[Dict[str, Any]]:
