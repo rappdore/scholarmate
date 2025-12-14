@@ -22,13 +22,23 @@ export default function ReadingSpeedChart({
   // Transform data for chart (reverse to show chronological order)
   const reversedSessions = sessions.slice().reverse();
 
-  // Calculate polynomial regression using the regression library
+  // Calculate regression using appropriate model based on data size
   const speeds = reversedSessions.map(s => s.average_time_per_page);
   const regressionData = speeds.map((y, x) => [x, y] as [number, number]);
-  const result = regression.polynomial(regressionData, { order: 2 });
 
-  // Extract coefficients (result.equation is [a, b, c] for ax² + bx + c)
-  const [a, b] = result.equation;
+  // Use polynomial regression only when we have enough data points
+  // Otherwise fall back to linear regression to avoid overfitting
+  const POLYNOMIAL_THRESHOLD = 6;
+  const usePolynomial = speeds.length >= POLYNOMIAL_THRESHOLD;
+
+  const result = usePolynomial
+    ? regression.polynomial(regressionData, { order: 2 })
+    : regression.linear(regressionData);
+
+  // Extract coefficients for derivative calculation
+  // For polynomial: [a, b, c] where y = ax² + bx + c
+  // For linear: [m, b] where y = mx + b
+  const coefficients = result.equation;
   const rSquared = result.r2;
 
   const chartData = reversedSessions.map((session, index) => ({
@@ -58,11 +68,20 @@ export default function ReadingSpeedChart({
     return null;
   };
 
-  // Determine trend direction for display based on polynomial derivative at the end
+  // Determine trend direction for display based on derivative at the end
   const getTrendInfo = () => {
-    // Calculate derivative at the last point: f'(x) = 2ax + b
     const lastIndex = speeds.length - 1;
-    const derivative = 2 * a * lastIndex + b;
+    let derivative: number;
+
+    if (usePolynomial) {
+      // Polynomial: f'(x) = 2ax + b
+      const [a, b] = coefficients;
+      derivative = 2 * a * lastIndex + b;
+    } else {
+      // Linear: f'(x) = m (constant slope)
+      const [m] = coefficients;
+      derivative = m;
+    }
 
     if (derivative < -0.5) {
       return { direction: 'Improving', icon: '📈', color: 'text-green-400' };
@@ -89,9 +108,11 @@ export default function ReadingSpeedChart({
               <span>{trendInfo.icon}</span>
               <span>{trendInfo.direction}</span>
             </div>
-            <div className="text-sm text-slate-400">
-              R² = {rSquared.toFixed(3)}
-            </div>
+            {usePolynomial && (
+              <div className="text-sm text-slate-400">
+                R² = {rSquared.toFixed(3)}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -136,7 +157,7 @@ export default function ReadingSpeedChart({
               wrapperStyle={{ fontSize: '12px', color: '#94a3b8' }}
               iconType="line"
             />
-            {/* Trend line (polynomial regression) */}
+            {/* Trend line (polynomial or linear regression) */}
             <Line
               type="monotone"
               dataKey="trend"
@@ -144,7 +165,7 @@ export default function ReadingSpeedChart({
               strokeWidth={2}
               strokeDasharray="5 5"
               dot={false}
-              name="Polynomial Trend"
+              name={usePolynomial ? 'Polynomial Trend' : 'Linear Trend'}
               opacity={0.6}
             />
             {/* Actual reading speed */}
