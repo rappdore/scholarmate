@@ -16,6 +16,16 @@ interface ReadingSpeedChartProps {
   sessions: ReadingSession[];
 }
 
+/**
+ * Render a line chart that visualizes reading speed per page over time and an estimated trend line.
+ *
+ * Displays per-session speeds and a regression-based trend (polynomial when enough data, otherwise linear),
+ * shows a trend direction indicator, and — when using a polynomial fit — the R² value. If fewer than two
+ * sessions are provided, a placeholder message is shown instead of the chart.
+ *
+ * @param sessions - Array of reading session records used to build the chart and trend; at least two sessions are required to display trend information
+ * @returns A React element containing the reading speed chart and associated UI
+ */
 export default function ReadingSpeedChart({
   sessions,
 }: ReadingSpeedChartProps) {
