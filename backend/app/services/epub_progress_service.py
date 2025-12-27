@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .base_database_service import BaseDatabaseService
+from .epub_documents_service import EPUBDocumentsService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class EPUBProgressService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
+        # Phase 2b: Initialize EPUB documents service for epub_id lookups
+        self._epub_docs_service = EPUBDocumentsService(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -63,6 +66,18 @@ class EPUBProgressService(BaseDatabaseService):
                 )
             """)
 
+            # Phase 2b: Add epub_id column if it doesn't exist (backward compatible migration)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(epub_reading_progress)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "epub_id" not in columns:
+                logger.info("Adding epub_id column to epub_reading_progress table...")
+                conn.execute(
+                    "ALTER TABLE epub_reading_progress ADD COLUMN epub_id INTEGER"
+                )
+                logger.info("epub_id column added successfully")
+
             # Create indexes for performance
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_progress_status
@@ -74,7 +89,32 @@ class EPUBProgressService(BaseDatabaseService):
                 ON epub_reading_progress(status, status_updated_at)
             """)
 
+            # Phase 2b: Create index on epub_id if it doesn't exist
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_progress_epub_id
+                ON epub_reading_progress(epub_id)
+            """)
+
             conn.commit()
+
+    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+        """
+        Get the epub_id for a given EPUB filename.
+
+        Args:
+            epub_filename (str): Name of the EPUB file
+
+        Returns:
+            Optional[int]: The epub_id if found, None otherwise
+        """
+        try:
+            epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
+            if epub_doc:
+                return epub_doc.get("id")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not look up epub_id for {epub_filename}: {e}")
+            return None
 
     def save_progress(
         self,
@@ -104,6 +144,9 @@ class EPUBProgressService(BaseDatabaseService):
             bool: True if the operation was successful, False otherwise
         """
         try:
+            # Phase 2b: Look up epub_id for this filename
+            epub_id = self._get_epub_id(epub_filename)
+
             # Convert metadata to JSON string
             nav_metadata_json = json.dumps(nav_metadata) if nav_metadata else None
 
@@ -112,11 +155,12 @@ class EPUBProgressService(BaseDatabaseService):
 
             if existing:
                 # Update existing record, preserving status fields unless auto-updating
+                # Phase 2b: Also update epub_id if it's not set
                 query = """
                     UPDATE epub_reading_progress
                     SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
                         scroll_position = ?, total_sections = ?, progress_percentage = ?,
-                        nav_metadata = ?, last_updated = ?
+                        nav_metadata = ?, last_updated = ?, epub_id = ?
                     WHERE epub_filename = ?
                 """
                 params = (
@@ -128,6 +172,7 @@ class EPUBProgressService(BaseDatabaseService):
                     progress_percentage,
                     nav_metadata_json,
                     self.get_current_timestamp(),
+                    epub_id,
                     epub_filename,
                 )
                 result = self.execute_update_delete(query, params)
@@ -139,12 +184,13 @@ class EPUBProgressService(BaseDatabaseService):
                     )
             else:
                 # Insert new record with default status values
+                # Phase 2b: Include epub_id in insert
                 query = """
                     INSERT INTO epub_reading_progress
                     (epub_filename, current_nav_id, chapter_id, chapter_title,
                      scroll_position, total_sections, progress_percentage, nav_metadata,
-                     last_updated, status, status_updated_at, manually_set)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     last_updated, status, status_updated_at, manually_set, epub_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     epub_filename,
@@ -161,12 +207,14 @@ class EPUBProgressService(BaseDatabaseService):
                     else "new",  # Auto-set initial status
                     self.get_current_timestamp(),
                     False,  # Default manually_set for new records
+                    epub_id,  # Phase 2b: Auto-populate epub_id
                 )
                 result = self.execute_insert(query, params)
 
             if result is not None:
                 logger.info(
                     f"Saved EPUB progress for {epub_filename}: {current_nav_id} ({progress_percentage:.1f}%)"
+                    + (f" (epub_id: {epub_id})" if epub_id else "")
                 )
                 return True
             return False
@@ -212,10 +260,11 @@ class EPUBProgressService(BaseDatabaseService):
             Optional[Dict[str, Any]]: Dictionary containing progress information or None
         """
         try:
+            # Phase 2b: Include epub_id in SELECT
             query = """
                 SELECT epub_filename, current_nav_id, chapter_id, chapter_title,
                        scroll_position, total_sections, progress_percentage,
-                       last_updated, status, status_updated_at, manually_set, nav_metadata
+                       last_updated, status, status_updated_at, manually_set, nav_metadata, epub_id
                 FROM epub_reading_progress
                 WHERE epub_filename = ?
             """
@@ -243,6 +292,9 @@ class EPUBProgressService(BaseDatabaseService):
                     "status_updated_at": row[9],
                     "manually_set": bool(row[10]) if row[10] is not None else False,
                     "nav_metadata": nav_metadata,
+                    "epub_id": row[12]
+                    if len(row) > 12
+                    else None,  # Phase 2b: Include epub_id
                 }
             return None
         except Exception as e:
@@ -257,10 +309,11 @@ class EPUBProgressService(BaseDatabaseService):
             Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
         """
         try:
+            # Phase 2b: Include epub_id in SELECT
             query = """
                 SELECT epub_filename, current_nav_id, chapter_id, chapter_title,
                        scroll_position, total_sections, progress_percentage,
-                       last_updated, status, status_updated_at, manually_set, nav_metadata
+                       last_updated, status, status_updated_at, manually_set, nav_metadata, epub_id
                 FROM epub_reading_progress
                 ORDER BY last_updated DESC
             """
@@ -289,6 +342,9 @@ class EPUBProgressService(BaseDatabaseService):
                         "status_updated_at": row[9],
                         "manually_set": bool(row[10]) if row[10] is not None else False,
                         "nav_metadata": nav_metadata,
+                        "epub_id": row[12]
+                        if len(row) > 12
+                        else None,  # Phase 2b: Include epub_id
                     }
             return progress
         except Exception as e:
@@ -318,25 +374,30 @@ class EPUBProgressService(BaseDatabaseService):
                 )
                 return False
 
+            # Phase 2b: Look up epub_id for this filename
+            epub_id = self._get_epub_id(epub_filename)
+
             # Check if record exists
             existing = self.get_progress(epub_filename)
             current_time = self.get_current_timestamp()
 
             if existing:
                 # Update existing record
+                # Phase 2b: Also update epub_id if it's not set
                 query = """
                     UPDATE epub_reading_progress
-                    SET status = ?, status_updated_at = ?, manually_set = ?
+                    SET status = ?, status_updated_at = ?, manually_set = ?, epub_id = ?
                     WHERE epub_filename = ?
                 """
-                params = (status, current_time, manual, epub_filename)
+                params = (status, current_time, manual, epub_id, epub_filename)
                 result = self.execute_update_delete(query, params)
             else:
                 # Create new record with minimal data
+                # Phase 2b: Include epub_id in insert
                 query = """
                     INSERT INTO epub_reading_progress
-                    (epub_filename, current_nav_id, status, status_updated_at, manually_set, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (epub_filename, current_nav_id, status, status_updated_at, manually_set, last_updated, epub_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     epub_filename,
@@ -345,11 +406,15 @@ class EPUBProgressService(BaseDatabaseService):
                     current_time,
                     manual,
                     current_time,
+                    epub_id,  # Phase 2b: Auto-populate epub_id
                 )
                 result = self.execute_insert(query, params)
 
             if result is not None:
-                logger.info(f"Updated EPUB status for {epub_filename}: {status}")
+                logger.info(
+                    f"Updated EPUB status for {epub_filename}: {status}"
+                    + (f" (epub_id: {epub_id})" if epub_id else "")
+                )
                 return True
             return False
         except Exception as e:
@@ -369,20 +434,22 @@ class EPUBProgressService(BaseDatabaseService):
         """
         try:
             if status:
+                # Phase 2b: Include epub_id in SELECT
                 query = """
                     SELECT epub_filename, current_nav_id, chapter_id, chapter_title,
                            scroll_position, total_sections, progress_percentage,
-                           last_updated, status, status_updated_at, manually_set
+                           last_updated, status, status_updated_at, manually_set, epub_id
                     FROM epub_reading_progress
                     WHERE status = ?
                     ORDER BY status_updated_at DESC, last_updated DESC
                 """
                 params = (status,)
             else:
+                # Phase 2b: Include epub_id in SELECT
                 query = """
                     SELECT epub_filename, current_nav_id, chapter_id, chapter_title,
                            scroll_position, total_sections, progress_percentage,
-                           last_updated, status, status_updated_at, manually_set
+                           last_updated, status, status_updated_at, manually_set, epub_id
                     FROM epub_reading_progress
                     ORDER BY status_updated_at DESC, last_updated DESC
                 """
@@ -408,6 +475,9 @@ class EPUBProgressService(BaseDatabaseService):
                             "manually_set": bool(row[10])
                             if row[10] is not None
                             else False,
+                            "epub_id": row[11]
+                            if len(row) > 11
+                            else None,  # Phase 2b: Include epub_id
                         }
                     )
             return books
