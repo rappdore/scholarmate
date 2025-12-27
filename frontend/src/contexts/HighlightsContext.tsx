@@ -12,7 +12,7 @@ interface HighlightsContextType {
   highlights: Highlight[];
   isLoading: boolean;
   error: string | null;
-  currentFilename: string | null;
+  currentPdfId: number | null;
   createHighlight: (
     highlightData: HighlightRequest
   ) => Promise<Highlight | null>;
@@ -22,7 +22,7 @@ interface HighlightsContextType {
     color: string
   ) => Promise<boolean>;
   refreshHighlights: () => Promise<void>;
-  setCurrentFilename: (filename: string | null) => void;
+  setCurrentPdfId: (pdfId: number | null) => void;
   getHighlightsForPage: (pageNumber: number) => Highlight[];
 }
 
@@ -50,11 +50,11 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentFilename, setCurrentFilename] = useState<string | null>(null);
+  const [currentPdfId, setCurrentPdfId] = useState<number | null>(null);
 
   // Load highlights for the current PDF
   const loadHighlights = useCallback(async () => {
-    if (!currentFilename) {
+    if (!currentPdfId) {
       setHighlights([]);
       return;
     }
@@ -64,7 +64,7 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
 
     try {
       const loadedHighlights = await highlightService.getHighlightsForPdf(
-        currentFilename
+        currentPdfId
         // Don't filter by pageNumber to get all highlights
       );
       setHighlights(loadedHighlights);
@@ -76,7 +76,7 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [currentFilename]);
+  }, [currentPdfId]);
 
   // Create a new highlight
   const createHighlight = useCallback(
@@ -180,12 +180,12 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
     highlights,
     isLoading,
     error,
-    currentFilename,
+    currentPdfId,
     createHighlight,
     deleteHighlight,
     updateHighlightColor,
     refreshHighlights: loadHighlights,
-    setCurrentFilename,
+    setCurrentPdfId,
     getHighlightsForPage,
   };
 

@@ -8,8 +8,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services.dual_chat_service import dual_chat_service
+from ..services.epub_documents_service import EPUBDocumentsService
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import ollama_service
+from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
 from ..services.request_tracking_service import request_tracking_service
 
@@ -19,23 +21,28 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 # Initialize services
 pdf_service = PDFService()
 epub_service = EPUBService()
+pdf_documents_service = PDFDocumentsService()
+epub_documents_service = EPUBDocumentsService()
 
 
 class AnalyzePageRequest(BaseModel):
-    filename: str
+    pdf_id: Optional[int] = None  # NEW: ID-based reference
+    filename: Optional[str] = None  # Legacy: filename-based reference
     page_num: int
     context: Optional[str] = ""
 
 
 class AnalyzeEpubSectionRequest(BaseModel):
-    filename: str
+    epub_id: Optional[int] = None  # NEW: ID-based reference
+    filename: Optional[str] = None  # Legacy: filename-based reference
     nav_id: str
     context: Optional[str] = ""
 
 
 class ChatRequest(BaseModel):
     message: str
-    filename: str
+    pdf_id: Optional[int] = None  # NEW: ID-based reference
+    filename: Optional[str] = None  # Legacy: filename-based reference
     page_num: int
     chat_history: Optional[List[Dict[str, str]]] = None
     request_id: Optional[str] = None
@@ -44,7 +51,8 @@ class ChatRequest(BaseModel):
 
 class EpubChatRequest(BaseModel):
     message: str
-    filename: str
+    epub_id: Optional[int] = None  # NEW: ID-based reference
+    filename: Optional[str] = None  # Legacy: filename-based reference
     nav_id: str
     chat_history: Optional[List[Dict[str, str]]] = None
     request_id: Optional[str] = None
@@ -53,7 +61,8 @@ class EpubChatRequest(BaseModel):
 
 class DualChatRequest(BaseModel):
     message: str
-    filename: str
+    pdf_id: Optional[int] = None  # NEW: ID-based reference
+    filename: Optional[str] = None  # Legacy: filename-based reference
     page_num: int
     llm1_history: Optional[List[Dict[str, str]]] = []
     llm2_history: Optional[List[Dict[str, str]]] = []
@@ -77,15 +86,29 @@ async def health_check():
 @router.post("/analyze")
 async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
     """
-    Analyze a specific page of a PDF using AI
+    Analyze a specific page of a PDF using AI.
+    Can use either pdf_id (preferred) or filename (legacy).
     """
     try:
+        # Resolve filename from pdf_id if provided, otherwise use filename
+        if request.pdf_id is not None:
+            pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
+            if not pdf_doc:
+                raise HTTPException(status_code=404, detail="PDF not found")
+            filename = pdf_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either pdf_id or filename must be provided"
+            )
+
         # Extract text from the PDF page
-        page_text = pdf_service.extract_page_text(request.filename, request.page_num)
+        page_text = pdf_service.extract_page_text(filename, request.page_num)
 
         if not page_text.strip():
             return {
-                "filename": request.filename,
+                "filename": filename,
                 "page_number": request.page_num,
                 "analysis": "This page appears to be empty or contains no extractable text. It might contain only images, diagrams, or formatted elements that couldn't be processed.",
                 "text_extracted": False,
@@ -94,19 +117,21 @@ async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
         # Get AI analysis
         analysis = await ollama_service.analyze_page(
             text=page_text,
-            filename=request.filename,
+            filename=filename,
             page_num=request.page_num,
             context=request.context,
         )
 
         return {
-            "filename": request.filename,
+            "filename": filename,
             "page_number": request.page_num,
             "analysis": analysis,
             "text_extracted": True,
             "text_length": len(page_text),
         }
 
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF not found")
     except ValueError as e:
@@ -119,15 +144,27 @@ async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
 async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, Any]:
     """
     Analyze a specific section of an EPUB using AI.
+    Can use either epub_id (preferred) or filename (legacy).
     """
     try:
-        section_text = epub_service.extract_section_text(
-            request.filename, request.nav_id
-        )
+        # Resolve filename from epub_id if provided, otherwise use filename
+        if request.epub_id is not None:
+            epub_doc = epub_documents_service.get_by_id(request.epub_id)
+            if not epub_doc:
+                raise HTTPException(status_code=404, detail="EPUB not found")
+            filename = epub_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either epub_id or filename must be provided"
+            )
+
+        section_text = epub_service.extract_section_text(filename, request.nav_id)
 
         if not section_text.strip():
             return {
-                "filename": request.filename,
+                "filename": filename,
                 "nav_id": request.nav_id,
                 "analysis": "This section appears to be empty or contains no extractable text.",
                 "text_extracted": False,
@@ -135,19 +172,21 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, 
 
         analysis = await ollama_service.analyze_epub_section(
             text=section_text,
-            filename=request.filename,
+            filename=filename,
             nav_id=request.nav_id,
             context=request.context,
         )
 
         return {
-            "filename": request.filename,
+            "filename": filename,
             "nav_id": request.nav_id,
             "analysis": analysis,
             "text_extracted": True,
             "text_length": len(section_text),
         }
 
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="EPUB not found")
     except ValueError as e:
@@ -160,11 +199,23 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, 
 async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
     """
     Analyze a specific section of an EPUB using AI with a streaming response.
+    Can use either epub_id (preferred) or filename (legacy).
     """
     try:
-        section_text = epub_service.extract_section_text(
-            request.filename, request.nav_id
-        )
+        # Resolve filename from epub_id if provided, otherwise use filename
+        if request.epub_id is not None:
+            epub_doc = epub_documents_service.get_by_id(request.epub_id)
+            if not epub_doc:
+                raise HTTPException(status_code=404, detail="EPUB not found")
+            filename = epub_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either epub_id or filename must be provided"
+            )
+
+        section_text = epub_service.extract_section_text(filename, request.nav_id)
 
         if not section_text.strip():
 
@@ -185,7 +236,7 @@ async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
             try:
                 async for chunk in ollama_service.analyze_epub_section_stream(
                     text=section_text,
-                    filename=request.filename,
+                    filename=filename,
                     nav_id=request.nav_id,
                     context=request.context,
                 ):
@@ -216,11 +267,25 @@ async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
 @router.post("/analyze/stream")
 async def analyze_page_stream(request: AnalyzePageRequest):
     """
-    Analyze a specific page of a PDF using AI with streaming response
+    Analyze a specific page of a PDF using AI with streaming response.
+    Can use either pdf_id (preferred) or filename (legacy).
     """
     try:
+        # Resolve filename from pdf_id if provided, otherwise use filename
+        if request.pdf_id is not None:
+            pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
+            if not pdf_doc:
+                raise HTTPException(status_code=404, detail="PDF not found")
+            filename = pdf_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either pdf_id or filename must be provided"
+            )
+
         # Extract text from the PDF page
-        page_text = pdf_service.extract_page_text(request.filename, request.page_num)
+        page_text = pdf_service.extract_page_text(filename, request.page_num)
 
         if not page_text.strip():
 
@@ -242,7 +307,7 @@ async def analyze_page_stream(request: AnalyzePageRequest):
             try:
                 async for chunk in ollama_service.analyze_page_stream(
                     text=page_text,
-                    filename=request.filename,
+                    filename=filename,
                     page_num=request.page_num,
                     context=request.context,
                 ):
@@ -276,6 +341,7 @@ async def analyze_page_stream(request: AnalyzePageRequest):
 async def chat_with_ai(request: ChatRequest):
     """
     Chat with AI about the PDF content with streaming response.
+    Can use either pdf_id (preferred) or filename (legacy).
     Returns structured data with separated thinking/response content.
 
     Stream format:
@@ -286,19 +352,30 @@ async def chat_with_ai(request: ChatRequest):
         data: {"done": true}
     """
     try:
+        # Resolve filename from pdf_id if provided, otherwise use filename
+        if request.pdf_id is not None:
+            pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
+            if not pdf_doc:
+                raise HTTPException(status_code=404, detail="PDF not found")
+            filename = pdf_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either pdf_id or filename must be provided"
+            )
+
         # Register the request for tracking
         request_id = request_tracking_service.register_request(
-            filename=request.filename,
+            filename=filename,
             document_type="pdf",
             page_num=request.page_num,
             request_id=request.request_id,
         )
-        logger.info(
-            f"[AI Router] Registered chat request {request_id} for {request.filename}"
-        )
+        logger.info(f"[AI Router] Registered chat request {request_id} for {filename}")
 
         # Extract text from current page for context
-        page_text = pdf_service.extract_page_text(request.filename, request.page_num)
+        page_text = pdf_service.extract_page_text(filename, request.page_num)
 
         async def generate_response():
             try:
@@ -308,7 +385,7 @@ async def chat_with_ai(request: ChatRequest):
                 # CHANGED: ollama_service now yields structured StreamChunk dictionaries
                 async for structured_data in ollama_service.chat_stream(
                     message=request.message,
-                    filename=request.filename,
+                    filename=filename,
                     page_num=request.page_num,
                     pdf_text=page_text,
                     chat_history=request.chat_history,
@@ -369,26 +446,38 @@ async def chat_with_ai(request: ChatRequest):
 async def chat_with_ai_epub(request: EpubChatRequest):
     """
     Chat with AI about the EPUB content with streaming response.
+    Can use either epub_id (preferred) or filename (legacy).
     Returns structured data with separated thinking/response content.
 
     Stream format: Same as /chat endpoint (see above)
     """
     try:
+        # Resolve filename from epub_id if provided, otherwise use filename
+        if request.epub_id is not None:
+            epub_doc = epub_documents_service.get_by_id(request.epub_id)
+            if not epub_doc:
+                raise HTTPException(status_code=404, detail="EPUB not found")
+            filename = epub_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either epub_id or filename must be provided"
+            )
+
         # Register the request for tracking
         request_id = request_tracking_service.register_request(
-            filename=request.filename,
+            filename=filename,
             document_type="epub",
             nav_id=request.nav_id,
             request_id=request.request_id,
         )
         logger.info(
-            f"[AI Router] Registered EPUB chat request {request_id} for {request.filename}"
+            f"[AI Router] Registered EPUB chat request {request_id} for {filename}"
         )
 
         # Extract text from current section for context
-        section_text = epub_service.extract_section_text(
-            request.filename, request.nav_id
-        )
+        section_text = epub_service.extract_section_text(filename, request.nav_id)
 
         async def generate_response():
             try:
@@ -398,7 +487,7 @@ async def chat_with_ai_epub(request: EpubChatRequest):
                 # CHANGED: ollama_service now yields structured StreamChunk dictionaries
                 async for structured_data in ollama_service.chat_epub_stream(
                     message=request.message,
-                    filename=request.filename,
+                    filename=filename,
                     nav_id=request.nav_id,
                     epub_text=section_text,
                     chat_history=request.chat_history,
@@ -530,13 +619,27 @@ async def stop_epub_chat(request_id: str):
 async def dual_chat(request: DualChatRequest):
     """
     Chat with two LLMs simultaneously about PDF content with streaming response.
+    Can use either pdf_id (preferred) or filename (legacy).
     Both LLMs receive the same prompt but maintain independent conversation histories.
     """
     try:
+        # Resolve filename from pdf_id if provided, otherwise use filename
+        if request.pdf_id is not None:
+            pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
+            if not pdf_doc:
+                raise HTTPException(status_code=404, detail="PDF not found")
+            filename = pdf_doc["filename"]
+        elif request.filename is not None:
+            filename = request.filename
+        else:
+            raise HTTPException(
+                status_code=400, detail="Either pdf_id or filename must be provided"
+            )
+
         return StreamingResponse(
             dual_chat_service.stream_dual_chat_response(
                 message=request.message,
-                filename=request.filename,
+                filename=filename,
                 page_num=request.page_num,
                 llm1_history=request.llm1_history or [],
                 llm2_history=request.llm2_history or [],
@@ -551,6 +654,8 @@ async def dual_chat(request: DualChatRequest):
                 "Content-Type": "text/event-stream",
             },
         )
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF not found")
     except ValueError as e:

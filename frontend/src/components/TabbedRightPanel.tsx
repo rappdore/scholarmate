@@ -7,6 +7,8 @@ import HighlightsPanel from './HighlightsPanel';
 import type { DocumentType } from '../types/document';
 
 interface TabbedRightPanelProps {
+  pdfId?: number;
+  epubId?: number;
   filename?: string;
   documentType: DocumentType | null;
   currentPage: number;
@@ -19,6 +21,8 @@ interface TabbedRightPanelProps {
 type TabType = 'ai' | 'chat' | 'dual-chat' | 'notes' | 'highlights';
 
 export default function TabbedRightPanel({
+  pdfId,
+  epubId,
   filename,
   documentType,
   currentPage,
@@ -67,6 +71,8 @@ export default function TabbedRightPanel({
       <div className="flex-1 overflow-hidden">
         <div className={`h-full ${activeTab === 'ai' ? '' : 'hidden'}`}>
           <AIPanel
+            pdfId={pdfId}
+            epubId={epubId}
             filename={filename}
             documentType={documentType ?? undefined}
             currentPage={currentPage}
@@ -75,6 +81,8 @@ export default function TabbedRightPanel({
         </div>
         <div className={`h-full ${activeTab === 'chat' ? '' : 'hidden'}`}>
           <ChatInterface
+            pdfId={pdfId}
+            epubId={epubId}
             filename={filename}
             currentPage={currentPage}
             currentNavId={currentNavId}
@@ -87,11 +95,17 @@ export default function TabbedRightPanel({
           <div
             className={`h-full ${activeTab === 'dual-chat' ? '' : 'hidden'}`}
           >
-            <DualChatInterface filename={filename} currentPage={currentPage} />
+            <DualChatInterface
+              pdfId={pdfId}
+              filename={filename}
+              currentPage={currentPage}
+            />
           </div>
         )}
         <div className={`h-full ${activeTab === 'notes' ? '' : 'hidden'}`}>
           <NotesPanel
+            pdfId={pdfId}
+            epubId={epubId}
             filename={filename}
             currentPage={currentPage}
             currentNavId={currentNavId}
@@ -102,6 +116,7 @@ export default function TabbedRightPanel({
         </div>
         <div className={`h-full ${activeTab === 'highlights' ? '' : 'hidden'}`}>
           <HighlightsPanel
+            pdfId={pdfId}
             filename={filename}
             currentPage={currentPage}
             onPageJump={onPageJump}

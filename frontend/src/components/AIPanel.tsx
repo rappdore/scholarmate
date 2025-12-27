@@ -11,6 +11,8 @@ import type { Components } from 'react-markdown';
 import { aiService } from '../services/api';
 
 interface AIPanelProps {
+  pdfId?: number;
+  epubId?: number;
   filename?: string;
   documentType?: 'pdf' | 'epub';
   currentPage: number; // For PDF
@@ -18,6 +20,8 @@ interface AIPanelProps {
 }
 
 export default function AIPanel({
+  pdfId,
+  epubId,
   filename,
   documentType,
   currentPage,
@@ -40,10 +44,10 @@ export default function AIPanel({
 
   // Auto-analyze when page changes (if enabled)
   useEffect(() => {
-    if (autoAnalyze && filename && (currentPage || currentNavId)) {
+    if (autoAnalyze && (pdfId || epubId) && (currentPage || currentNavId)) {
       analyzeDocument();
     }
-  }, [filename, currentPage, currentNavId, autoAnalyze, documentType]);
+  }, [pdfId, epubId, currentPage, currentNavId, autoAnalyze, documentType]);
 
   const parseAnalysisContent = (content: string) => {
     // Extract thinking content
@@ -74,9 +78,9 @@ export default function AIPanel({
   };
 
   const analyzeDocument = async () => {
-    if (!filename || !documentType) return;
-    if (documentType === 'pdf' && !currentPage) return;
-    if (documentType === 'epub' && !currentNavId) return;
+    if (!documentType) return;
+    if (documentType === 'pdf' && (!pdfId || !currentPage)) return;
+    if (documentType === 'epub' && (!epubId || !currentNavId)) return;
 
     setLoading(true);
     setStreaming(true);
@@ -88,9 +92,9 @@ export default function AIPanel({
       let textExtracted = true;
 
       const analysisStream =
-        documentType === 'epub' && currentNavId
-          ? aiService.streamAnalyzeEpubSection(filename, currentNavId)
-          : aiService.streamAnalyzePage(filename, currentPage);
+        documentType === 'epub' && currentNavId && epubId
+          ? aiService.streamAnalyzeEpubSection(epubId, currentNavId)
+          : aiService.streamAnalyzePage(pdfId!, currentPage);
 
       for await (const chunk of analysisStream) {
         if (chunk.error) {

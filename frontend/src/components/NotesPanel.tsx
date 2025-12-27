@@ -35,6 +35,8 @@ interface EPUBNote {
 type Note = PDFNote | EPUBNote;
 
 interface NotesPanelProps {
+  pdfId?: number;
+  epubId?: number;
   filename?: string;
   currentPage: number;
   currentNavId?: string; // For EPUBs
@@ -44,6 +46,8 @@ interface NotesPanelProps {
 }
 
 export default function NotesPanel({
+  pdfId,
+  epubId,
   filename,
   currentPage,
   currentNavId,
@@ -58,7 +62,8 @@ export default function NotesPanel({
 
   // Load notes for the current document (PDF or EPUB)
   useEffect(() => {
-    if (!filename) {
+    const documentId = documentType === 'pdf' ? pdfId : epubId;
+    if (!documentId) {
       setNotes([]);
       return;
     }
@@ -69,9 +74,9 @@ export default function NotesPanel({
       try {
         let fetchedNotes;
         if (documentType === 'pdf') {
-          fetchedNotes = await notesService.getChatNotesForPdf(filename);
+          fetchedNotes = await notesService.getChatNotesForPdf(pdfId!);
         } else if (documentType === 'epub') {
-          fetchedNotes = await epubNotesService.getChatNotesForEpub(filename);
+          fetchedNotes = await epubNotesService.getChatNotesForEpub(epubId!);
         } else {
           throw new Error(`Unsupported document type: ${documentType}`);
         }
@@ -85,7 +90,7 @@ export default function NotesPanel({
     };
 
     loadNotes();
-  }, [filename, documentType]);
+  }, [pdfId, epubId, documentType]);
 
   const deleteNote = async (noteId: number) => {
     try {
@@ -262,7 +267,8 @@ export default function NotesPanel({
   const currentContextNotes = notes.filter(isCurrentContext);
   const otherContextNotes = notes.filter(note => !isCurrentContext(note));
 
-  if (!filename) {
+  const documentId = documentType === 'pdf' ? pdfId : epubId;
+  if (!documentId) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900">
         <p className="text-gray-400 text-sm">

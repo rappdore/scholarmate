@@ -6,10 +6,24 @@ import TabbedRightPanel from '../components/TabbedRightPanel';
 import SimpleResizablePanels from '../components/SimpleResizablePanels';
 import { pdfService } from '../services/api';
 import { epubService } from '../services/epubService';
-import type { DocumentType } from '../types/document';
+import type {
+  DocumentType,
+  PDFDocumentInfo,
+  EPUBDocumentInfo,
+} from '../types/document';
+
+interface DocumentInfo {
+  id: number;
+  filename: string;
+  type: DocumentType;
+  title: string;
+}
 
 export default function Reader() {
-  const { filename } = useParams<{ filename: string }>();
+  const { type, documentId } = useParams<{
+    type: string;
+    documentId: string;
+  }>();
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const [currentNavId, setCurrentNavId] = useState<string | undefined>(
@@ -23,50 +37,65 @@ export default function Reader() {
   >(undefined);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
-  const [documentType, setDocumentType] = useState<DocumentType | null>(null);
+  const [documentInfo, setDocumentInfo] = useState<DocumentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Detect document type on component mount
+  // Load document info based on type from URL
   useEffect(() => {
-    if (!filename) return;
+    if (!documentId || !type) return;
 
-    const detectDocumentType = async () => {
+    const loadDocumentInfo = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Try to get PDF info first
-        try {
-          await pdfService.getPDFInfo(filename);
-          setDocumentType('pdf');
-        } catch (pdfError) {
-          // If PDF fails, try EPUB
-          try {
-            await epubService.getEPUBInfo(filename);
-            setDocumentType('epub');
-          } catch (epubError) {
-            throw new Error('Document not found or unsupported format');
-          }
+        const id = parseInt(documentId, 10);
+        if (isNaN(id)) {
+          throw new Error('Invalid document ID');
+        }
+
+        // Validate type
+        if (type !== 'pdf' && type !== 'epub') {
+          throw new Error('Invalid document type');
+        }
+
+        // Load the appropriate document type
+        if (type === 'pdf') {
+          const pdfInfo: PDFDocumentInfo = await pdfService.getPDFInfo(id);
+          setDocumentInfo({
+            id,
+            filename: pdfInfo.filename,
+            type: 'pdf',
+            title: pdfInfo.title,
+          });
+        } else {
+          const epubInfo: EPUBDocumentInfo = await epubService.getEPUBInfo(id);
+          setDocumentInfo({
+            id,
+            filename: epubInfo.filename,
+            type: 'epub',
+            title: epubInfo.title,
+          });
         }
       } catch (err) {
-        console.error('Error detecting document type:', err);
+        console.error('Error loading document info:', err);
         setError('Document not found or unsupported format');
       } finally {
         setLoading(false);
       }
     };
 
-    detectDocumentType();
-  }, [filename]);
+    loadDocumentInfo();
+  }, [documentId, type]);
 
   // Load reading progress on component mount (for PDFs only for now)
   useEffect(() => {
-    if (!filename || documentType !== 'pdf') return;
+    if (!documentInfo || documentInfo.type !== 'pdf') return;
 
     const loadReadingProgress = async () => {
       try {
-        const progress = await pdfService.getReadingProgress(filename);
+        const progress = await pdfService.getReadingProgress(documentInfo.id);
         if (progress.last_page && progress.last_page > 1) {
           setCurrentPage(progress.last_page);
         }
@@ -81,16 +110,25 @@ export default function Reader() {
     };
 
     loadReadingProgress();
-  }, [filename, documentType]);
+  }, [documentInfo]);
 
   // Save reading progress when page changes (for PDFs only for now)
   useEffect(() => {
-    if (!filename || !isProgressLoaded || !totalPages || documentType !== 'pdf')
+    if (
+      !documentInfo ||
+      !isProgressLoaded ||
+      !totalPages ||
+      documentInfo.type !== 'pdf'
+    )
       return;
 
     const saveProgress = async () => {
       try {
-        await pdfService.saveReadingProgress(filename, currentPage, totalPages);
+        await pdfService.saveReadingProgress(
+          documentInfo.id,
+          currentPage,
+          totalPages
+        );
       } catch (error) {
         console.error('Error saving reading progress:', error);
       }
@@ -99,11 +137,11 @@ export default function Reader() {
     // Debounce saving to avoid too many requests
     const timeoutId = setTimeout(saveProgress, 1000);
     return () => clearTimeout(timeoutId);
-  }, [filename, currentPage, totalPages, isProgressLoaded, documentType]);
+  }, [documentInfo, currentPage, totalPages, isProgressLoaded]);
 
   // Keyboard navigation for PDF pages
   useEffect(() => {
-    if (documentType !== 'pdf') return;
+    if (!documentInfo || documentInfo.type !== 'pdf') return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only handle arrow keys if no input/textarea is focused
@@ -138,7 +176,7 @@ export default function Reader() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentPage, totalPages, documentType]);
+  }, [currentPage, totalPages, documentInfo]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -196,11 +234,14 @@ export default function Reader() {
 
   // Render appropriate viewer based on document type
   const renderViewer = () => {
-    switch (documentType) {
+    if (!documentInfo) return null;
+
+    switch (documentInfo.type) {
       case 'pdf':
         return (
           <PDFViewer
-            filename={filename}
+            pdfId={documentInfo.id}
+            filename={documentInfo.filename}
             currentPage={currentPage}
             onPageChange={handlePageChange}
             onTotalPagesChange={handleTotalPagesChange}
@@ -209,7 +250,8 @@ export default function Reader() {
       case 'epub':
         return (
           <EPUBViewer
-            filename={filename}
+            epubId={documentInfo.id}
+            filename={documentInfo.filename}
             onNavIdChange={handleNavIdChange}
             onChapterInfoChange={handleChapterInfoChange}
           />
@@ -232,8 +274,10 @@ export default function Reader() {
         leftPanel={renderViewer()}
         rightPanel={
           <TabbedRightPanel
-            filename={filename}
-            documentType={documentType}
+            pdfId={documentInfo?.type === 'pdf' ? documentInfo.id : undefined}
+            epubId={documentInfo?.type === 'epub' ? documentInfo.id : undefined}
+            filename={documentInfo?.filename}
+            documentType={documentInfo?.type || null}
             currentPage={currentPage}
             currentNavId={currentNavId}
             currentChapterId={currentChapterId}

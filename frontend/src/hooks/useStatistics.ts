@@ -19,7 +19,7 @@ import {
   groupByDay,
 } from '../utils/statisticsCalculations';
 
-export function useStatistics(filename: string) {
+export function useStatistics(pdfId: number | undefined) {
   const [sessionsData, setSessionsData] = useState<SessionsResponse | null>(
     null
   );
@@ -29,21 +29,26 @@ export function useStatistics(filename: string) {
 
   useEffect(() => {
     const fetchStatistics = async () => {
+      if (pdfId === undefined) {
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError(null);
 
-        // Fetch session data and document info in parallel
-        const sessionUrl = `/api/reading-statistics/sessions/${encodeURIComponent(filename)}`;
+        // Fetch session data and document info in parallel using pdfId
+        const sessionUrl = `/api/reading-statistics/sessions/pdf/${pdfId}`;
         console.log('[useStatistics] Fetching from URL:', sessionUrl);
 
         const [sessionResponse, documentData] = await Promise.all([
           axios.get<SessionsResponse>(sessionUrl),
-          // Try to fetch document info - first check if it's a PDF, then EPUB
+          // Fetch PDF info and progress using pdfId
           // Need to fetch both info and progress since /info doesn't include reading_progress
           Promise.all([
-            pdfService.getPDFInfo(filename),
-            pdfService.getReadingProgress(filename).catch(() => null),
+            pdfService.getPDFInfo(pdfId),
+            pdfService.getReadingProgress(pdfId).catch(() => null),
           ])
             .then(([pdfInfo, readingProgress]): Document => {
               // Get status from reading progress or default to 'new'
@@ -81,7 +86,7 @@ export function useStatistics(filename: string) {
                 reading_progress,
               };
             })
-            .catch(() => epubService.getEPUBInfo(filename).catch(() => null)),
+            .catch(() => null),
         ]);
 
         console.log('[useStatistics] Session Response:', sessionResponse.data);
@@ -97,10 +102,12 @@ export function useStatistics(filename: string) {
       }
     };
 
-    if (filename) {
+    if (pdfId !== undefined) {
       fetchStatistics();
+    } else {
+      setLoading(false);
     }
-  }, [filename]);
+  }, [pdfId]);
 
   // Calculate derived data using memoization
   const aggregateStats = useMemo<AggregateStats | null>(() => {

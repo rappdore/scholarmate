@@ -2,12 +2,12 @@ import type { Document } from '../../types/document';
 import { getBookStatus } from '../../utils/bookStatus';
 
 interface StatisticsHeaderProps {
-  filename: string;
+  pdfId: number | undefined;
   documentInfo: Document | null;
 }
 
 export default function StatisticsHeader({
-  filename,
+  pdfId,
   documentInfo,
 }: StatisticsHeaderProps) {
   const getStatusBadge = () => {
@@ -61,7 +61,9 @@ export default function StatisticsHeader({
             </h1>
             {getStatusBadge()}
           </div>
-          <p className="text-slate-400 font-mono text-sm">{filename}</p>
+          <p className="text-slate-400 font-mono text-sm">
+            {documentInfo?.filename}
+          </p>
         </div>
       </div>
     </div>

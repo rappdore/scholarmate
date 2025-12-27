@@ -23,7 +23,9 @@ export interface HighlightsInfo {
 }
 
 export interface PDF {
-  filename: string;
+  id: number; // Primary identifier (pdf_id from backend)
+  pdf_id: number; // Alias for id (explicit for PDF context)
+  filename: string; // Keep for display purposes
   title: string;
   author: string;
   num_pages: number;
@@ -34,7 +36,7 @@ export interface PDF {
   notes_info?: NotesInfo | null;
   highlights_info?: HighlightsInfo | null;
   error?: string;
-  // New status fields for smart categorization
+  // Status fields for smart categorization
   computed_status: BookStatus; // Based on progress
   manual_status?: BookStatus; // User override
 }

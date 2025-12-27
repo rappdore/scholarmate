@@ -12,7 +12,7 @@ export interface EPUBSelection {
 
 export interface EPUBHighlight {
   id?: string;
-  document_id: string;
+  epub_id: number;
   nav_id: string;
   chapter_id: string;
   xpath: string;

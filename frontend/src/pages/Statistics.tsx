@@ -7,19 +7,17 @@ import PagesPerSessionChart from '../components/statistics/PagesPerSessionChart'
 import SessionHistoryTable from '../components/statistics/SessionHistoryTable';
 
 export default function Statistics() {
-  const { filename } = useParams<{ filename: string }>();
+  const { documentId } = useParams<{ documentId: string }>();
+  const pdfId = documentId ? parseInt(documentId, 10) : undefined;
 
   const { sessions, documentInfo, aggregateStats, streakData, loading, error } =
-    useStatistics(filename || '');
+    useStatistics(pdfId);
 
   return (
     <div className="min-h-screen px-4 py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <StatisticsHeader
-          filename={decodeURIComponent(filename || '')}
-          documentInfo={documentInfo}
-        />
+        <StatisticsHeader pdfId={pdfId} documentInfo={documentInfo} />
 
         {/* Loading State */}
         {loading && (

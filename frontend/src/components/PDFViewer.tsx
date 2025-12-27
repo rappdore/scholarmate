@@ -15,6 +15,7 @@ import { useHighlightsContext } from '../contexts/HighlightsContext';
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface PDFViewerProps {
+  pdfId?: number;
   filename?: string;
   currentPage: number;
   onPageChange: (page: number) => void;
@@ -51,12 +52,14 @@ const getSavedViewMode = (): 'single' | 'double' => {
 };
 
 export default function PDFViewer({
+  pdfId,
   filename,
   currentPage,
   onPageChange,
   onTotalPagesChange,
 }: PDFViewerProps) {
   console.log('📄 [PDF VIEWER INITIALIZED]', {
+    pdfId,
     filename,
     currentPage,
     timestamp: new Date().toISOString(),
@@ -128,14 +131,14 @@ export default function PDFViewer({
     highlights,
     createHighlight,
     deleteHighlight,
-    setCurrentFilename,
+    setCurrentPdfId,
     getHighlightsForPage,
   } = useHighlightsContext();
 
-  // Set current filename when it changes
+  // Set current PDF ID when it changes
   useEffect(() => {
-    setCurrentFilename(filename || null);
-  }, [filename, setCurrentFilename]);
+    setCurrentPdfId(pdfId || null);
+  }, [pdfId, setCurrentPdfId]);
 
   // Save zoom level to localStorage whenever it changes
   useEffect(() => {

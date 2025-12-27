@@ -23,7 +23,7 @@ export default function Library() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | BookStatus>('reading');
-  const [hoveredBook, setHoveredBook] = useState<string | null>(null);
+  const [hoveredBook, setHoveredBook] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
@@ -130,19 +130,15 @@ export default function Library() {
     try {
       // Update status via appropriate API based on document type
       if (isPDFDocument(document)) {
-        await pdfService.updateBookStatus(document.filename, newStatus, true);
+        await pdfService.updateBookStatus(document.id, newStatus, true);
       } else if (isEPUBDocument(document)) {
-        await epubService.updateEPUBBookStatus(
-          document.filename,
-          newStatus,
-          true
-        );
+        await epubService.updateEPUBBookStatus(document.id, newStatus, true);
       }
 
       // Update local state
       setDocuments(prevDocs =>
         prevDocs.map(d =>
-          d.filename === document.filename
+          d.id === document.id
             ? {
                 ...d,
                 computed_status: newStatus,
@@ -173,15 +169,13 @@ export default function Library() {
     try {
       // Delete via appropriate API based on document type
       if (isPDFDocument(document)) {
-        await pdfService.deleteBook(document.filename);
+        await pdfService.deleteBook(document.id);
       } else if (isEPUBDocument(document)) {
-        await epubService.deleteEPUBBook(document.filename);
+        await epubService.deleteEPUBBook(document.id);
       }
 
       // Remove from local state
-      setDocuments(prevDocs =>
-        prevDocs.filter(d => d.filename !== document.filename)
-      );
+      setDocuments(prevDocs => prevDocs.filter(d => d.id !== document.id));
 
       // Reload status counts
       await loadStatusCounts();
@@ -251,8 +245,8 @@ export default function Library() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const handleDocumentClick = (filename: string) => {
-    navigate(`/read/${encodeURIComponent(filename)}`);
+  const handleDocumentClick = (document: Document) => {
+    navigate(`/read/${document.type}/${document.id}`);
   };
 
   const getDocumentIcon = (document: Document): string => {
@@ -261,8 +255,8 @@ export default function Library() {
 
   const getThumbnailUrl = (document: Document): string => {
     return isPDFDocument(document)
-      ? pdfService.getThumbnailUrl(document.filename)
-      : epubService.getThumbnailUrl(document.filename);
+      ? pdfService.getThumbnailUrl(document.id)
+      : epubService.getThumbnailUrl(document.id);
   };
 
   const getStatusBadge = (document: Document) => {
@@ -409,9 +403,9 @@ export default function Library() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
             {filteredDocuments.map(doc => (
               <div
-                key={doc.filename}
+                key={doc.id}
                 className="relative group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105 flex flex-col"
-                onMouseEnter={() => setHoveredBook(doc.filename)}
+                onMouseEnter={() => setHoveredBook(doc.id)}
                 onMouseLeave={() => setHoveredBook(null)}
               >
                 {/* Book Action Menu */}
@@ -419,12 +413,12 @@ export default function Library() {
                   pdf={doc as any} // Temporary fix until BookActionMenu is updated to support Document type
                   onStatusChange={status => handleStatusChange(doc, status)}
                   onDelete={() => handleDeleteBook(doc)}
-                  isVisible={hoveredBook === doc.filename}
+                  isVisible={hoveredBook === doc.id}
                 />
 
                 <div
                   className="p-6 flex-1"
-                  onClick={() => handleDocumentClick(doc.filename)}
+                  onClick={() => handleDocumentClick(doc)}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-16 h-20 bg-slate-700/50 rounded-lg overflow-hidden group-hover:scale-110 transition-transform duration-200 border border-slate-600/50">
