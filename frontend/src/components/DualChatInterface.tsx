@@ -213,7 +213,16 @@ export default function DualChatInterface({
   };
 
   const sendMessage = async () => {
-    if (!inputText.trim() || !pdfId || !secondaryLLM) return;
+    if (
+      !inputText.trim() ||
+      !pdfId ||
+      !primaryLLM ||
+      !secondaryLLM ||
+      currentPage === undefined ||
+      currentPage === null ||
+      !Number.isFinite(currentPage)
+    )
+      return;
 
     // Detect if this is a new chat BEFORE adding messages
     const isNewChat = llm1Messages.length === 0 && llm2Messages.length === 0;
@@ -290,8 +299,8 @@ export default function DualChatInterface({
 
       for await (const data of dualChatService.streamDualChat(
         currentInput,
-        pdfId!,
-        currentPage!,
+        pdfId,
+        currentPage,
         llm1History,
         llm2History,
         primaryLLM.id,
