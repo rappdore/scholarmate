@@ -218,7 +218,7 @@ export default function Library() {
       }
       // Use the same status logic throughout the app
       // Priority: manual_status (if set) > computed_status
-      const effectiveStatus = doc.manual_status || doc.computed_status;
+      const effectiveStatus = doc.manual_status ?? doc.computed_status;
       return effectiveStatus === activeTab;
     })
     .sort((a, b) => {
@@ -265,7 +265,7 @@ export default function Library() {
 
   const getStatusBadge = (document: Document) => {
     // Use the same status logic as the filter
-    const status = document.manual_status || document.computed_status;
+    const status = document.manual_status ?? document.computed_status;
     const statusConfig = {
       new: {
         label: 'New',
