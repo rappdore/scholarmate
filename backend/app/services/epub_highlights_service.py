@@ -29,6 +29,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .base_database_service import BaseDatabaseService
+from .epub_documents_service import EPUBDocumentsService
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ class EPUBHighlightService(BaseDatabaseService):
     def __init__(self, db_path: str = "data/reading_progress.db"):
         super().__init__(db_path)
         self._init_table()
+        # Phase 4c: Initialize EPUB documents service for epub_id lookups
+        self._epub_docs_service = EPUBDocumentsService(db_path)
 
     # NOTE: Table is created via migration; this is a safeguard to support fresh
     # databases during unit tests or first-time setups where migrations may not
@@ -76,11 +79,81 @@ class EPUBHighlightService(BaseDatabaseService):
                 ON epub_highlights(epub_filename, chapter_id)
                 """
             )
+
+            # Phase 4c: Add epub_id column if it doesn't exist (backward compatible migration)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(epub_highlights)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "epub_id" not in columns:
+                logger.info("Adding epub_id column to epub_highlights table...")
+                conn.execute("ALTER TABLE epub_highlights ADD COLUMN epub_id INTEGER")
+                logger.info("epub_id column added successfully")
+
+            # Create index on epub_id if it doesn't exist
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_epub_highlights_epub_id
+                ON epub_highlights(epub_id)
+                """
+            )
+
+            # =============================================================================
+            # ONE-TIME BACKFILL: Populate epub_id for existing epub_highlights rows
+            #
+            # Unlike epub_reading_progress which gets updated on access, epub_highlights only
+            # receives INSERTs, so existing rows would never get their epub_id populated.
+            # This backfill runs once on startup and updates all rows where epub_id IS NULL.
+            #
+            # TODO: This backfill can be removed after all environments have been updated
+            #       and no NULL epub_id values remain. Safe to remove after ~March 2026.
+            # =============================================================================
+            cursor.execute(
+                """
+                UPDATE epub_highlights
+                SET epub_id = (
+                    SELECT id FROM epub_documents
+                    WHERE epub_documents.filename = epub_highlights.epub_filename
+                )
+                WHERE epub_id IS NULL
+                AND EXISTS (
+                    SELECT 1 FROM epub_documents
+                    WHERE epub_documents.filename = epub_highlights.epub_filename
+                )
+                """
+            )
+            backfilled = cursor.rowcount
+            if backfilled > 0:
+                logger.info(
+                    f"Backfilled epub_id for {backfilled} existing epub_highlights rows"
+                )
+
             conn.commit()
 
     # ---------------------------------------------------------------------
     # CRUD helpers
     # ---------------------------------------------------------------------
+
+    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+        """
+        Get the epub_id for a given EPUB filename.
+
+        Phase 4c: Helper method for looking up epub_id from epub_documents table.
+
+        Args:
+            epub_filename (str): Name of the EPUB file
+
+        Returns:
+            Optional[int]: The epub_id if found, None otherwise
+        """
+        try:
+            epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
+            if epub_doc:
+                return epub_doc.get("id")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not look up epub_id for {epub_filename}: {e}")
+            return None
 
     def save_highlight(
         self,
@@ -95,14 +168,18 @@ class EPUBHighlightService(BaseDatabaseService):
     ) -> Optional[int]:
         """Persist a new highlight and return its auto-generated ID."""
         try:
+            # Phase 4c: Look up epub_id for auto-population
+            epub_id = self._get_epub_id(epub_filename)
+
             query = """
                 INSERT INTO epub_highlights (
-                    epub_filename, nav_id, chapter_id, xpath,
+                    epub_filename, epub_id, nav_id, chapter_id, xpath,
                     start_offset, end_offset, highlight_text, color, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 epub_filename,
+                epub_id,
                 nav_id,
                 chapter_id,
                 xpath,
@@ -115,11 +192,12 @@ class EPUBHighlightService(BaseDatabaseService):
             highlight_id = self.execute_insert(query, params)
             if highlight_id:
                 logger.info(
-                    "Saved EPUB highlight %s (%s) nav=%s xpath=%s",
+                    "Saved EPUB highlight %s (%s) nav=%s xpath=%s (epub_id=%s)",
                     epub_filename,
                     highlight_id,
                     nav_id,
                     xpath,
+                    epub_id,
                 )
             return highlight_id
         except Exception as exc:
