@@ -91,12 +91,7 @@ const BookActionMenu: React.FC<BookActionMenuProps> = ({
       {/* Statistics Option */}
       <div className="px-2 py-1">
         <button
-          onClick={() =>
-            window.open(
-              `/statistics/${encodeURIComponent(pdf.filename)}`,
-              '_blank'
-            )
-          }
+          onClick={() => window.open(`/statistics/${pdf.id}`, '_blank')}
           className="w-full text-left px-2 py-1 rounded text-sm flex items-center space-x-2 transition-colors hover:bg-slate-700/50 text-slate-200 hover:text-slate-100"
         >
           <span>📊</span>

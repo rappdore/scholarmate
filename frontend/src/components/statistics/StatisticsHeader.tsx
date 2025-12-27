@@ -61,7 +61,9 @@ export default function StatisticsHeader({
             </h1>
             {getStatusBadge()}
           </div>
-          <p className="text-slate-400 font-mono text-sm">{filename}</p>
+          <p className="text-slate-400 font-mono text-sm">
+            {documentInfo?.filename}
+          </p>
         </div>
       </div>
     </div>

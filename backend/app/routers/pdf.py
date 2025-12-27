@@ -5,12 +5,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..services.database_service import db_service
+from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
 
-# Initialize PDF service
+# Initialize services
 pdf_service = PDFService()
+pdf_documents_service = PDFDocumentsService()
 
 
 class ReadingProgressRequest(BaseModel):
@@ -21,6 +23,279 @@ class ReadingProgressRequest(BaseModel):
 class BookStatusRequest(BaseModel):
     status: str
     manually_set: bool = True
+
+
+# ========================================
+# ID-BASED ENDPOINTS (Phase 5)
+# ========================================
+
+
+@router.get("/{pdf_id:int}/info")
+async def get_pdf_info_by_id(pdf_id: int) -> Dict[str, Any]:
+    """
+    Get detailed information about a specific PDF by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        # Get PDF info using filename
+        info = pdf_service.get_pdf_info(pdf_doc["filename"])
+        # Add ID to response
+        info["id"] = pdf_id
+        info["pdf_id"] = pdf_id
+        return info
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting PDF info: {str(e)}")
+
+
+@router.get("/{pdf_id:int}/text/{page_num}")
+async def get_page_text_by_id(pdf_id: int, page_num: int) -> Dict[str, Any]:
+    """
+    Extract text from a specific page of the PDF by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        text = pdf_service.extract_page_text(pdf_doc["filename"], page_num)
+        return {
+            "pdf_id": pdf_id,
+            "filename": pdf_doc["filename"],
+            "page_number": page_num,
+            "text": text,
+        }
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
+
+
+@router.put("/{pdf_id:int}/progress")
+async def save_reading_progress_by_id(
+    pdf_id: int, progress: ReadingProgressRequest
+) -> Dict[str, Any]:
+    """
+    Save reading progress for a PDF by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        success = db_service.save_reading_progress(
+            pdf_filename=pdf_doc["filename"],
+            last_page=progress.last_page,
+            total_pages=progress.total_pages,
+        )
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Reading progress saved for PDF ID {pdf_id}",
+                "pdf_id": pdf_id,
+                "last_page": progress.last_page,
+            }
+        else:
+            raise HTTPException(
+                status_code=500, detail="Failed to save reading progress"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error saving reading progress: {str(e)}"
+        )
+
+
+@router.get("/{pdf_id:int}/progress")
+async def get_reading_progress_by_id(pdf_id: int) -> Dict[str, Any]:
+    """
+    Get reading progress for a PDF by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        progress = db_service.get_reading_progress(pdf_doc["filename"])
+
+        if progress:
+            # Add ID to response
+            progress["pdf_id"] = pdf_id
+            return progress
+        else:
+            # Return default progress if none found
+            return {
+                "pdf_id": pdf_id,
+                "pdf_filename": pdf_doc["filename"],
+                "last_page": 1,
+                "total_pages": None,
+                "last_updated": None,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error getting reading progress: {str(e)}"
+        )
+
+
+@router.get("/{pdf_id:int}/thumbnail")
+async def get_pdf_thumbnail_by_id(pdf_id: int):
+    """
+    Get a thumbnail image of the first page of the PDF by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        thumbnail_path = pdf_service.get_thumbnail_path(pdf_doc["filename"])
+
+        if not thumbnail_path.exists():
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+        return FileResponse(
+            path=str(thumbnail_path),
+            media_type="image/png",
+            filename=f"{pdf_doc['filename']}_thumb.png",
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating thumbnail: {str(e)}"
+        )
+
+
+@router.put("/{pdf_id:int}/status")
+async def update_book_status_by_id(
+    pdf_id: int, status_request: BookStatusRequest
+) -> Dict[str, Any]:
+    """
+    Update the reading status of a book by ID
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        success = db_service.update_book_status(
+            pdf_filename=pdf_doc["filename"],
+            status=status_request.status,
+            manual=status_request.manually_set,
+        )
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Status updated for PDF ID {pdf_id}",
+                "pdf_id": pdf_id,
+                "filename": pdf_doc["filename"],
+                "status": status_request.status,
+                "manually_set": status_request.manually_set,
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update book status")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error updating book status: {str(e)}"
+        )
+
+
+@router.delete("/{pdf_id:int}")
+async def delete_book_by_id(pdf_id: int) -> Dict[str, Any]:
+    """
+    Delete a book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
+    """
+    try:
+        # Lookup filename from ID
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        filename = pdf_doc["filename"]
+        deletion_results = {}
+
+        # Delete the PDF file
+        try:
+            pdf_file_path = pdf_service.get_pdf_path(filename)
+            if pdf_file_path.exists():
+                pdf_file_path.unlink()
+                deletion_results["pdf_file"] = True
+            else:
+                deletion_results["pdf_file"] = False
+        except Exception as e:
+            deletion_results["pdf_file"] = False
+            print(f"Warning: Could not delete PDF file {filename}: {e}")
+
+        # Delete thumbnail
+        try:
+            thumbnail_path = pdf_service.get_thumbnail_path(filename)
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+                deletion_results["thumbnail"] = True
+            else:
+                deletion_results["thumbnail"] = False
+        except Exception as e:
+            deletion_results["thumbnail"] = False
+            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+
+        # Delete all database data
+        db_deletion_results = db_service.delete_all_book_data(filename)
+        deletion_results.update(db_deletion_results)
+
+        # Check if any critical operations failed
+        critical_failures = []
+        if not deletion_results.get("pdf_file", False):
+            critical_failures.append("PDF file")
+
+        return {
+            "success": True,
+            "message": f"Book with PDF ID {pdf_id} deleted successfully"
+            + (
+                f" (warnings: {', '.join(critical_failures)} not found)"
+                if critical_failures
+                else ""
+            ),
+            "pdf_id": pdf_id,
+            "filename": filename,
+            "deletion_details": deletion_results,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
+
+
+# ========================================
+# FILENAME-BASED ENDPOINTS (Legacy)
+# ========================================
 
 
 @router.get("/list")
@@ -52,6 +327,12 @@ async def list_pdfs(
         # Add reading progress, notes info, and highlights info to each PDF
         for pdf in pdfs:
             filename = pdf.get("filename")
+
+            # Add PDF ID from database
+            pdf_doc = pdf_documents_service.get_by_filename(filename)
+            if pdf_doc:
+                pdf["id"] = pdf_doc["id"]
+                pdf["pdf_id"] = pdf_doc["id"]
 
             # Add reading progress with status information
             if filename and filename in all_progress:
