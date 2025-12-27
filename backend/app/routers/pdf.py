@@ -25,11 +25,6 @@ class BookStatusRequest(BaseModel):
     manually_set: bool = True
 
 
-# ========================================
-# ID-BASED ENDPOINTS (Phase 5)
-# ========================================
-
-
 @router.get("/{pdf_id:int}/info")
 async def get_pdf_info_by_id(pdf_id: int) -> Dict[str, Any]:
     """
@@ -294,7 +289,7 @@ async def delete_book_by_id(pdf_id: int) -> Dict[str, Any]:
 
 
 # ========================================
-# FILENAME-BASED ENDPOINTS (Legacy)
+# SHARED/UTILITY ENDPOINTS
 # ========================================
 
 
@@ -378,20 +373,6 @@ async def list_pdfs(
         raise HTTPException(status_code=500, detail=f"Error listing PDFs: {str(e)}")
 
 
-@router.get("/{filename}/info")
-async def get_pdf_info(filename: str) -> Dict[str, Any]:
-    """
-    Get detailed information about a specific PDF
-    """
-    try:
-        info = pdf_service.get_pdf_info(filename)
-        return info
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="PDF not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting PDF info: {str(e)}")
-
-
 @router.get("/{filename}/file")
 async def get_pdf_file(filename: str):
     """
@@ -411,102 +392,6 @@ async def get_pdf_file(filename: str):
         raise HTTPException(status_code=500, detail=f"Error serving PDF: {str(e)}")
 
 
-@router.get("/{filename}/text/{page_num}")
-async def get_page_text(filename: str, page_num: int) -> Dict[str, Any]:
-    """
-    Extract text from a specific page of the PDF
-    """
-    try:
-        text = pdf_service.extract_page_text(filename, page_num)
-        return {"filename": filename, "page_number": page_num, "text": text}
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="PDF not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
-
-
-@router.put("/{filename}/progress")
-async def save_reading_progress(
-    filename: str, progress: ReadingProgressRequest
-) -> Dict[str, Any]:
-    """
-    Save reading progress for a PDF
-    """
-    try:
-        success = db_service.save_reading_progress(
-            pdf_filename=filename,
-            last_page=progress.last_page,
-            total_pages=progress.total_pages,
-        )
-
-        if success:
-            return {
-                "success": True,
-                "message": f"Reading progress saved for {filename}",
-                "last_page": progress.last_page,
-            }
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to save reading progress"
-            )
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error saving reading progress: {str(e)}"
-        )
-
-
-@router.get("/{filename}/progress")
-async def get_reading_progress(filename: str) -> Dict[str, Any]:
-    """
-    Get reading progress for a PDF
-    """
-    try:
-        progress = db_service.get_reading_progress(filename)
-
-        if progress:
-            return progress
-        else:
-            # Return default progress if none found
-            return {
-                "pdf_filename": filename,
-                "last_page": 1,
-                "total_pages": None,
-                "last_updated": None,
-            }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error getting reading progress: {str(e)}"
-        )
-
-
-@router.get("/{filename}/thumbnail")
-async def get_pdf_thumbnail(filename: str):
-    """
-    Get a thumbnail image of the first page of the PDF
-    """
-    try:
-        thumbnail_path = pdf_service.get_thumbnail_path(filename)
-
-        if not thumbnail_path.exists():
-            raise HTTPException(status_code=404, detail="Thumbnail not found")
-
-        return FileResponse(
-            path=str(thumbnail_path),
-            media_type="image/png",
-            filename=f"{filename}_thumb.png",
-        )
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="PDF not found")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error generating thumbnail: {str(e)}"
-        )
-
-
 @router.get("/progress/all")
 async def get_all_reading_progress() -> Dict[str, Any]:
     """
@@ -519,96 +404,6 @@ async def get_all_reading_progress() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=f"Error getting reading progress: {str(e)}"
         )
-
-
-@router.put("/{filename}/status")
-async def update_book_status(
-    filename: str, status_request: BookStatusRequest
-) -> Dict[str, Any]:
-    """
-    Update the reading status of a book
-    """
-    try:
-        success = db_service.update_book_status(
-            pdf_filename=filename,
-            status=status_request.status,
-            manual=status_request.manually_set,
-        )
-
-        if success:
-            return {
-                "success": True,
-                "message": f"Status updated for {filename}",
-                "filename": filename,
-                "status": status_request.status,
-                "manually_set": status_request.manually_set,
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to update book status")
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error updating book status: {str(e)}"
-        )
-
-
-@router.delete("/{filename}")
-async def delete_book(filename: str) -> Dict[str, Any]:
-    """
-    Delete a book and all its associated data (file, thumbnails, progress, notes, highlights)
-    """
-    try:
-        deletion_results = {}
-
-        # Delete the PDF file
-        try:
-            pdf_file_path = pdf_service.get_pdf_path(filename)
-            if pdf_file_path.exists():
-                pdf_file_path.unlink()
-                deletion_results["pdf_file"] = True
-            else:
-                deletion_results["pdf_file"] = False  # File didn't exist
-        except Exception as e:
-            deletion_results["pdf_file"] = False
-            print(f"Warning: Could not delete PDF file {filename}: {e}")
-
-        # Delete thumbnail
-        try:
-            thumbnail_path = pdf_service.get_thumbnail_path(filename)
-            if thumbnail_path.exists():
-                thumbnail_path.unlink()
-                deletion_results["thumbnail"] = True
-            else:
-                deletion_results["thumbnail"] = False  # File didn't exist
-        except Exception as e:
-            deletion_results["thumbnail"] = False
-            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
-
-        # Delete all database data using the proper service method
-        db_deletion_results = db_service.delete_all_book_data(filename)
-        deletion_results.update(db_deletion_results)
-
-        # Check if any critical operations failed
-        critical_failures = []
-        if not deletion_results.get("pdf_file", False):
-            critical_failures.append("PDF file")
-
-        # Database deletions are not critical failures if the records don't exist
-
-        return {
-            "success": True,
-            "message": f"Book {filename} deleted successfully"
-            + (
-                f" (warnings: {', '.join(critical_failures)} not found)"
-                if critical_failures
-                else ""
-            ),
-            "filename": filename,
-            "deletion_details": deletion_results,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
 
 
 @router.get("/status/counts")
