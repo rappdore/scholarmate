@@ -10,11 +10,7 @@ import {
   getDocumentLength,
   getDocumentLengthUnit,
 } from '../types/document';
-import {
-  getBookStatus,
-  matchesStatusFilter,
-  shouldPromptFinished,
-} from '../utils/bookStatus';
+import { shouldPromptFinished } from '../utils/bookStatus';
 import LibraryTabs from '../components/LibraryTabs';
 import BookActionMenu from '../components/BookActionMenu';
 
@@ -216,7 +212,15 @@ export default function Library() {
   };
 
   const filteredDocuments = documents
-    .filter(doc => matchesStatusFilter(doc as any, activeTab))
+    .filter(doc => {
+      if (activeTab === 'all') {
+        return true;
+      }
+      // Use the same status logic throughout the app
+      // Priority: manual_status (if set) > computed_status
+      const effectiveStatus = doc.manual_status ?? doc.computed_status;
+      return effectiveStatus === activeTab;
+    })
     .sort((a, b) => {
       // Sort by last_updated in reverse chronological order (most recent first)
       const aLastUpdated = a.reading_progress?.last_updated;
@@ -260,7 +264,8 @@ export default function Library() {
   };
 
   const getStatusBadge = (document: Document) => {
-    const status = getBookStatus(document as any); // Use 'as any' for now
+    // Use the same status logic as the filter
+    const status = document.manual_status ?? document.computed_status;
     const statusConfig = {
       new: {
         label: 'New',
@@ -403,7 +408,7 @@ export default function Library() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
             {filteredDocuments.map(doc => (
               <div
-                key={doc.id}
+                key={`${doc.type}-${doc.id}`}
                 className="relative group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105 flex flex-col"
                 onMouseEnter={() => setHoveredBook(doc.id)}
                 onMouseLeave={() => setHoveredBook(null)}
