@@ -169,6 +169,11 @@ export const epubService = {
     return response.data;
   },
 
+  getAllHighlights: async (epubId: number): Promise<EPUBHighlight[]> => {
+    const response = await api.get(`/epub-highlights/${epubId}`);
+    return response.data;
+  },
+
   getSectionHighlights: async (
     epubId: number,
     navId: string
@@ -191,6 +196,13 @@ export const epubService = {
 
   deleteEPUBHighlight: async (highlightId: string): Promise<void> => {
     await api.delete(`/epub-highlights/${highlightId}`);
+  },
+
+  updateEPUBHighlightColor: async (
+    highlightId: number,
+    color: string
+  ): Promise<void> => {
+    await api.put(`/epub-highlights/${highlightId}/color`, { color });
   },
 
   // ========================================

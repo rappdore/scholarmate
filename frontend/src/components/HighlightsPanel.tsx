@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
 import type { Highlight } from '../types/highlights';
 import { HighlightColor } from '../types/highlights';
+import type { DocumentType } from '../types/document';
+import { epubService } from '../services/epubService';
+import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface HighlightsPanelProps {
   pdfId?: number;
+  epubId?: number;
   filename?: string;
+  documentType: DocumentType | null;
   currentPage: number;
+  currentNavId?: string;
   selectedHighlightId?: string;
   onHighlightSelect?: (highlight: Highlight) => void;
   onPageJump?: (pageNumber: number) => void;
@@ -14,8 +20,11 @@ interface HighlightsPanelProps {
 
 export default function HighlightsPanel({
   pdfId,
+  epubId,
   filename,
+  documentType,
   currentPage,
+  currentNavId,
   selectedHighlightId,
   onHighlightSelect,
   onPageJump,
@@ -27,33 +36,77 @@ export default function HighlightsPanel({
     new Set([currentPage])
   );
 
-  // Use shared context for highlights
+  // EPUB-specific state
+  const [epubHighlights, setEpubHighlights] = useState<EPUBHighlight[]>([]);
+  const [epubLoading, setEpubLoading] = useState(false);
+  const [epubError, setEpubError] = useState<string | null>(null);
+
+  // Use shared context for PDF highlights
   const {
-    highlights,
-    isLoading,
-    error,
-    deleteHighlight,
-    updateHighlightColor,
+    highlights: pdfHighlights,
+    isLoading: pdfLoading,
+    error: pdfError,
+    deleteHighlight: deletePdfHighlight,
+    updateHighlightColor: updatePdfHighlightColor,
     setCurrentPdfId,
   } = useHighlightsContext();
 
-  // Set current PDF ID when it changes
+  // Set current PDF ID when it changes (for PDFs)
   useEffect(() => {
-    setCurrentPdfId(pdfId || null);
-  }, [pdfId, setCurrentPdfId]);
+    if (documentType === 'pdf') {
+      setCurrentPdfId(pdfId || null);
+    }
+  }, [documentType, pdfId, setCurrentPdfId]);
+
+  // Load EPUB highlights when epubId or currentNavId changes
+  useEffect(() => {
+    const loadEpubHighlights = async () => {
+      if (documentType !== 'epub' || !epubId) {
+        setEpubHighlights([]);
+        return;
+      }
+
+      setEpubLoading(true);
+      setEpubError(null);
+
+      try {
+        // Load all highlights for the EPUB (not filtered by section)
+        const allHighlights = await epubService.getAllHighlights(epubId);
+        setEpubHighlights(allHighlights);
+      } catch (err) {
+        setEpubError(
+          err instanceof Error ? err.message : 'Failed to load EPUB highlights'
+        );
+        console.error('Error loading EPUB highlights:', err);
+      } finally {
+        setEpubLoading(false);
+      }
+    };
+
+    loadEpubHighlights();
+  }, [documentType, epubId, currentNavId]);
 
   // Auto-expand current page section
   useEffect(() => {
     setExpandedPages(prev => new Set([...prev, currentPage]));
   }, [currentPage]);
 
+  // Unified highlights: use PDF or EPUB based on document type
+  const highlights = documentType === 'epub' ? epubHighlights : pdfHighlights;
+  const isLoading = documentType === 'epub' ? epubLoading : pdfLoading;
+  const error = documentType === 'epub' ? epubError : pdfError;
+
   // Filter and sort highlights
   const filteredHighlights = highlights
     .filter(highlight => {
+      const text =
+        'selectedText' in highlight
+          ? highlight.selectedText
+          : highlight.highlight_text;
       // Text search filter
       if (
         searchText &&
-        !highlight.selectedText.toLowerCase().includes(searchText.toLowerCase())
+        !text.toLowerCase().includes(searchText.toLowerCase())
       ) {
         return false;
       }
@@ -64,66 +117,117 @@ export default function HighlightsPanel({
       return true;
     })
     .sort((a, b) => {
+      const aTime = new Date(
+        'createdAt' in a ? a.createdAt : a.created_at
+      ).getTime();
+      const bTime = new Date(
+        'createdAt' in b ? b.createdAt : b.created_at
+      ).getTime();
+
       switch (sortBy) {
         case 'newest':
-          return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          return bTime - aTime;
         case 'oldest':
-          return (
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          );
+          return aTime - bTime;
         case 'page':
-          return (
-            a.pageNumber - b.pageNumber ||
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          // For PDFs, sort by page number
+          if (
+            documentType === 'pdf' &&
+            'pageNumber' in a &&
+            'pageNumber' in b
+          ) {
+            return a.pageNumber - b.pageNumber || bTime - aTime;
+          }
+          // For EPUBs, sort by creation time (no page numbers)
+          return bTime - aTime;
         default:
           return 0;
       }
     });
 
-  // Group highlights by page
-  const highlightsByPage = filteredHighlights.reduce(
-    (acc, highlight) => {
-      if (!acc[highlight.pageNumber]) {
-        acc[highlight.pageNumber] = [];
-      }
-      acc[highlight.pageNumber].push(highlight);
-      return acc;
-    },
-    {} as Record<number, Highlight[]>
-  );
+  // Group highlights by page (PDF only)
+  const highlightsByPage =
+    documentType === 'pdf'
+      ? (filteredHighlights as Highlight[]).reduce(
+          (acc, highlight) => {
+            if (!acc[highlight.pageNumber]) {
+              acc[highlight.pageNumber] = [];
+            }
+            acc[highlight.pageNumber].push(highlight);
+            return acc;
+          },
+          {} as Record<number, Highlight[]>
+        )
+      : {};
 
   const pageNumbers = Object.keys(highlightsByPage)
     .map(Number)
     .sort((a, b) => a - b);
 
   // Handle highlight selection
-  const handleHighlightClick = (highlight: Highlight) => {
-    onHighlightSelect?.(highlight);
-    // Jump to page if not current page
-    if (highlight.pageNumber !== currentPage) {
-      onPageJump?.(highlight.pageNumber);
+  const handleHighlightClick = (highlight: Highlight | EPUBHighlight) => {
+    if ('pageNumber' in highlight) {
+      onHighlightSelect?.(highlight);
+      // Jump to page if not current page
+      if (highlight.pageNumber !== currentPage) {
+        onPageJump?.(highlight.pageNumber);
+      }
     }
+    // For EPUB highlights, we don't have page jumping
   };
 
   // Handle highlight deletion
-  const handleDeleteHighlight = async (highlightId: string) => {
-    const success = await deleteHighlight(highlightId);
-    if (success) {
-      console.log('Highlight deleted from panel:', highlightId);
+  const handleDeleteHighlight = async (highlightId: string | number) => {
+    if (documentType === 'pdf') {
+      const success = await deletePdfHighlight(String(highlightId));
+      if (success) {
+        console.log('PDF highlight deleted from panel:', highlightId);
+      }
+    } else {
+      // EPUB highlight deletion
+      try {
+        await epubService.deleteEPUBHighlight(String(highlightId));
+        // Remove from local state
+        setEpubHighlights(prev =>
+          prev.filter(h => h.id !== Number(highlightId))
+        );
+        console.log('EPUB highlight deleted from panel:', highlightId);
+      } catch (err) {
+        console.error('Error deleting EPUB highlight:', err);
+      }
     }
   };
 
   // Handle color change
   const handleColorChange = async (
-    highlightId: string,
+    highlightId: string | number,
     newColor: HighlightColor
   ) => {
-    const success = await updateHighlightColor(highlightId, newColor);
-    if (success) {
-      console.log('Highlight color updated:', highlightId, newColor);
+    if (documentType === 'pdf') {
+      const success = await updatePdfHighlightColor(
+        String(highlightId),
+        newColor
+      );
+      if (success) {
+        console.log('PDF highlight color updated:', highlightId, newColor);
+      }
+    } else {
+      // EPUB highlight color update
+      try {
+        await epubService.updateEPUBHighlightColor(
+          Number(highlightId),
+          newColor
+        );
+        // Update local state
+        setEpubHighlights(prev =>
+          prev.map(h =>
+            h.id === Number(highlightId) ? { ...h, color: newColor } : h
+          )
+        );
+        console.log('EPUB highlight color updated:', highlightId, newColor);
+      } catch (err) {
+        console.error('Error updating EPUB highlight color:', err);
+      }
     }
   };
 
@@ -168,7 +272,9 @@ export default function HighlightsPanel({
   if (!filename) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900">
-        <p className="text-gray-400 text-sm">Open a PDF to view highlights</p>
+        <p className="text-gray-400 text-sm">
+          Open a document to view highlights
+        </p>
       </div>
     );
   }
@@ -254,15 +360,15 @@ export default function HighlightsPanel({
               </p>
               <p className="text-gray-500 text-xs mt-1">
                 {highlights.length === 0
-                  ? 'Select text in the PDF to create highlights'
+                  ? `Select text in the ${documentType === 'pdf' ? 'PDF' : 'EPUB'} to create highlights`
                   : 'Try adjusting your search or filters'}
               </p>
             </div>
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            {sortBy === 'page' ? (
-              // Page-grouped view (existing logic)
+            {sortBy === 'page' && documentType === 'pdf' ? (
+              // Page-grouped view (PDF only)
               <>
                 {/* Current Page Highlights */}
                 {highlightsByPage[currentPage] && (
@@ -406,13 +512,13 @@ export default function HighlightsPanel({
 
 // Individual highlight item component
 interface HighlightItemProps {
-  highlight: Highlight;
+  highlight: Highlight | EPUBHighlight;
   isSelected: boolean;
   isCurrent: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onColorChange: (color: HighlightColor) => void;
-  onJumpToPage: () => void;
+  onJumpToPage?: () => void;
   formatDate: (date: string) => string;
   getColorName: (color: HighlightColor) => string;
 }
@@ -442,10 +548,22 @@ function HighlightItem({
     }
   }, [showColorPicker]);
 
+  // Handle both PDF and EPUB highlight text
+  const selectedText =
+    'selectedText' in highlight
+      ? highlight.selectedText
+      : highlight.highlight_text;
   const truncatedText =
-    highlight.selectedText.length > 100
-      ? highlight.selectedText.substring(0, 100) + '...'
-      : highlight.selectedText;
+    selectedText.length > 100
+      ? selectedText.substring(0, 100) + '...'
+      : selectedText;
+
+  // Get creation date
+  const createdAt =
+    'createdAt' in highlight ? highlight.createdAt : highlight.created_at;
+
+  // Get page number (PDF only)
+  const pageNumber = 'pageNumber' in highlight ? highlight.pageNumber : null;
 
   return (
     <div
@@ -473,8 +591,8 @@ function HighlightItem({
           {/* Metadata */}
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span>
-              {!isCurrent && `Page ${highlight.pageNumber} • `}
-              {formatDate(highlight.createdAt.toString())}
+              {!isCurrent && pageNumber && `Page ${pageNumber} • `}
+              {formatDate(createdAt.toString())}
             </span>
 
             <div className="flex items-center gap-1">
@@ -513,15 +631,15 @@ function HighlightItem({
                 )}
               </div>
 
-              {/* Jump to page button (only for non-current pages) */}
-              {!isCurrent && (
+              {/* Jump to page button (only for PDFs with non-current pages) */}
+              {!isCurrent && pageNumber && onJumpToPage && (
                 <button
                   onClick={e => {
                     e.stopPropagation();
                     onJumpToPage();
                   }}
                   className="p-1 hover:bg-gray-600 rounded transition-colors"
-                  title={`Jump to page ${highlight.pageNumber}`}
+                  title={`Jump to page ${pageNumber}`}
                 >
                   📄
                 </button>

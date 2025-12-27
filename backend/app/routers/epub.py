@@ -387,12 +387,14 @@ async def list_epubs(
             epubs = [epub for epub in epubs if epub.get("filename") in status_filenames]
 
         all_progress = db_service.get_all_epub_progress()
+        all_notes = db_service.get_epub_notes_count_by_epub()
+        all_highlights = db_service.get_epub_highlights_count_by_epub()
 
         # Get all EPUB documents from database once (avoid N+1 query)
         all_epub_docs = epub_documents_service.list_all()
         filename_to_id = {doc["filename"]: doc["id"] for doc in all_epub_docs}
 
-        # Add reading progress to each EPUB
+        # Add reading progress, notes info, and highlights info to each EPUB
         for epub in epubs:
             filename = epub.get("filename")
 
@@ -418,9 +420,25 @@ async def list_epubs(
             else:
                 epub["reading_progress"] = None
 
-            # Note: EPUB notes and highlights will be added in future phases
-            epub["notes_info"] = None
-            epub["highlights_info"] = None
+            # Add notes information
+            if filename and filename in all_notes:
+                notes_info = all_notes[filename]
+                epub["notes_info"] = {
+                    "notes_count": notes_info["notes_count"],
+                    "latest_note_date": notes_info["latest_note_date"],
+                    "latest_note_title": notes_info["latest_note_title"],
+                }
+            else:
+                epub["notes_info"] = None
+
+            # Add highlights information
+            if filename and filename in all_highlights:
+                highlights_info = all_highlights[filename]
+                epub["highlights_info"] = {
+                    "highlights_count": highlights_info["highlights_count"],
+                }
+            else:
+                epub["highlights_info"] = None
 
         return epubs
     except Exception as e:
