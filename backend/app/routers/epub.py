@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 from ..services.database_service import db_service
 from ..services.epub_documents_service import EPUBDocumentsService
 from ..services.epub_service import EPUBService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/epub", tags=["epub"])
 
@@ -310,9 +313,9 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
                 deletion_results["epub_file"] = True
             else:
                 deletion_results["epub_file"] = False
-        except Exception as e:
+        except Exception:
             deletion_results["epub_file"] = False
-            print(f"Warning: Could not delete EPUB file {filename}: {e}")
+            logger.warning("Could not delete EPUB file %s", filename, exc_info=True)
 
         # Delete thumbnail
         try:
@@ -322,9 +325,9 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
                 deletion_results["thumbnail"] = True
             else:
                 deletion_results["thumbnail"] = False
-        except Exception as e:
+        except Exception:
             deletion_results["thumbnail"] = False
-            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+            logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
         db_deletion_results = db_service.delete_all_epub_data(filename)
@@ -740,9 +743,9 @@ async def delete_epub_book(filename: str) -> Dict[str, Any]:
                 deletion_results["epub_file"] = True
             else:
                 deletion_results["epub_file"] = False
-        except Exception as e:
+        except Exception:
             deletion_results["epub_file"] = False
-            print(f"Warning: Could not delete EPUB file {filename}: {e}")
+            logger.warning("Could not delete EPUB file %s", filename, exc_info=True)
 
         # Delete thumbnail
         try:
@@ -752,9 +755,9 @@ async def delete_epub_book(filename: str) -> Dict[str, Any]:
                 deletion_results["thumbnail"] = True
             else:
                 deletion_results["thumbnail"] = False
-        except Exception as e:
+        except Exception:
             deletion_results["thumbnail"] = False
-            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+            logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
         db_deletion_results = db_service.delete_all_epub_data(filename)
