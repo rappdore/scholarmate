@@ -15,6 +15,26 @@ epub_service = EPUBService()
 epub_documents_service = EPUBDocumentsService()
 
 
+# Helper function to get EPUB document by ID or raise 404
+def get_epub_doc_or_404(epub_id: int) -> Dict[str, Any]:
+    """
+    Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
+
+    Args:
+        epub_id: The EPUB document ID
+
+    Returns:
+        The EPUB document dictionary with 'id' and 'filename' keys
+
+    Raises:
+        HTTPException: 404 if EPUB not found
+    """
+    epub_doc = epub_documents_service.get_by_id(epub_id)
+    if not epub_doc:
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    return epub_doc
+
+
 class EPUBProgressRequest(BaseModel):
     current_nav_id: str
     chapter_id: Optional[str] = None
@@ -41,15 +61,11 @@ async def get_epub_info_by_id(epub_id: int) -> Dict[str, Any]:
     Get detailed information about a specific EPUB by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         info = epub_service.get_epub_info(epub_doc["filename"])
         # Add ID to response
         info["id"] = epub_id
-        info["epub_id"] = epub_id
         return info
     except HTTPException:
         raise
@@ -67,10 +83,7 @@ async def get_epub_thumbnail_by_id(epub_id: int):
     Get thumbnail image for an EPUB cover by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         thumbnail_path = epub_service.get_thumbnail_path(epub_doc["filename"])
 
@@ -100,10 +113,7 @@ async def get_epub_navigation_by_id(epub_id: int) -> Dict[str, Any]:
     Get the hierarchical navigation structure (table of contents) for an EPUB by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         navigation = epub_service.get_navigation_tree(epub_doc["filename"])
         return navigation
@@ -123,10 +133,7 @@ async def get_epub_content_by_id(epub_id: int, nav_id: str) -> Dict[str, Any]:
     Get HTML content for a specific navigation section by EPUB ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         content = epub_service.get_content_by_nav_id(epub_doc["filename"], nav_id)
         return content
@@ -147,10 +154,7 @@ async def get_epub_styles_by_id(epub_id: int) -> Dict[str, Any]:
     Returns sanitized CSS content for safe browser rendering
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         styles = epub_service.get_epub_styles(epub_doc["filename"])
         return styles
@@ -170,10 +174,7 @@ async def save_epub_progress_by_id(
     Save reading progress for an EPUB by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         success = db_service.save_epub_progress(
             epub_filename=epub_doc["filename"],
@@ -190,7 +191,7 @@ async def save_epub_progress_by_id(
             return {
                 "success": True,
                 "message": f"Reading progress saved for EPUB ID {epub_id}",
-                "epub_id": epub_id,
+                "id": epub_id,
                 "current_nav_id": progress.current_nav_id,
                 "progress_percentage": progress.progress_percentage,
             }
@@ -213,21 +214,18 @@ async def get_epub_progress_by_id(epub_id: int) -> Dict[str, Any]:
     Get reading progress for an EPUB by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         progress = db_service.get_epub_progress(epub_doc["filename"])
 
         if progress:
             # Add ID to response
-            progress["epub_id"] = epub_id
+            progress["id"] = epub_id
             return progress
         else:
             # Return default progress if none found
             return {
-                "epub_id": epub_id,
+                "id": epub_id,
                 "epub_filename": epub_doc["filename"],
                 "current_nav_id": "start",
                 "chapter_id": None,
@@ -258,10 +256,7 @@ async def update_epub_book_status_by_id(
     Update the reading status of an EPUB book by ID
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         # Validate status
         valid_statuses = ["new", "reading", "finished"]
@@ -281,7 +276,7 @@ async def update_epub_book_status_by_id(
             return {
                 "success": True,
                 "message": f"Status updated for EPUB ID {epub_id}",
-                "epub_id": epub_id,
+                "id": epub_id,
                 "status": status_request.status,
                 "manually_set": status_request.manually_set,
             }
@@ -302,10 +297,7 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
     Delete an EPUB book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
     """
     try:
-        # Lookup filename from ID
-        epub_doc = epub_documents_service.get_by_id(epub_id)
-        if not epub_doc:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        epub_doc = get_epub_doc_or_404(epub_id)
 
         filename = epub_doc["filename"]
         deletion_results = {}
@@ -351,7 +343,7 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
                 if critical_failures
                 else ""
             ),
-            "epub_id": epub_id,
+            "id": epub_id,
             "filename": filename,
             "deletion_details": deletion_results,
         }
@@ -393,15 +385,17 @@ async def list_epubs(
 
         all_progress = db_service.get_all_epub_progress()
 
+        # Get all EPUB documents from database once (avoid N+1 query)
+        all_epub_docs = epub_documents_service.list_all()
+        filename_to_id = {doc["filename"]: doc["id"] for doc in all_epub_docs}
+
         # Add reading progress to each EPUB
         for epub in epubs:
             filename = epub.get("filename")
 
-            # Add EPUB ID from database
-            epub_doc = epub_documents_service.get_by_filename(filename)
-            if epub_doc:
-                epub["id"] = epub_doc["id"]
-                epub["epub_id"] = epub_doc["id"]
+            # Add EPUB ID from database using the pre-built map (O(1) lookup)
+            if filename and filename in filename_to_id:
+                epub["id"] = filename_to_id[filename]
 
             # Add reading progress with status information
             if filename and filename in all_progress:

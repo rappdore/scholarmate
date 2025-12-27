@@ -838,7 +838,6 @@ export default function EPUBViewer({
       const localHighlight: EPUBHighlight = {
         id: Date.now().toString(),
         epub_id: epubId,
-        document_id: epubId.toString(),
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
         xpath: pendingSelection.xpath,

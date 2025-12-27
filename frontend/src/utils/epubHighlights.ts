@@ -12,8 +12,7 @@ export interface EPUBSelection {
 
 export interface EPUBHighlight {
   id?: string;
-  epub_id: number; // Primary identifier for the EPUB document
-  document_id: string; // Keep for backward compatibility (filename)
+  epub_id: number;
   nav_id: string;
   chapter_id: string;
   xpath: string;

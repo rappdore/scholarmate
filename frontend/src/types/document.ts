@@ -39,7 +39,6 @@ export interface PDFDocument extends BaseDocument {
 // EPUB-specific document interface
 export interface EPUBDocument extends BaseDocument {
   type: 'epub';
-  epub_id: number; // Alias for id (explicit for EPUB context)
   chapters: number;
   subject?: string;
   publisher?: string;

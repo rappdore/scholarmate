@@ -45,7 +45,7 @@ export interface EPUBProgressRequest {
 }
 
 export interface EPUBProgress {
-  epub_id: number;
+  id: number;
   epub_filename: string;
   current_nav_id: string;
   chapter_id?: string;
@@ -160,10 +160,7 @@ export const epubService = {
 
   createEPUBHighlight: async (
     epubId: number,
-    highlightData: Omit<
-      EPUBHighlight,
-      'id' | 'created_at' | 'document_id' | 'epub_id'
-    >
+    highlightData: Omit<EPUBHighlight, 'id' | 'created_at' | 'epub_id'>
   ): Promise<EPUBHighlight> => {
     const response = await api.post(`/epub-highlights/create`, {
       ...highlightData,
