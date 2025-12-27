@@ -11,6 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .base_database_service import BaseDatabaseService
+from .epub_documents_service import EPUBDocumentsService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -35,6 +36,10 @@ class EPUBChatNotesService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
+        # Phase 4b: Initialize EPUB documents service for epub_id lookups
+        # Note: Must be initialized before _init_table() for consistency,
+        # though backfill uses direct SQL joins, not the helper method
+        self._epub_docs_service = EPUBDocumentsService(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -71,7 +76,72 @@ class EPUBChatNotesService(BaseDatabaseService):
                 ON epub_chat_notes(epub_filename, chapter_id)
             """)
 
+            # Phase 4b: Add epub_id column if it doesn't exist (backward compatible migration)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(epub_chat_notes)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "epub_id" not in columns:
+                logger.info("Adding epub_id column to epub_chat_notes table...")
+                conn.execute("ALTER TABLE epub_chat_notes ADD COLUMN epub_id INTEGER")
+                logger.info("epub_id column added successfully")
+
+            # Create index on epub_id if it doesn't exist
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_chat_notes_epub_id
+                ON epub_chat_notes(epub_id)
+            """)
+
+            # =============================================================================
+            # ONE-TIME BACKFILL: Populate epub_id for existing epub_chat_notes rows
+            #
+            # Unlike epub_reading_progress which gets updated on access, epub_chat_notes only
+            # receives INSERTs, so existing rows would never get their epub_id populated.
+            # This backfill runs once on startup and updates all rows where epub_id IS NULL.
+            #
+            # TODO: This backfill can be removed after all environments have been updated
+            #       and no NULL epub_id values remain. Safe to remove after ~March 2026.
+            # =============================================================================
+            cursor.execute("""
+                UPDATE epub_chat_notes
+                SET epub_id = (
+                    SELECT id FROM epub_documents
+                    WHERE epub_documents.filename = epub_chat_notes.epub_filename
+                )
+                WHERE epub_id IS NULL
+                AND EXISTS (
+                    SELECT 1 FROM epub_documents
+                    WHERE epub_documents.filename = epub_chat_notes.epub_filename
+                )
+            """)
+            backfilled = cursor.rowcount
+            if backfilled > 0:
+                logger.info(
+                    f"Backfilled epub_id for {backfilled} existing epub_chat_notes rows"
+                )
+
             conn.commit()
+
+    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+        """
+        Get the epub_id for a given EPUB filename.
+
+        Phase 4b: Helper method for looking up epub_id from epub_documents table.
+
+        Args:
+            epub_filename (str): Name of the EPUB file
+
+        Returns:
+            Optional[int]: The epub_id if found, None otherwise
+        """
+        try:
+            epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
+            if epub_doc:
+                return epub_doc.get("id")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not look up epub_id for {epub_filename}: {e}")
+            return None
 
     def save_note(
         self,
@@ -104,15 +174,19 @@ class EPUBChatNotesService(BaseDatabaseService):
             # Convert context sections to JSON string
             context_json = json.dumps(context_sections) if context_sections else None
 
+            # Phase 4b: Look up epub_id for auto-population
+            epub_id = self._get_epub_id(epub_filename)
+
             query = """
                 INSERT INTO epub_chat_notes (
-                    epub_filename, nav_id, chapter_id, chapter_title, title,
+                    epub_filename, epub_id, nav_id, chapter_id, chapter_title, title,
                     chat_content, context_sections, scroll_position, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 epub_filename,
+                epub_id,
                 nav_id,
                 chapter_id,
                 chapter_title,
@@ -127,7 +201,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             note_id = self.execute_insert(query, params)
             if note_id:
                 logger.info(
-                    f"Saved EPUB chat note for {epub_filename}, nav_id {nav_id}"
+                    f"Saved EPUB chat note for {epub_filename}, nav_id {nav_id} (epub_id={epub_id})"
                 )
             return note_id
         except Exception as e:
@@ -152,10 +226,11 @@ class EPUBChatNotesService(BaseDatabaseService):
             List[Dict[str, Any]]: List of note dictionaries
         """
         try:
+            # Phase 4b: Include epub_id in query
             if nav_id is not None:
                 # Get notes for specific navigation section
                 query = """
-                    SELECT id, epub_filename, nav_id, chapter_id, chapter_title, title,
+                    SELECT id, epub_filename, epub_id, nav_id, chapter_id, chapter_title, title,
                            chat_content, context_sections, scroll_position, created_at, updated_at
                     FROM epub_chat_notes
                     WHERE epub_filename = ? AND nav_id = ?
@@ -165,7 +240,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             elif chapter_id is not None:
                 # Get notes for specific chapter
                 query = """
-                    SELECT id, epub_filename, nav_id, chapter_id, chapter_title, title,
+                    SELECT id, epub_filename, epub_id, nav_id, chapter_id, chapter_title, title,
                            chat_content, context_sections, scroll_position, created_at, updated_at
                     FROM epub_chat_notes
                     WHERE epub_filename = ? AND chapter_id = ?
@@ -175,7 +250,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             else:
                 # Get all notes for EPUB
                 query = """
-                    SELECT id, epub_filename, nav_id, chapter_id, chapter_title, title,
+                    SELECT id, epub_filename, epub_id, nav_id, chapter_id, chapter_title, title,
                            chat_content, context_sections, scroll_position, created_at, updated_at
                     FROM epub_chat_notes
                     WHERE epub_filename = ?
@@ -200,6 +275,7 @@ class EPUBChatNotesService(BaseDatabaseService):
                         {
                             "id": row["id"],
                             "epub_filename": row["epub_filename"],
+                            "epub_id": row["epub_id"],
                             "nav_id": row["nav_id"],
                             "chapter_id": row["chapter_id"],
                             "chapter_title": row["chapter_title"],
@@ -254,8 +330,9 @@ class EPUBChatNotesService(BaseDatabaseService):
             Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
         """
         try:
+            # Phase 4b: Include epub_id in query
             query = """
-                SELECT id, epub_filename, nav_id, chapter_id, chapter_title, title,
+                SELECT id, epub_filename, epub_id, nav_id, chapter_id, chapter_title, title,
                        chat_content, context_sections, scroll_position, created_at, updated_at
                 FROM epub_chat_notes
                 WHERE id = ?
@@ -274,6 +351,7 @@ class EPUBChatNotesService(BaseDatabaseService):
                 return {
                     "id": row["id"],
                     "epub_filename": row["epub_filename"],
+                    "epub_id": row["epub_id"],
                     "nav_id": row["nav_id"],
                     "chapter_id": row["chapter_id"],
                     "chapter_title": row["chapter_title"],

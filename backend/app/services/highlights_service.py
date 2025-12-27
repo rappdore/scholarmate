@@ -11,6 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .base_database_service import BaseDatabaseService
+from .pdf_documents_service import PDFDocumentsService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -32,6 +33,10 @@ class HighlightsService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
+        # Phase 3c: Initialize PDF documents service for pdf_id lookups
+        # Note: Must be initialized before _init_table() for consistency,
+        # though backfill uses direct SQL joins, not the helper method
+        self._pdf_docs_service = PDFDocumentsService(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -65,7 +70,73 @@ class HighlightsService(BaseDatabaseService):
                 CREATE INDEX IF NOT EXISTS idx_highlights_pdf
                 ON highlights(pdf_filename)
             """)
+
+            # Phase 3c: Add pdf_id column if it doesn't exist (backward compatible migration)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(highlights)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "pdf_id" not in columns:
+                logger.info("Adding pdf_id column to highlights table...")
+                conn.execute("ALTER TABLE highlights ADD COLUMN pdf_id INTEGER")
+                logger.info("pdf_id column added successfully")
+
+            # Create index on pdf_id if it doesn't exist
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_highlights_pdf_id
+                ON highlights(pdf_id)
+            """)
+
+            # =============================================================================
+            # ONE-TIME BACKFILL: Populate pdf_id for existing highlights rows
+            #
+            # Unlike reading_progress which gets updated on access, highlights only
+            # receives INSERTs, so existing rows would never get their pdf_id populated.
+            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
+            #
+            # TODO: This backfill can be removed after all environments have been updated
+            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
+            # =============================================================================
+            cursor.execute("""
+                UPDATE highlights
+                SET pdf_id = (
+                    SELECT id FROM pdf_documents
+                    WHERE pdf_documents.filename = highlights.pdf_filename
+                )
+                WHERE pdf_id IS NULL
+                AND EXISTS (
+                    SELECT 1 FROM pdf_documents
+                    WHERE pdf_documents.filename = highlights.pdf_filename
+                )
+            """)
+            backfilled = cursor.rowcount
+            if backfilled > 0:
+                logger.info(
+                    f"Backfilled pdf_id for {backfilled} existing highlights rows"
+                )
+
             conn.commit()
+
+    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
+        """
+        Get the pdf_id for a given PDF filename.
+
+        Phase 3c: Helper method for looking up pdf_id from pdf_documents table.
+
+        Args:
+            pdf_filename (str): Name of the PDF file
+
+        Returns:
+            Optional[int]: The pdf_id if found, None otherwise
+        """
+        try:
+            pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
+            if pdf_doc:
+                return pdf_doc.get("id")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not look up pdf_id for {pdf_filename}: {e}")
+            return None
 
     def save_highlight(
         self,
@@ -96,15 +167,19 @@ class HighlightsService(BaseDatabaseService):
             # Convert coordinates list to JSON string for storage
             coordinates_json = json.dumps(coordinates)
 
+            # Phase 3c: Look up pdf_id for auto-population
+            pdf_id = self._get_pdf_id(pdf_filename)
+
             query = """
                 INSERT INTO highlights (
-                    pdf_filename, page_number, selected_text, start_offset, end_offset,
+                    pdf_filename, pdf_id, page_number, selected_text, start_offset, end_offset,
                     color, coordinates, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 pdf_filename,
+                pdf_id,
                 page_number,
                 selected_text,
                 start_offset,
@@ -117,7 +192,9 @@ class HighlightsService(BaseDatabaseService):
 
             highlight_id = self.execute_insert(query, params)
             if highlight_id:
-                logger.info(f"Saved highlight for {pdf_filename}, page {page_number}")
+                logger.info(
+                    f"Saved highlight for {pdf_filename}, page {page_number} (pdf_id={pdf_id})"
+                )
             return highlight_id
         except Exception as e:
             logger.error(f"Error saving highlight: {e}")
@@ -137,9 +214,10 @@ class HighlightsService(BaseDatabaseService):
             List[Dict[str, Any]]: List of highlight dictionaries
         """
         try:
+            # Phase 3c: Include pdf_id in query
             if page_number is not None:
                 query = """
-                    SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
+                    SELECT id, pdf_filename, pdf_id, page_number, selected_text, start_offset, end_offset,
                            color, coordinates, created_at, updated_at
                     FROM highlights
                     WHERE pdf_filename = ? AND page_number = ?
@@ -148,7 +226,7 @@ class HighlightsService(BaseDatabaseService):
                 params = (pdf_filename, page_number)
             else:
                 query = """
-                    SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
+                    SELECT id, pdf_filename, pdf_id, page_number, selected_text, start_offset, end_offset,
                            color, coordinates, created_at, updated_at
                     FROM highlights
                     WHERE pdf_filename = ?
@@ -174,6 +252,7 @@ class HighlightsService(BaseDatabaseService):
                         {
                             "id": row["id"],
                             "pdf_filename": row["pdf_filename"],
+                            "pdf_id": row["pdf_id"],
                             "page_number": row["page_number"],
                             "selected_text": row["selected_text"],
                             "start_offset": row["start_offset"],
@@ -200,8 +279,9 @@ class HighlightsService(BaseDatabaseService):
             Optional[Dict[str, Any]]: Highlight dictionary with all fields, or None if not found
         """
         try:
+            # Phase 3c: Include pdf_id in query
             query = """
-                SELECT id, pdf_filename, page_number, selected_text, start_offset, end_offset,
+                SELECT id, pdf_filename, pdf_id, page_number, selected_text, start_offset, end_offset,
                        color, coordinates, created_at, updated_at
                 FROM highlights
                 WHERE id = ?
@@ -221,6 +301,7 @@ class HighlightsService(BaseDatabaseService):
                 return {
                     "id": row["id"],
                     "pdf_filename": row["pdf_filename"],
+                    "pdf_id": row["pdf_id"],
                     "page_number": row["page_number"],
                     "selected_text": row["selected_text"],
                     "start_offset": row["start_offset"],
