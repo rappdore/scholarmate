@@ -299,7 +299,7 @@ async def update_epub_book_status_by_id(
 @router.delete("/{epub_id:int}")
 async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
     """
-    Delete an EPUB book by ID and all associated data (progress, notes, highlights)
+    Delete an EPUB book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
     """
     try:
         # Lookup filename from ID
@@ -308,22 +308,52 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail="EPUB not found")
 
         filename = epub_doc["filename"]
+        deletion_results = {}
 
-        # Check if EPUB exists
+        # Delete the EPUB file
         try:
-            epub_service.get_epub_path(filename)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+            epub_file_path = epub_service.get_epub_path(filename)
+            if epub_file_path.exists():
+                epub_file_path.unlink()
+                deletion_results["epub_file"] = True
+            else:
+                deletion_results["epub_file"] = False
+        except Exception as e:
+            deletion_results["epub_file"] = False
+            print(f"Warning: Could not delete EPUB file {filename}: {e}")
 
-        # Delete all associated data from database
-        deletion_results = db_service.delete_all_epub_data(filename)
+        # Delete thumbnail
+        try:
+            thumbnail_path = epub_service.get_thumbnail_path(filename)
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+                deletion_results["thumbnail"] = True
+            else:
+                deletion_results["thumbnail"] = False
+        except Exception as e:
+            deletion_results["thumbnail"] = False
+            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+
+        # Delete all database data
+        db_deletion_results = db_service.delete_all_epub_data(filename)
+        deletion_results.update(db_deletion_results)
+
+        # Check if any critical operations failed
+        critical_failures = []
+        if not deletion_results.get("epub_file", False):
+            critical_failures.append("EPUB file")
 
         return {
             "success": True,
-            "message": f"EPUB book with ID {epub_id} and associated data deleted",
+            "message": f"EPUB book with ID {epub_id} deleted successfully"
+            + (
+                f" (warnings: {', '.join(critical_failures)} not found)"
+                if critical_failures
+                else ""
+            ),
             "epub_id": epub_id,
             "filename": filename,
-            "deletion_results": deletion_results,
+            "deletion_details": deletion_results,
         }
 
     except HTTPException:
@@ -703,22 +733,54 @@ async def get_epub_status_counts() -> Dict[str, int]:
 @router.delete("/{filename}")
 async def delete_epub_book(filename: str) -> Dict[str, Any]:
     """
-    Delete an EPUB book and all associated data (progress, notes, highlights)
+    Delete an EPUB book and all its associated data (file, thumbnails, progress, notes, highlights)
     """
     try:
-        # Check if EPUB exists
-        try:
-            epub_service.get_epub_path(filename)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail="EPUB not found")
+        deletion_results = {}
 
-        # Delete all associated data from database
-        deletion_results = db_service.delete_all_epub_data(filename)
+        # Delete the EPUB file
+        try:
+            epub_file_path = epub_service.get_epub_path(filename)
+            if epub_file_path.exists():
+                epub_file_path.unlink()
+                deletion_results["epub_file"] = True
+            else:
+                deletion_results["epub_file"] = False
+        except Exception as e:
+            deletion_results["epub_file"] = False
+            print(f"Warning: Could not delete EPUB file {filename}: {e}")
+
+        # Delete thumbnail
+        try:
+            thumbnail_path = epub_service.get_thumbnail_path(filename)
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
+                deletion_results["thumbnail"] = True
+            else:
+                deletion_results["thumbnail"] = False
+        except Exception as e:
+            deletion_results["thumbnail"] = False
+            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+
+        # Delete all database data
+        db_deletion_results = db_service.delete_all_epub_data(filename)
+        deletion_results.update(db_deletion_results)
+
+        # Check if any critical operations failed
+        critical_failures = []
+        if not deletion_results.get("epub_file", False):
+            critical_failures.append("EPUB file")
 
         return {
             "success": True,
-            "message": f"EPUB book {filename} and associated data deleted",
-            "deletion_results": deletion_results,
+            "message": f"EPUB book {filename} deleted successfully"
+            + (
+                f" (warnings: {', '.join(critical_failures)} not found)"
+                if critical_failures
+                else ""
+            ),
+            "filename": filename,
+            "deletion_details": deletion_results,
         }
 
     except HTTPException:

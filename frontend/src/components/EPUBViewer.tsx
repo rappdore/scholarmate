@@ -108,18 +108,18 @@ export default function EPUBViewer({
   const htmlRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!filename) return;
+    if (!epubId) return;
     loadNavigation();
     loadStyles();
     loadProgress();
     setInitialLoadDone(false); // Reset initial load flag for new EPUB
-  }, [filename]);
+  }, [epubId]);
 
   // Load highlights when content changes
   useEffect(() => {
-    if (!filename || !currentNavId) return;
+    if (!epubId || !currentNavId) return;
     loadSectionHighlights();
-  }, [filename, currentNavId]);
+  }, [epubId, currentNavId]);
 
   // Inject chapter HTML into the DOM and then apply highlights
   useEffect(() => {
@@ -148,10 +148,10 @@ export default function EPUBViewer({
 
   // Load saved progress and restore position
   const loadProgress = async () => {
-    if (!filename) return;
+    if (!epubId) return;
 
     try {
-      const progress = await epubService.getEPUBProgress(filename);
+      const progress = await epubService.getEPUBProgress(epubId);
       setSavedProgress(progress);
 
       // Set loaded flag for both new and existing progress
@@ -170,7 +170,7 @@ export default function EPUBViewer({
     contentData?: ContentData,
     currentScrollPos?: number
   ) => {
-    if (!filename || !isProgressLoaded) return;
+    if (!epubId || !isProgressLoaded) return;
 
     try {
       // Determine chapter info from current navigation or content data
@@ -195,7 +195,7 @@ export default function EPUBViewer({
         nav_metadata: navMetadata,
       };
 
-      await epubService.saveEPUBProgress(filename, progressData);
+      await epubService.saveEPUBProgress(epubId, progressData);
       // Also update the local state to ensure UI is consistent
       setSavedProgress(prev => ({
         ...(prev ?? ({} as EPUBProgress)),
@@ -212,7 +212,7 @@ export default function EPUBViewer({
 
   // Debounced save effect for scroll position
   useEffect(() => {
-    if (!filename || !currentNavId || !isProgressLoaded || !currentContent)
+    if (!epubId || !currentNavId || !isProgressLoaded || !currentContent)
       return;
 
     const timeoutId = setTimeout(() => {
@@ -220,13 +220,7 @@ export default function EPUBViewer({
     }, 1000); // Debounce scroll saves
 
     return () => clearTimeout(timeoutId);
-  }, [
-    filename,
-    currentNavId,
-    scrollPosition,
-    isProgressLoaded,
-    currentContent,
-  ]);
+  }, [epubId, currentNavId, scrollPosition, isProgressLoaded, currentContent]);
 
   // Handle scroll position tracking
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
@@ -474,10 +468,10 @@ export default function EPUBViewer({
   }, [epubStyles]);
 
   const loadStyles = async () => {
-    if (!filename) return;
+    if (!epubId) return;
 
     try {
-      const stylesData = await epubService.getStyles(filename);
+      const stylesData = await epubService.getStyles(epubId);
       setEpubStyles(stylesData);
     } catch (err) {
       console.error('Error loading EPUB styles:', err);
@@ -486,13 +480,13 @@ export default function EPUBViewer({
   };
 
   const loadNavigation = async () => {
-    if (!filename) return;
+    if (!epubId) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      const navData = await epubService.getNavigation(filename);
+      const navData = await epubService.getNavigation(epubId);
       setNavigation(navData);
 
       // Create flat list of chapter-level options for dropdown
@@ -513,8 +507,7 @@ export default function EPUBViewer({
 
   // Load content and handle progress restoration
   useEffect(() => {
-    if (!navigation || !isProgressLoaded || !filename || initialLoadDone)
-      return;
+    if (!navigation || !isProgressLoaded || !epubId || initialLoadDone) return;
 
     // Try to restore from saved progress, otherwise load first chapter
     const navIdToLoad =
@@ -618,11 +611,11 @@ export default function EPUBViewer({
   };
 
   const loadContent = async (navId: string, isInitialLoad: boolean = false) => {
-    if (!filename) return;
+    if (!epubId) return;
 
     try {
       setCurrentNavId(navId);
-      const contentData = await epubService.getContent(filename, navId);
+      const contentData = await epubService.getContent(epubId, navId);
       setCurrentContent(contentData);
 
       // Save progress immediately when navigating (but not on initial restore)
@@ -738,11 +731,11 @@ export default function EPUBViewer({
   // ========================================
 
   const loadSectionHighlights = async () => {
-    if (!filename || !currentNavId) return;
+    if (!epubId || !currentNavId) return;
 
     try {
       const sectionHighlights = await epubService.getSectionHighlights(
-        filename,
+        epubId,
         currentNavId
       );
       setHighlights(sectionHighlights);
@@ -814,13 +807,13 @@ export default function EPUBViewer({
     console.log('🎨 Creating highlight with color:', color);
     console.log('📋 Pending selection:', pendingSelection);
 
-    if (!filename || !pendingSelection) {
-      console.log('❌ Missing filename or pending selection');
+    if (!epubId || !pendingSelection) {
+      console.log('❌ Missing epubId or pending selection');
       return;
     }
 
     try {
-      const newHighlight = await epubService.createEPUBHighlight(filename, {
+      const newHighlight = await epubService.createEPUBHighlight(epubId, {
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
         xpath: pendingSelection.xpath,
@@ -844,7 +837,8 @@ export default function EPUBViewer({
       // For now, create a local highlight even if API fails
       const localHighlight: EPUBHighlight = {
         id: Date.now().toString(),
-        document_id: filename,
+        epub_id: epubId,
+        document_id: epubId.toString(),
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
         xpath: pendingSelection.xpath,

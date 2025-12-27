@@ -20,7 +20,10 @@ interface DocumentInfo {
 }
 
 export default function Reader() {
-  const { documentId } = useParams<{ documentId: string }>();
+  const { type, documentId } = useParams<{
+    type: string;
+    documentId: string;
+  }>();
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const [currentNavId, setCurrentNavId] = useState<string | undefined>(
@@ -38,9 +41,9 @@ export default function Reader() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Detect document type and load document info on component mount
+  // Load document info based on type from URL
   useEffect(() => {
-    if (!documentId) return;
+    if (!documentId || !type) return;
 
     const loadDocumentInfo = async () => {
       try {
@@ -52,8 +55,13 @@ export default function Reader() {
           throw new Error('Invalid document ID');
         }
 
-        // Try to get PDF info first
-        try {
+        // Validate type
+        if (type !== 'pdf' && type !== 'epub') {
+          throw new Error('Invalid document type');
+        }
+
+        // Load the appropriate document type
+        if (type === 'pdf') {
           const pdfInfo: PDFDocumentInfo = await pdfService.getPDFInfo(id);
           setDocumentInfo({
             id,
@@ -61,20 +69,14 @@ export default function Reader() {
             type: 'pdf',
             title: pdfInfo.title,
           });
-        } catch (pdfError) {
-          // If PDF fails, try EPUB
-          try {
-            const epubInfo: EPUBDocumentInfo =
-              await epubService.getEPUBInfo(id);
-            setDocumentInfo({
-              id,
-              filename: epubInfo.filename,
-              type: 'epub',
-              title: epubInfo.title,
-            });
-          } catch (epubError) {
-            throw new Error('Document not found or unsupported format');
-          }
+        } else {
+          const epubInfo: EPUBDocumentInfo = await epubService.getEPUBInfo(id);
+          setDocumentInfo({
+            id,
+            filename: epubInfo.filename,
+            type: 'epub',
+            title: epubInfo.title,
+          });
         }
       } catch (err) {
         console.error('Error loading document info:', err);
@@ -85,7 +87,7 @@ export default function Reader() {
     };
 
     loadDocumentInfo();
-  }, [documentId]);
+  }, [documentId, type]);
 
   // Load reading progress on component mount (for PDFs only for now)
   useEffect(() => {

@@ -245,8 +245,8 @@ export default function Library() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const handleDocumentClick = (documentId: number) => {
-    navigate(`/read/${documentId}`);
+  const handleDocumentClick = (document: Document) => {
+    navigate(`/read/${document.type}/${document.id}`);
   };
 
   const getDocumentIcon = (document: Document): string => {
@@ -418,7 +418,7 @@ export default function Library() {
 
                 <div
                   className="p-6 flex-1"
-                  onClick={() => handleDocumentClick(doc.id)}
+                  onClick={() => handleDocumentClick(doc)}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-16 h-20 bg-slate-700/50 rounded-lg overflow-hidden group-hover:scale-110 transition-transform duration-200 border border-slate-600/50">

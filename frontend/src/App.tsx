@@ -13,7 +13,7 @@ function App() {
         {/* Add padding to account for fixed header */}
         <Routes>
           <Route path="/" element={<Library />} />
-          <Route path="/read/:documentId" element={<Reader />} />
+          <Route path="/read/:type/:documentId" element={<Reader />} />
           <Route path="/statistics/:documentId" element={<Statistics />} />
         </Routes>
       </div>
