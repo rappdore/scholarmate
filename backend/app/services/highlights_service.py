@@ -33,9 +33,11 @@ class HighlightsService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
-        self._init_table()
         # Phase 3c: Initialize PDF documents service for pdf_id lookups
+        # Note: Must be initialized before _init_table() for consistency,
+        # though backfill uses direct SQL joins, not the helper method
         self._pdf_docs_service = PDFDocumentsService(db_path)
+        self._init_table()
 
     def _init_table(self):
         """

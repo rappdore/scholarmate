@@ -36,9 +36,11 @@ class EPUBChatNotesService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
-        self._init_table()
         # Phase 4b: Initialize EPUB documents service for epub_id lookups
+        # Note: Must be initialized before _init_table() for consistency,
+        # though backfill uses direct SQL joins, not the helper method
         self._epub_docs_service = EPUBDocumentsService(db_path)
+        self._init_table()
 
     def _init_table(self):
         """
