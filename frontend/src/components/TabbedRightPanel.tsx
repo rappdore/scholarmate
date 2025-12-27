@@ -117,8 +117,11 @@ export default function TabbedRightPanel({
         <div className={`h-full ${activeTab === 'highlights' ? '' : 'hidden'}`}>
           <HighlightsPanel
             pdfId={pdfId}
+            epubId={epubId}
             filename={filename}
+            documentType={documentType}
             currentPage={currentPage}
+            currentNavId={currentNavId}
             onPageJump={onPageJump}
           />
         </div>

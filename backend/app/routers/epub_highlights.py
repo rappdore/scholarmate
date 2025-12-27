@@ -87,6 +87,17 @@ async def create_epub_highlight(payload: EPUBHighlightRequest):
     return EPUBHighlightResponse(**highlight)
 
 
+@router.get("/{epub_id:int}", response_model=List[EPUBHighlightResponse])
+async def get_all_highlights(epub_id: int):
+    """Retrieve all highlights for an EPUB document by ID."""
+    # Validate EPUB exists and get filename
+    epub_doc = get_epub_doc_or_404(epub_id)
+
+    highlights = db_service.get_epub_all_highlights(epub_doc["filename"])
+    # Add epub_id to each highlight
+    return [EPUBHighlightResponse(**{**h, "epub_id": epub_id}) for h in highlights]
+
+
 @router.get(
     "/{epub_id:int}/section/{nav_id}", response_model=List[EPUBHighlightResponse]
 )

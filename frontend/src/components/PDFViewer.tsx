@@ -543,10 +543,11 @@ export default function PDFViewer({
 
   // Handle highlight creation
   const handleCreateHighlight = async (color: HighlightColor) => {
-    if (contextMenu.selection && filename) {
+    if (contextMenu.selection && pdfId) {
       // Create highlight using our hook
       const highlightData = {
-        pdfFilename: filename,
+        pdf_id: pdfId,
+        pdfFilename: filename, // Optional, for backward compatibility
         pageNumber: contextMenu.selection.pageNumber,
         selectedText: contextMenu.selection.text,
         startOffset: contextMenu.selection.startOffset,

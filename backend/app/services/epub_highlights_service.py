@@ -206,6 +206,20 @@ class EPUBHighlightService(BaseDatabaseService):
             logger.exception("Error saving EPUB highlight: %s", exc)
             return None
 
+    def get_all_highlights(self, epub_filename: str) -> List[Dict[str, Any]]:
+        """Return all highlights for an EPUB document."""
+        try:
+            query = """
+                SELECT * FROM epub_highlights
+                WHERE epub_filename = ?
+                ORDER BY created_at ASC
+            """
+            rows = self.execute_query(query, (epub_filename,), fetch_all=True)
+            return [dict(row) for row in rows] if rows else []
+        except Exception as exc:
+            logger.exception("Error fetching all EPUB highlights: %s", exc)
+            return []
+
     def get_highlights_for_section(
         self, epub_filename: str, nav_id: str
     ) -> List[Dict[str, Any]]:
@@ -279,3 +293,33 @@ class EPUBHighlightService(BaseDatabaseService):
         except Exception as exc:
             logger.exception("Error updating EPUB highlight color: %s", exc)
             return False
+
+    def get_highlights_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get summary statistics about highlights for all EPUB documents.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their highlight statistics
+        """
+        try:
+            # Query: Get count for each EPUB
+            query = """
+                SELECT
+                    epub_filename,
+                    COUNT(*) as highlights_count
+                FROM epub_highlights
+                GROUP BY epub_filename
+            """
+            rows = self.execute_query(query, fetch_all=True)
+
+            highlights_info = {}
+            if rows:
+                for row in rows:
+                    highlights_info[row["epub_filename"]] = {
+                        "highlights_count": row["highlights_count"],
+                    }
+
+            return highlights_info
+        except Exception as exc:
+            logger.exception("Error getting EPUB highlights count: %s", exc)
+            return {}

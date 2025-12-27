@@ -1046,6 +1046,10 @@ class DatabaseService:
             color,
         )
 
+    def get_epub_all_highlights(self, epub_filename: str) -> List[Dict[str, Any]]:
+        """Return all highlights for an EPUB document."""
+        return self.epub_highlights.get_all_highlights(epub_filename)
+
     def get_epub_section_highlights(
         self, epub_filename: str, nav_id: str
     ) -> List[Dict[str, Any]]:
@@ -1068,6 +1072,10 @@ class DatabaseService:
 
     def update_epub_highlight_color(self, highlight_id: int, color: str) -> bool:
         return self.epub_highlights.update_color(highlight_id, color)
+
+    def get_epub_highlights_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+        """Return highlight count statistics for all EPUB documents."""
+        return self.epub_highlights.get_highlights_count_by_epub()
 
 
 # Global instance
