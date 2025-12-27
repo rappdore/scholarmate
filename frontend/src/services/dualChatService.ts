@@ -7,7 +7,7 @@ export const dualChatService = {
    * Stream responses from both LLMs simultaneously (PDF only)
    *
    * @param message - User message to send to both LLMs
-   * @param filename - PDF filename
+   * @param pdfId - PDF document ID
    * @param pageNum - Current page number
    * @param llm1History - Chat history for LLM 1
    * @param llm2History - Chat history for LLM 2
@@ -18,7 +18,7 @@ export const dualChatService = {
    */
   streamDualChat: async function* (
     message: string,
-    filename: string,
+    pdfId: number,
     pageNum: number,
     llm1History: Array<{ role: string; content: string }>,
     llm2History: Array<{ role: string; content: string }>,
@@ -43,7 +43,7 @@ export const dualChatService = {
         },
         body: JSON.stringify({
           message,
-          filename,
+          pdf_id: pdfId,
           page_num: pageNum,
           llm1_history: llm1History,
           llm2_history: llm2History,

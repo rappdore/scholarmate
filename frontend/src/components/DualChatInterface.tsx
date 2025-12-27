@@ -68,11 +68,13 @@ interface DualMessage {
 }
 
 interface DualChatInterfaceProps {
+  pdfId?: number;
   filename?: string;
   currentPage?: number;
 }
 
 export default function DualChatInterface({
+  pdfId,
   filename,
   currentPage,
 }: DualChatInterfaceProps) {
@@ -152,7 +154,7 @@ export default function DualChatInterface({
   };
 
   const saveChatAsNotes = async () => {
-    if (!filename || !currentPage || !primaryLLM || !secondaryLLM) return;
+    if (!pdfId || !currentPage || !primaryLLM || !secondaryLLM) return;
     if (llm1Messages.length === 0 && llm2Messages.length === 0) return;
 
     setSaving(true);
@@ -190,18 +192,8 @@ export default function DualChatInterface({
       const llm2Title = `${baseTitle} - ${secondaryLLM.name}`;
 
       await Promise.all([
-        notesService.saveChatNote(
-          filename,
-          currentPage,
-          llm1Title,
-          llm1Content
-        ),
-        notesService.saveChatNote(
-          filename,
-          currentPage,
-          llm2Title,
-          llm2Content
-        ),
+        notesService.saveChatNote(pdfId, currentPage, llm1Title, llm1Content),
+        notesService.saveChatNote(pdfId, currentPage, llm2Title, llm2Content),
       ]);
 
       setShowSaveDialog(false);
@@ -221,7 +213,7 @@ export default function DualChatInterface({
   };
 
   const sendMessage = async () => {
-    if (!inputText.trim() || !filename || !secondaryLLM) return;
+    if (!inputText.trim() || !pdfId || !secondaryLLM) return;
 
     // Detect if this is a new chat BEFORE adding messages
     const isNewChat = llm1Messages.length === 0 && llm2Messages.length === 0;
@@ -298,7 +290,7 @@ export default function DualChatInterface({
 
       for await (const data of dualChatService.streamDualChat(
         currentInput,
-        filename,
+        pdfId!,
         currentPage!,
         llm1History,
         llm2History,
@@ -709,12 +701,12 @@ export default function DualChatInterface({
             </div>
             <button
               onClick={() => setShowLLMModal(true)}
-              disabled={!primaryLLM || !filename}
+              disabled={!primaryLLM || !pdfId}
               className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
             >
               Select Second LLM
             </button>
-            {!filename && (
+            {!pdfId && (
               <p className="text-xs text-gray-500 mt-2">
                 Open a PDF to start chatting
               </p>
@@ -768,7 +760,7 @@ export default function DualChatInterface({
             <div className="flex gap-2">
               <button
                 onClick={() => setShowSaveDialog(true)}
-                disabled={!filename}
+                disabled={!pdfId}
                 className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
                 title="Save both conversations as notes"
               >
@@ -820,23 +812,23 @@ export default function DualChatInterface({
             onKeyDown={e => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                if (!streaming && inputText.trim() && filename && !loading) {
+                if (!streaming && inputText.trim() && pdfId && !loading) {
                   sendMessage();
                 }
               }
             }}
             placeholder={
-              filename
+              pdfId
                 ? `Ask about this PDF... (${navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'}+Enter to send)`
                 : 'Open a PDF to chat'
             }
-            disabled={!filename || loading}
+            disabled={!pdfId || loading}
             rows={3}
             className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-700 disabled:text-gray-500 resize-y min-h-[76px]"
           />
           <button
             onClick={sendMessage}
-            disabled={!inputText.trim() || !filename || loading}
+            disabled={!inputText.trim() || !pdfId || loading}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Sending...' : 'Send'}

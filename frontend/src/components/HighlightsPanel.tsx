@@ -4,6 +4,7 @@ import type { Highlight } from '../types/highlights';
 import { HighlightColor } from '../types/highlights';
 
 interface HighlightsPanelProps {
+  pdfId?: number;
   filename?: string;
   currentPage: number;
   selectedHighlightId?: string;
@@ -12,6 +13,7 @@ interface HighlightsPanelProps {
 }
 
 export default function HighlightsPanel({
+  pdfId,
   filename,
   currentPage,
   selectedHighlightId,
@@ -32,13 +34,13 @@ export default function HighlightsPanel({
     error,
     deleteHighlight,
     updateHighlightColor,
-    setCurrentFilename,
+    setCurrentPdfId,
   } = useHighlightsContext();
 
-  // Set current filename when it changes
+  // Set current PDF ID when it changes
   useEffect(() => {
-    setCurrentFilename(filename || null);
-  }, [filename, setCurrentFilename]);
+    setCurrentPdfId(pdfId || null);
+  }, [pdfId, setCurrentPdfId]);
 
   // Auto-expand current page section
   useEffect(() => {

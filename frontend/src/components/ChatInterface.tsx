@@ -74,6 +74,8 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
+  pdfId?: number;
+  epubId?: number;
   filename?: string;
   currentPage?: number; // For PDFs
   currentNavId?: string; // For EPUBs
@@ -83,6 +85,8 @@ interface ChatInterfaceProps {
 }
 
 export default function ChatInterface({
+  pdfId,
+  epubId,
   filename,
   currentPage,
   currentNavId,
@@ -200,18 +204,21 @@ export default function ChatInterface({
         noteTitle.trim() ||
         `Chat on ${documentType === 'pdf' ? `page ${currentPage}` : `section ${currentNavId}`} - ${new Date().toLocaleDateString()}`;
 
-      if (documentType === 'pdf' && currentPage !== undefined) {
+      if (
+        documentType === 'pdf' &&
+        currentPage !== undefined &&
+        pdfId !== undefined
+      ) {
         // Existing PDF implementation (unchanged)
-        await notesService.saveChatNote(
-          filename,
-          currentPage,
-          title,
-          chatContent
-        );
-      } else if (documentType === 'epub' && currentNavId !== undefined) {
+        await notesService.saveChatNote(pdfId, currentPage, title, chatContent);
+      } else if (
+        documentType === 'epub' &&
+        currentNavId !== undefined &&
+        epubId !== undefined
+      ) {
         // NEW: EPUB implementation
         await epubNotesService.saveChatNote(
-          filename,
+          epubId,
           currentNavId,
           currentChapterId || 'unknown',
           currentChapterTitle || 'Unknown Chapter',
@@ -307,7 +314,7 @@ export default function ChatInterface({
         documentType === 'pdf'
           ? chatService.streamChat(
               currentInput,
-              filename,
+              pdfId!,
               currentPage!, // We know currentPage is defined for PDFs
               chatHistory,
               controller.signal,
@@ -315,7 +322,7 @@ export default function ChatInterface({
             )
           : chatService.streamChatEpub(
               currentInput,
-              filename,
+              epubId!,
               currentNavId!, // We know currentNavId is defined for EPUBs
               chatHistory,
               controller.signal,

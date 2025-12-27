@@ -18,6 +18,7 @@ import {
 } from '../utils/epubHighlights';
 
 interface EPUBViewerProps {
+  epubId?: number;
   filename?: string;
   onNavIdChange?: (navId: string) => void;
   onChapterInfoChange?: (chapterId: string, chapterTitle: string) => void;
@@ -55,6 +56,7 @@ type ChapterOption = {
 };
 
 export default function EPUBViewer({
+  epubId,
   filename,
   onNavIdChange,
   onChapterInfoChange,
