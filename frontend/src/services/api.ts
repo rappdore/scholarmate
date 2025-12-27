@@ -77,22 +77,22 @@ export const pdfService = {
     return response.data;
   },
 
-  getPDFInfo: async (filename: string): Promise<PDFInfo> => {
-    const response = await api.get(`/pdf/${filename}/info`);
+  getPDFInfo: async (pdfId: number): Promise<PDFInfo> => {
+    const response = await api.get(`/pdf/${pdfId}/info`);
     return response.data;
   },
 
-  getPageText: async (filename: string, pageNum: number): Promise<string> => {
-    const response = await api.get(`/pdf/${filename}/text/${pageNum}`);
+  getPageText: async (pdfId: number, pageNum: number): Promise<string> => {
+    const response = await api.get(`/pdf/${pdfId}/text/${pageNum}`);
     return response.data;
   },
 
   saveReadingProgress: async (
-    filename: string,
+    pdfId: number,
     lastPage: number,
     totalPages: number
   ): Promise<any> => {
-    const response = await api.put(`/pdf/${filename}/progress`, {
+    const response = await api.put(`/pdf/${pdfId}/progress`, {
       last_page: lastPage,
       total_pages: totalPages,
     });
@@ -100,8 +100,9 @@ export const pdfService = {
   },
 
   getReadingProgress: async (
-    filename: string
+    pdfId: number
   ): Promise<{
+    pdf_id: number;
     pdf_filename: string;
     last_page: number;
     total_pages: number | null;
@@ -110,7 +111,7 @@ export const pdfService = {
     status_updated_at: string | null;
     manually_set: boolean;
   }> => {
-    const response = await api.get(`/pdf/${filename}/progress`);
+    const response = await api.get(`/pdf/${pdfId}/progress`);
     return response.data;
   },
 
@@ -121,21 +122,20 @@ export const pdfService = {
     return response.data;
   },
 
-  // New status management methods
   updateBookStatus: async (
-    filename: string,
+    pdfId: number,
     status: string,
     manually_set: boolean = true
   ): Promise<any> => {
-    const response = await api.put(`/pdf/${filename}/status`, {
+    const response = await api.put(`/pdf/${pdfId}/status`, {
       status,
       manually_set,
     });
     return response.data;
   },
 
-  deleteBook: async (filename: string): Promise<any> => {
-    const response = await api.delete(`/pdf/${filename}`);
+  deleteBook: async (pdfId: number): Promise<any> => {
+    const response = await api.delete(`/pdf/${pdfId}`);
     return response.data;
   },
 
@@ -149,8 +149,8 @@ export const pdfService = {
     return response.data;
   },
 
-  getThumbnailUrl: (filename: string): string => {
-    return `http://localhost:8000/pdf/${encodeURIComponent(filename)}/thumbnail`;
+  getThumbnailUrl: (pdfId: number): string => {
+    return `http://localhost:8000/pdf/${pdfId}/thumbnail`;
   },
 
   refreshPDFCache: async (): Promise<{
@@ -166,13 +166,13 @@ export const pdfService = {
 
 export const notesService = {
   saveChatNote: async (
-    pdfFilename: string,
+    pdfId: number,
     pageNumber: number,
     title: string,
     chatContent: string
   ): Promise<any> => {
     const response = await api.post('/notes/chat', {
-      pdf_filename: pdfFilename,
+      pdf_id: pdfId,
       page_number: pageNumber,
       title: title,
       chat_content: chatContent,
@@ -181,11 +181,11 @@ export const notesService = {
   },
 
   getChatNotesForPdf: async (
-    pdfFilename: string,
+    pdfId: number,
     pageNumber?: number
   ): Promise<any[]> => {
     const params = pageNumber ? `?page_number=${pageNumber}` : '';
-    const response = await api.get(`/notes/chat/${pdfFilename}${params}`);
+    const response = await api.get(`/notes/chat/pdf/${pdfId}${params}`);
     return response.data;
   },
 
@@ -206,9 +206,9 @@ export const aiService = {
     return response.data;
   },
 
-  analyzePage: async (filename: string, pageNum: number, context?: string) => {
+  analyzePage: async (pdfId: number, pageNum: number, context?: string) => {
     const response = await api.post('/ai/analyze', {
-      filename,
+      pdf_id: pdfId,
       page_num: pageNum,
       context: context || '',
     });
@@ -216,12 +216,12 @@ export const aiService = {
   },
 
   analyzeEpubSection: async (
-    filename: string,
+    epubId: number,
     navId: string,
     context?: string
   ) => {
     const response = await api.post('/ai/analyze-epub-section', {
-      filename,
+      epub_id: epubId,
       nav_id: navId,
       context: context || '',
     });
@@ -229,7 +229,7 @@ export const aiService = {
   },
 
   streamAnalyzePage: async function* (
-    filename: string,
+    pdfId: number,
     pageNum: number,
     context?: string
   ): AsyncGenerator<
@@ -246,7 +246,7 @@ export const aiService = {
     console.log('🚀 [FETCH REQUEST - STREAM ANALYZE]', {
       url,
       method: 'POST',
-      filename,
+      pdfId,
       pageNum,
       context,
       timestamp: new Date().toISOString(),
@@ -259,7 +259,7 @@ export const aiService = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          filename,
+          pdf_id: pdfId,
           page_num: pageNum,
           context: context || '',
         }),
@@ -357,7 +357,7 @@ export const aiService = {
   },
 
   streamAnalyzeEpubSection: async function* (
-    filename: string,
+    epubId: number,
     navId: string,
     context?: string
   ): AsyncGenerator<
@@ -379,7 +379,7 @@ export const aiService = {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            filename,
+            epub_id: epubId,
             nav_id: navId,
             context: context || '',
           }),
@@ -432,12 +432,12 @@ export const aiService = {
   },
 
   getPageContext: async (
-    filename: string,
+    pdfId: number,
     pageNum: number,
     contextPages: number = 1
   ) => {
     const response = await api.get(
-      `/ai/${filename}/context/${pageNum}?context_pages=${contextPages}`
+      `/ai/pdf/${pdfId}/context/${pageNum}?context_pages=${contextPages}`
     );
     return response.data;
   },
@@ -466,7 +466,7 @@ export const chatService = {
 
   streamChat: async function* (
     message: string,
-    filename: string,
+    pdfId: number,
     pageNum: number,
     chatHistory?: Array<{ role: string; content: string }>,
     abortSignal?: AbortSignal,
@@ -494,7 +494,7 @@ export const chatService = {
       url,
       method: 'POST',
       message,
-      filename,
+      pdfId,
       pageNum,
       isNewChat,
       hasAbortSignal: !!abortSignal,
@@ -510,7 +510,7 @@ export const chatService = {
         },
         body: JSON.stringify({
           message,
-          filename,
+          pdf_id: pdfId,
           page_num: pageNum,
           chat_history: chatHistory,
           is_new_chat: isNewChat || false,
@@ -590,7 +590,7 @@ export const chatService = {
 
   streamChatEpub: async function* (
     message: string,
-    filename: string,
+    epubId: number,
     navId: string,
     chatHistory?: Array<{ role: string; content: string }>,
     abortSignal?: AbortSignal,
@@ -621,7 +621,7 @@ export const chatService = {
         },
         body: JSON.stringify({
           message,
-          filename,
+          epub_id: epubId,
           nav_id: navId,
           chat_history: chatHistory,
           is_new_chat: isNewChat || false,
@@ -700,6 +700,7 @@ export const highlightService = {
 
     return {
       id: backendHighlight.id.toString(), // Convert number to string for frontend
+      pdf_id: backendHighlight.pdf_id,
       pdfFilename: backendHighlight.pdf_filename,
       pageNumber: backendHighlight.page_number,
       selectedText: backendHighlight.selected_text,
@@ -730,7 +731,7 @@ export const highlightService = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          pdf_filename: highlightData.pdfFilename,
+          pdf_id: highlightData.pdf_id,
           page_number: highlightData.pageNumber,
           selected_text: highlightData.selectedText,
           start_offset: highlightData.startOffset,
@@ -780,17 +781,17 @@ export const highlightService = {
   },
 
   getHighlightsForPdf: async (
-    filename: string,
+    pdfId: number,
     pageNumber?: number
   ): Promise<Highlight[]> => {
     const url =
       pageNumber !== undefined
-        ? `${API_BASE_URL}/highlights/${encodeURIComponent(filename)}/page/${pageNumber}`
-        : `${API_BASE_URL}/highlights/${encodeURIComponent(filename)}`;
+        ? `${API_BASE_URL}/highlights/pdf/${pdfId}/page/${pageNumber}`
+        : `${API_BASE_URL}/highlights/pdf/${pdfId}`;
 
     console.log('🚀 [FETCH REQUEST - GET HIGHLIGHTS]', {
       url,
-      filename,
+      pdfId,
       pageNumber,
       timestamp: new Date().toISOString(),
     });
@@ -826,14 +827,14 @@ export const highlightService = {
 
       console.log('✅ [HIGHLIGHTS RETRIEVED]', {
         count: highlights.length,
-        filename,
+        pdfId,
         pageNumber,
         timestamp: new Date().toISOString(),
       });
       return highlights;
     } catch (error) {
       console.error('❌ [GET HIGHLIGHTS FAILED]', {
-        filename,
+        pdfId,
         pageNumber,
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
@@ -965,7 +966,7 @@ export const highlightService = {
 // EPUB-specific notes service (completely separate from PDF notesService)
 export const epubNotesService = {
   saveChatNote: async (
-    epubFilename: string,
+    epubId: number,
     navId: string,
     chapterId: string,
     chapterTitle: string,
@@ -975,7 +976,7 @@ export const epubNotesService = {
     scrollPosition?: number
   ): Promise<any> => {
     const response = await api.post('/epub-notes/chat', {
-      epub_filename: epubFilename,
+      epub_id: epubId,
       nav_id: navId,
       chapter_id: chapterId,
       chapter_title: chapterTitle,
@@ -988,7 +989,7 @@ export const epubNotesService = {
   },
 
   getChatNotesForEpub: async (
-    epubFilename: string,
+    epubId: number,
     navId?: string,
     chapterId?: string
   ): Promise<any[]> => {
@@ -997,17 +998,15 @@ export const epubNotesService = {
     if (chapterId) params.append('chapter_id', chapterId);
 
     const response = await api.get(
-      `/epub-notes/chat/${epubFilename}${params.toString() ? '?' + params.toString() : ''}`
+      `/epub-notes/chat/${epubId}${params.toString() ? '?' + params.toString() : ''}`
     );
     return response.data;
   },
 
   getChatNotesByChapter: async (
-    epubFilename: string
+    epubId: number
   ): Promise<Record<string, any[]>> => {
-    const response = await api.get(
-      `/epub-notes/chat/${epubFilename}/by-chapter`
-    );
+    const response = await api.get(`/epub-notes/chat/${epubId}/by-chapter`);
     return response.data;
   },
 

@@ -20,7 +20,8 @@ export interface TextSelection {
 
 export interface Highlight {
   id: string; // Will be generated on frontend, then replaced with backend ID
-  pdfFilename: string;
+  pdf_id: number; // Primary identifier for the PDF document
+  pdfFilename: string; // Keep for backward compatibility and display
   pageNumber: number;
   selectedText: string;
   startOffset: number;
@@ -43,7 +44,8 @@ export enum HighlightColor {
 }
 
 export interface HighlightRequest {
-  pdfFilename: string;
+  pdf_id: number; // Use ID instead of filename for API requests
+  pdfFilename?: string; // Optional, for backward compatibility during transition
   pageNumber: number;
   selectedText: string;
   startOffset: number;
@@ -54,7 +56,8 @@ export interface HighlightRequest {
 
 export interface HighlightResponse {
   id: number;
-  pdfFilename: string;
+  pdf_id: number; // Primary identifier for the PDF document
+  pdfFilename: string; // Keep for backward compatibility
   pageNumber: number;
   selectedText: string;
   startOffset: number;
@@ -87,6 +90,7 @@ export interface HighlightState {
 }
 
 // Utility type for creating highlights without backend-specific fields
+// Includes pdf_id as required, pdfFilename optional for display
 export type CreateHighlightData = Omit<
   Highlight,
   'id' | 'createdAt' | 'updatedAt'

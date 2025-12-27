@@ -45,6 +45,7 @@ export interface EPUBProgressRequest {
 }
 
 export interface EPUBProgress {
+  epub_id: number;
   epub_filename: string;
   current_nav_id: string;
   chapter_id?: string;
@@ -65,39 +66,35 @@ export const epubService = {
     return response.data;
   },
 
-  getEPUBInfo: async (filename: string): Promise<EPUBDocumentInfo> => {
-    const response = await api.get(`/epub/${filename}/info`);
+  getEPUBInfo: async (epubId: number): Promise<EPUBDocumentInfo> => {
+    const response = await api.get(`/epub/${epubId}/info`);
     return response.data;
   },
 
-  getEPUBFile: async (filename: string): Promise<any> => {
+  getEPUBFile: async (epubId: number): Promise<any> => {
     // This will return 404 for now as per the plan
-    const response = await api.get(`/epub/${filename}/file`);
+    const response = await api.get(`/epub/${epubId}/file`);
     return response.data;
   },
 
-  getThumbnailUrl: (filename: string): string => {
-    return `http://localhost:8000/epub/${encodeURIComponent(filename)}/thumbnail`;
+  getThumbnailUrl: (epubId: number): string => {
+    return `http://localhost:8000/epub/${epubId}/thumbnail`;
   },
 
-  getNavigation: async (filename: string): Promise<EPUBNavigationResponse> => {
+  getNavigation: async (epubId: number): Promise<EPUBNavigationResponse> => {
+    const response = await api.get(`/epub/${epubId}/navigation`);
+    return response.data;
+  },
+
+  getContent: async (epubId: number, navId: string): Promise<any> => {
     const response = await api.get(
-      `/epub/${encodeURIComponent(filename)}/navigation`
+      `/epub/${epubId}/content/${encodeURIComponent(navId)}`
     );
     return response.data;
   },
 
-  getContent: async (filename: string, navId: string): Promise<any> => {
-    const response = await api.get(
-      `/epub/${encodeURIComponent(filename)}/content/${encodeURIComponent(navId)}`
-    );
-    return response.data;
-  },
-
-  getStyles: async (filename: string): Promise<any> => {
-    const response = await api.get(
-      `/epub/${encodeURIComponent(filename)}/styles`
-    );
+  getStyles: async (epubId: number): Promise<any> => {
+    const response = await api.get(`/epub/${epubId}/styles`);
     return response.data;
   },
 
@@ -106,20 +103,15 @@ export const epubService = {
   // ========================================
 
   saveEPUBProgress: async (
-    filename: string,
+    epubId: number,
     progressData: EPUBProgressRequest
   ): Promise<any> => {
-    const response = await api.put(
-      `/epub/${encodeURIComponent(filename)}/progress`,
-      progressData
-    );
+    const response = await api.put(`/epub/${epubId}/progress`, progressData);
     return response.data;
   },
 
-  getEPUBProgress: async (filename: string): Promise<EPUBProgress> => {
-    const response = await api.get(
-      `/epub/${encodeURIComponent(filename)}/progress`
-    );
+  getEPUBProgress: async (epubId: number): Promise<EPUBProgress> => {
+    const response = await api.get(`/epub/${epubId}/progress`);
     return response.data;
   },
 
@@ -131,17 +123,14 @@ export const epubService = {
   },
 
   updateEPUBBookStatus: async (
-    filename: string,
+    epubId: number,
     status: string,
     manually_set: boolean = true
   ): Promise<any> => {
-    const response = await api.put(
-      `/epub/${encodeURIComponent(filename)}/status`,
-      {
-        status,
-        manually_set,
-      }
-    );
+    const response = await api.put(`/epub/${epubId}/status`, {
+      status,
+      manually_set,
+    });
     return response.data;
   },
 
@@ -150,17 +139,17 @@ export const epubService = {
     return response.data;
   },
 
-  deleteEPUBBook: async (filename: string): Promise<any> => {
-    const response = await api.delete(`/epub/${encodeURIComponent(filename)}`);
+  deleteEPUBBook: async (epubId: number): Promise<any> => {
+    const response = await api.delete(`/epub/${epubId}`);
     return response.data;
   },
 
   getEPUBChapterProgress: async (
-    filename: string,
+    epubId: number,
     chapterId: string
   ): Promise<any> => {
     const response = await api.get(
-      `/epub/${encodeURIComponent(filename)}/chapter-progress/${chapterId}`
+      `/epub/${epubId}/chapter-progress/${chapterId}`
     );
     return response.data;
   },
@@ -170,32 +159,35 @@ export const epubService = {
   // ========================================
 
   createEPUBHighlight: async (
-    filename: string,
-    highlightData: Omit<EPUBHighlight, 'id' | 'created_at' | 'document_id'>
+    epubId: number,
+    highlightData: Omit<
+      EPUBHighlight,
+      'id' | 'created_at' | 'document_id' | 'epub_id'
+    >
   ): Promise<EPUBHighlight> => {
     const response = await api.post(`/epub-highlights/create`, {
       ...highlightData,
-      document_id: filename,
+      epub_id: epubId,
     });
     return response.data;
   },
 
   getSectionHighlights: async (
-    filename: string,
+    epubId: number,
     navId: string
   ): Promise<EPUBHighlight[]> => {
     const response = await api.get(
-      `/epub-highlights/${encodeURIComponent(filename)}/section/${encodeURIComponent(navId)}`
+      `/epub-highlights/${epubId}/section/${encodeURIComponent(navId)}`
     );
     return response.data;
   },
 
   getChapterHighlights: async (
-    filename: string,
+    epubId: number,
     chapterId: string
   ): Promise<EPUBHighlight[]> => {
     const response = await api.get(
-      `/epub-highlights/${encodeURIComponent(filename)}/chapter/${encodeURIComponent(chapterId)}`
+      `/epub-highlights/${epubId}/chapter/${encodeURIComponent(chapterId)}`
     );
     return response.data;
   },

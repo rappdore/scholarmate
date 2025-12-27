@@ -12,7 +12,8 @@ export type DocumentType = 'pdf' | 'epub';
 
 // Base document interface with common fields
 export interface BaseDocument {
-  filename: string;
+  id: number; // Primary identifier (pdf_id or epub_id from backend)
+  filename: string; // Keep for display purposes
   type: DocumentType;
   title: string;
   author: string;
@@ -31,12 +32,14 @@ export interface BaseDocument {
 // PDF-specific document interface
 export interface PDFDocument extends BaseDocument {
   type: 'pdf';
+  pdf_id: number; // Alias for id (explicit for PDF context)
   num_pages: number;
 }
 
 // EPUB-specific document interface
 export interface EPUBDocument extends BaseDocument {
   type: 'epub';
+  epub_id: number; // Alias for id (explicit for EPUB context)
   chapters: number;
   subject?: string;
   publisher?: string;
@@ -46,7 +49,7 @@ export interface EPUBDocument extends BaseDocument {
 // Union type for all documents
 export type Document = PDFDocument | EPUBDocument;
 
-// Extended info interfaces
+// Extended info interfaces (inherits id and pdf_id/epub_id from base)
 export interface PDFDocumentInfo extends PDFDocument {
   subject?: string;
   creator?: string;

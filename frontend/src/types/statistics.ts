@@ -38,7 +38,8 @@ export interface CalendarDay {
 }
 
 export interface SessionsResponse {
-  pdf_filename: string;
+  pdf_id: number; // Primary identifier for the PDF document
+  pdf_filename: string; // Keep for backward compatibility and display
   total_sessions: number;
   sessions: ReadingSession[];
 }
