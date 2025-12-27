@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .base_database_service import BaseDatabaseService
+from .pdf_documents_service import PDFDocumentsService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class ReadingProgressService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
+        # Phase 2a: Initialize PDF documents service for pdf_id lookups
+        self._pdf_docs_service = PDFDocumentsService(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -47,7 +50,43 @@ class ReadingProgressService(BaseDatabaseService):
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- When this record was last modified
                 )
             """)
+
+            # Phase 2a: Add pdf_id column if it doesn't exist (backward compatible migration)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(reading_progress)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "pdf_id" not in columns:
+                logger.info("Adding pdf_id column to reading_progress table...")
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN pdf_id INTEGER")
+                logger.info("pdf_id column added successfully")
+
+            # Create index on pdf_id if it doesn't exist
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reading_progress_pdf_id
+                ON reading_progress(pdf_id)
+            """)
+
             conn.commit()
+
+    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
+        """
+        Get the pdf_id for a given PDF filename.
+
+        Args:
+            pdf_filename (str): Name of the PDF file
+
+        Returns:
+            Optional[int]: The pdf_id if found, None otherwise
+        """
+        try:
+            pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
+            if pdf_doc:
+                return pdf_doc.get("id")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not look up pdf_id for {pdf_filename}: {e}")
+            return None
 
     def save_progress(
         self, pdf_filename: str, last_page: int, total_pages: int
@@ -64,29 +103,35 @@ class ReadingProgressService(BaseDatabaseService):
             bool: True if the operation was successful, False otherwise
         """
         try:
+            # Phase 2a: Look up pdf_id for this filename
+            pdf_id = self._get_pdf_id(pdf_filename)
+
             # Check if record exists
             existing = self.get_progress(pdf_filename)
 
             if existing:
                 # Update existing record, preserving status fields
+                # Phase 2a: Also update pdf_id if it's not set
                 query = """
                     UPDATE reading_progress
-                    SET last_page = ?, total_pages = ?, last_updated = ?
+                    SET last_page = ?, total_pages = ?, last_updated = ?, pdf_id = ?
                     WHERE pdf_filename = ?
                 """
                 params = (
                     last_page,
                     total_pages,
                     self.get_current_timestamp(),
+                    pdf_id,
                     pdf_filename,
                 )
                 result = self.execute_update_delete(query, params)
             else:
                 # Insert new record with default status values
+                # Phase 2a: Include pdf_id in insert
                 query = """
                     INSERT INTO reading_progress
-                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     pdf_filename,
@@ -96,12 +141,14 @@ class ReadingProgressService(BaseDatabaseService):
                     "new",  # Default status for new records
                     self.get_current_timestamp(),
                     False,  # Default manually_set for new records
+                    pdf_id,  # Phase 2a: Auto-populate pdf_id
                 )
                 result = self.execute_insert(query, params)
 
             if result is not None:
                 logger.info(
                     f"Saved reading progress for {pdf_filename}: page {last_page}"
+                    + (f" (pdf_id: {pdf_id})" if pdf_id else "")
                 )
                 return True
             return False
@@ -120,9 +167,10 @@ class ReadingProgressService(BaseDatabaseService):
             Optional[Dict[str, Any]]: Dictionary containing progress information or None
         """
         try:
+            # Phase 2a: Include pdf_id in SELECT
             query = """
                 SELECT pdf_filename, last_page, total_pages, last_updated,
-                       status, status_updated_at, manually_set
+                       status, status_updated_at, manually_set, pdf_id
                 FROM reading_progress
                 WHERE pdf_filename = ?
             """
@@ -137,6 +185,9 @@ class ReadingProgressService(BaseDatabaseService):
                     "status": row[4] if row[4] else "new",
                     "status_updated_at": row[5],
                     "manually_set": bool(row[6]) if row[6] is not None else False,
+                    "pdf_id": row[7]
+                    if len(row) > 7
+                    else None,  # Phase 2a: Include pdf_id
                 }
             return None
         except Exception as e:
@@ -151,9 +202,10 @@ class ReadingProgressService(BaseDatabaseService):
             Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
         """
         try:
+            # Phase 2a: Include pdf_id in SELECT
             query = """
                 SELECT pdf_filename, last_page, total_pages, last_updated,
-                       status, status_updated_at, manually_set
+                       status, status_updated_at, manually_set, pdf_id
                 FROM reading_progress
                 ORDER BY last_updated DESC
             """
@@ -169,6 +221,9 @@ class ReadingProgressService(BaseDatabaseService):
                         "status": row[4] if row[4] else "new",
                         "status_updated_at": row[5],
                         "manually_set": bool(row[6]) if row[6] is not None else False,
+                        "pdf_id": row[7]
+                        if len(row) > 7
+                        else None,  # Phase 2a: Include pdf_id
                     }
             return progress
         except Exception as e:
@@ -198,6 +253,9 @@ class ReadingProgressService(BaseDatabaseService):
                 )
                 return False
 
+            # Phase 2a: Look up pdf_id for this filename
+            pdf_id = self._get_pdf_id(pdf_filename)
+
             # Check if record exists, create if not
             existing = self.get_progress(pdf_filename)
             logger.info(
@@ -207,10 +265,11 @@ class ReadingProgressService(BaseDatabaseService):
             if not existing:
                 # Create a new record with default values if it doesn't exist
                 logger.info(f"Creating new record for {pdf_filename}")
+                # Phase 2a: Include pdf_id in insert
                 query = """
                     INSERT INTO reading_progress
-                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = (
                     pdf_filename,
@@ -220,20 +279,29 @@ class ReadingProgressService(BaseDatabaseService):
                     status,
                     self.get_current_timestamp(),
                     manual,
+                    pdf_id,  # Phase 2a: Auto-populate pdf_id
                 )
                 result = self.execute_insert(query, params)
                 logger.info(f"Insert result: {result}")
             else:
                 # Update existing record
                 logger.info(f"Updating existing record for {pdf_filename}")
+                # Phase 2a: Also update pdf_id if it's not set
                 query = """
                     UPDATE reading_progress
                     SET status = ?,
                         status_updated_at = ?,
-                        manually_set = ?
+                        manually_set = ?,
+                        pdf_id = ?
                     WHERE pdf_filename = ?
                 """
-                params = (status, self.get_current_timestamp(), manual, pdf_filename)
+                params = (
+                    status,
+                    self.get_current_timestamp(),
+                    manual,
+                    pdf_id,
+                    pdf_filename,
+                )
                 logger.info(f"Update query: {query}, params: {params}")
                 result = self.execute_update_delete(query, params)
                 logger.info(f"Update result: {result}")
@@ -241,6 +309,7 @@ class ReadingProgressService(BaseDatabaseService):
             if result:
                 logger.info(
                     f"Updated status for {pdf_filename} to '{status}' (manual: {manual})"
+                    + (f" (pdf_id: {pdf_id})" if pdf_id else "")
                 )
                 return True
             else:
@@ -267,9 +336,10 @@ class ReadingProgressService(BaseDatabaseService):
         try:
             if status is None:
                 # Return all books
+                # Phase 2a: Include pdf_id in SELECT
                 query = """
                     SELECT pdf_filename, last_page, total_pages, last_updated,
-                           status, status_updated_at, manually_set
+                           status, status_updated_at, manually_set, pdf_id
                     FROM reading_progress
                     ORDER BY status_updated_at DESC, last_updated DESC
                 """
@@ -284,9 +354,10 @@ class ReadingProgressService(BaseDatabaseService):
                     return []
 
                 # Filter by status
+                # Phase 2a: Include pdf_id in SELECT
                 query = """
                     SELECT pdf_filename, last_page, total_pages, last_updated,
-                           status, status_updated_at, manually_set
+                           status, status_updated_at, manually_set, pdf_id
                     FROM reading_progress
                     WHERE status = ?
                     ORDER BY status_updated_at DESC, last_updated DESC
@@ -314,6 +385,9 @@ class ReadingProgressService(BaseDatabaseService):
                         "status": row[4] if row[4] else "new",
                         "status_updated_at": row[5],
                         "manually_set": bool(row[6]) if row[6] is not None else False,
+                        "pdf_id": row[7]
+                        if len(row) > 7
+                        else None,  # Phase 2a: Include pdf_id
                     }
                     books.append(book_data)
 
