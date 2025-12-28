@@ -10,6 +10,11 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
+from app.models.llm_types import (
+    LLMConfiguration,
+    LLMConfigurationMasked,
+)
+
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
@@ -62,29 +67,58 @@ class LLMConfigService:
             return "***"
         return f"{api_key[:8]}***{api_key[-4:]}"
 
-    def _row_to_dict(self, row: sqlite3.Row, mask_key: bool = True) -> Dict[str, Any]:
+    def _row_to_dict_full(self, row: sqlite3.Row) -> LLMConfiguration:
         """
-        Convert a database row to a dictionary.
+        Convert a database row to a typed configuration dict with full API key.
 
         Args:
             row: SQLite row object
-            mask_key: Whether to mask the API key
 
         Returns:
-            Dict with configuration data
+            LLMConfiguration with full API key
         """
-        config = dict(row)
-        if mask_key and "api_key" in config:
-            config["api_key_preview"] = self.mask_api_key(config["api_key"])
-            del config["api_key"]  # Remove full key from response
-        return config
+        return LLMConfiguration(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            base_url=row["base_url"],
+            api_key=row["api_key"],
+            model_name=row["model_name"],
+            is_active=bool(row["is_active"]),
+            always_starts_with_thinking=bool(row["always_starts_with_thinking"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
-    def get_all_configurations(self) -> List[Dict[str, Any]]:
+    def _row_to_dict_masked(self, row: sqlite3.Row) -> LLMConfigurationMasked:
+        """
+        Convert a database row to a typed configuration dict with masked API key.
+
+        Args:
+            row: SQLite row object
+
+        Returns:
+            LLMConfigurationMasked with masked API key preview
+        """
+        return LLMConfigurationMasked(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            base_url=row["base_url"],
+            api_key_preview=self.mask_api_key(row["api_key"]),
+            model_name=row["model_name"],
+            is_active=bool(row["is_active"]),
+            always_starts_with_thinking=bool(row["always_starts_with_thinking"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def get_all_configurations(self) -> List[LLMConfigurationMasked]:
         """
         Retrieve all LLM configurations with masked API keys.
 
         Returns:
-            List of configuration dictionaries
+            List of LLMConfigurationMasked dictionaries
         """
         try:
             with self.get_connection() as conn:
@@ -95,17 +129,17 @@ class LLMConfigService:
                     ORDER BY is_active DESC, name ASC
                 """)
                 rows = cursor.fetchall()
-                return [self._row_to_dict(row) for row in rows]
+                return [self._row_to_dict_masked(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching all configurations: {e}")
             raise
 
-    def get_active_configuration(self) -> Optional[Dict[str, Any]]:
+    def get_active_configuration(self) -> Optional[LLMConfiguration]:
         """
         Get the currently active LLM configuration with full API key.
 
         Returns:
-            Configuration dictionary with full API key, or None if no active config
+            LLMConfiguration with full API key, or None if no active config
         """
         try:
             with self.get_connection() as conn:
@@ -118,13 +152,15 @@ class LLMConfigService:
                 """)
                 row = cursor.fetchone()
                 if row:
-                    return self._row_to_dict(row, mask_key=False)
+                    return self._row_to_dict_full(row)
                 return None
         except Exception as e:
             logger.error(f"Error fetching active configuration: {e}")
             raise
 
-    def get_configuration_by_id(self, config_id: int) -> Optional[Dict[str, Any]]:
+    def get_configuration_by_id(
+        self, config_id: int
+    ) -> Optional[LLMConfigurationMasked]:
         """
         Get a specific configuration by ID with masked API key.
 
@@ -132,7 +168,7 @@ class LLMConfigService:
             config_id: Configuration ID
 
         Returns:
-            Configuration dictionary or None if not found
+            LLMConfigurationMasked or None if not found
         """
         try:
             with self.get_connection() as conn:
@@ -147,7 +183,7 @@ class LLMConfigService:
                 )
                 row = cursor.fetchone()
                 if row:
-                    return self._row_to_dict(row)
+                    return self._row_to_dict_masked(row)
                 return None
         except Exception as e:
             logger.error(f"Error fetching configuration {config_id}: {e}")
@@ -159,10 +195,10 @@ class LLMConfigService:
         base_url: str,
         api_key: str,
         model_name: str,
-        description: str = None,
+        description: Optional[str] = None,
         is_active: bool = False,
         always_starts_with_thinking: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> LLMConfigurationMasked:
         """
         Create a new LLM configuration.
 
@@ -219,7 +255,12 @@ class LLMConfigService:
                 logger.info(f"Created LLM configuration: {name} (ID: {config_id})")
 
                 # Return the created configuration
-                return self.get_configuration_by_id(config_id)
+                created_config = self.get_configuration_by_id(config_id)
+                if not created_config:
+                    raise ValueError(
+                        f"Failed to retrieve created configuration {config_id}"
+                    )
+                return created_config
         except Exception as e:
             logger.error(f"Error creating configuration: {e}")
             raise
@@ -227,13 +268,13 @@ class LLMConfigService:
     def update_configuration(
         self,
         config_id: int,
-        name: str = None,
-        description: str = None,
-        base_url: str = None,
-        api_key: str = None,
-        model_name: str = None,
-        always_starts_with_thinking: bool = None,
-    ) -> Dict[str, Any]:
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
+        always_starts_with_thinking: Optional[bool] = None,
+    ) -> LLMConfigurationMasked:
         """
         Update an existing LLM configuration.
         Cannot update is_active flag (use activate_configuration instead).
@@ -264,8 +305,8 @@ class LLMConfigService:
                     raise ValueError(f"Configuration with ID {config_id} not found")
 
                 # Build dynamic UPDATE query for provided fields
-                updates = []
-                params = []
+                updates: List[str] = []
+                params: List[Any] = []
 
                 if name is not None:
                     # Check if new name conflicts with existing
@@ -302,7 +343,10 @@ class LLMConfigService:
 
                 if not updates:
                     # No updates provided, just return current config
-                    return self.get_configuration_by_id(config_id)
+                    current_config = self.get_configuration_by_id(config_id)
+                    if not current_config:
+                        raise ValueError(f"Configuration with ID {config_id} not found")
+                    return current_config
 
                 # Add updated_at timestamp
                 updates.append("updated_at = CURRENT_TIMESTAMP")
@@ -317,7 +361,12 @@ class LLMConfigService:
 
                 logger.info(f"Updated LLM configuration ID: {config_id}")
 
-                return self.get_configuration_by_id(config_id)
+                updated_config = self.get_configuration_by_id(config_id)
+                if not updated_config:
+                    raise ValueError(
+                        f"Failed to retrieve updated configuration {config_id}"
+                    )
+                return updated_config
         except Exception as e:
             logger.error(f"Error updating configuration {config_id}: {e}")
             raise

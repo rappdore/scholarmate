@@ -12,12 +12,13 @@ Provides API endpoints for managing LLM configurations:
 """
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from app.models.llm_types import LLMConfiguration, LLMConfigurationMasked
 from app.services.llm_config_service import LLMConfigService
 
 # Configure logger
@@ -83,7 +84,9 @@ async def list_configurations():
         Dictionary with list of configurations
     """
     try:
-        configurations = llm_config_service.get_all_configurations()
+        configurations: List[LLMConfigurationMasked] = (
+            llm_config_service.get_all_configurations()
+        )
         return {"configurations": configurations}
     except Exception as e:
         logger.error(f"Error listing configurations: {e}")
@@ -102,20 +105,29 @@ async def get_active_configuration():
         404: No active configuration found
     """
     try:
-        config = llm_config_service.get_active_configuration()
+        config: Optional[LLMConfiguration] = (
+            llm_config_service.get_active_configuration()
+        )
         if not config:
             raise HTTPException(
                 status_code=404, detail="No active LLM configuration found"
             )
 
-        # Mask the API key for response
-        if "api_key" in config:
-            config["api_key_preview"] = llm_config_service.mask_api_key(
-                config["api_key"]
-            )
-            del config["api_key"]
+        # Convert to masked version for response
+        masked_config: LLMConfigurationMasked = {
+            "id": config["id"],
+            "name": config["name"],
+            "description": config["description"],
+            "base_url": config["base_url"],
+            "api_key_preview": llm_config_service.mask_api_key(config["api_key"]),
+            "model_name": config["model_name"],
+            "is_active": config["is_active"],
+            "always_starts_with_thinking": config["always_starts_with_thinking"],
+            "created_at": config["created_at"],
+            "updated_at": config["updated_at"],
+        }
 
-        return config
+        return masked_config
     except HTTPException:
         raise
     except Exception as e:
@@ -138,7 +150,9 @@ async def get_configuration(config_id: int):
         404: Configuration not found
     """
     try:
-        config = llm_config_service.get_configuration_by_id(config_id)
+        config: Optional[LLMConfigurationMasked] = (
+            llm_config_service.get_configuration_by_id(config_id)
+        )
         if not config:
             raise HTTPException(
                 status_code=404, detail=f"Configuration with ID {config_id} not found"
@@ -167,7 +181,7 @@ async def create_configuration(config: LLMConfigCreate):
         409: Configuration name already exists
     """
     try:
-        created = llm_config_service.create_configuration(
+        created: LLMConfigurationMasked = llm_config_service.create_configuration(
             name=config.name,
             base_url=config.base_url,
             api_key=config.api_key,
@@ -202,7 +216,7 @@ async def update_configuration(config_id: int, updates: LLMConfigUpdate):
         409: Updated name already exists
     """
     try:
-        updated = llm_config_service.update_configuration(
+        updated: LLMConfigurationMasked = llm_config_service.update_configuration(
             config_id=config_id,
             name=updates.name,
             description=updates.description,
@@ -356,11 +370,12 @@ async def test_configuration(config_id: int):
 
             latency_ms = int((time.time() - start_time) * 1000)
 
+            content = response.choices[0].message.content or ""
             return {
                 "success": True,
                 "message": "Connection successful",
                 "model_name": model_name,
-                "test_response": response.choices[0].message.content.strip(),
+                "test_response": content.strip(),
                 "latency_ms": latency_ms,
             }
 
