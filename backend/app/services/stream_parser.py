@@ -118,9 +118,9 @@ class ThinkingStreamParser:
         # Look for <think> opening tag (case-insensitive)
         open_match = self._THINK_OPEN_PATTERN.search(self.buffer)
 
-        # TODO: TEMPORARY FIX - Replace with config-based solution later
+        # NOTE: Fallback handling for models that omit <think> opening tags
         # Check for orphaned </think> tag (closing tag without opening tag)
-        # This happens with some models that don't emit <think> opening tags
+        # Use 'always_starts_with_thinking' config flag to prevent this scenario
         # IMPORTANT: Only treat as orphaned if we found </think> BEFORE any <think>
         close_match = self._THINK_CLOSE_PATTERN.search(self.buffer)
 
