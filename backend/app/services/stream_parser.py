@@ -38,9 +38,10 @@ class ThinkingStreamParser:
     - Case-insensitive tag matching
     - Content before, inside, and after thinking blocks
     - Single thinking block (as per model assumptions)
+    - Models that always start with thinking (without opening <think> tag)
 
     Usage:
-        parser = ThinkingStreamParser()
+        parser = ThinkingStreamParser(always_starts_with_thinking=False)
         async for chunk in llm_stream:
             async for structured_data in parser.process_chunk(chunk):
                 yield structured_data
@@ -52,16 +53,27 @@ class ThinkingStreamParser:
     _THINK_OPEN_PATTERN = re.compile(r"<think>", re.IGNORECASE)
     _THINK_CLOSE_PATTERN = re.compile(r"</think>", re.IGNORECASE)
 
-    def __init__(self):
-        """Initialize parser with clean state"""
-        self.state = StreamState.BEFORE_THINK
+    def __init__(self, always_starts_with_thinking: bool = False):
+        """
+        Initialize parser with clean state.
+
+        Args:
+            always_starts_with_thinking: If True, parser starts in INSIDE_THINK state,
+                                        assuming model always emits thinking content first
+        """
+        self.always_starts_with_thinking = always_starts_with_thinking
+        self.state = (
+            StreamState.INSIDE_THINK
+            if always_starts_with_thinking
+            else StreamState.BEFORE_THINK
+        )
         self.buffer = ""
-        self.thinking_started = False
+        self.thinking_started = always_starts_with_thinking
         self.thinking_complete = False
 
     def reset(self):
         """Reset parser state for new stream"""
-        self.__init__()
+        self.__init__(self.always_starts_with_thinking)
 
     async def process_chunk(self, chunk: str) -> AsyncGenerator[StreamChunk, None]:
         """
@@ -106,9 +118,9 @@ class ThinkingStreamParser:
         # Look for <think> opening tag (case-insensitive)
         open_match = self._THINK_OPEN_PATTERN.search(self.buffer)
 
-        # TODO: TEMPORARY FIX - Replace with config-based solution later
+        # NOTE: Fallback handling for models that omit <think> opening tags
         # Check for orphaned </think> tag (closing tag without opening tag)
-        # This happens with some models that don't emit <think> opening tags
+        # Use 'always_starts_with_thinking' config flag to prevent this scenario
         # IMPORTANT: Only treat as orphaned if we found </think> BEFORE any <think>
         close_match = self._THINK_CLOSE_PATTERN.search(self.buffer)
 

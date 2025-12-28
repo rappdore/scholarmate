@@ -153,10 +153,16 @@ class DualChatService:
                 {"role": "user", "content": message},
             ]
 
-            # NEW: Create parser for this stream
-            parser = ThinkingStreamParser()
+            # NEW: Create parser for this stream with config-specific flag
+            always_starts_with_thinking = llm_config.get(
+                "always_starts_with_thinking", False
+            )
+            parser = ThinkingStreamParser(
+                always_starts_with_thinking=always_starts_with_thinking
+            )
             logger.debug(
-                f"[DualChat] Initialized ThinkingStreamParser for {llm_config.get('name', 'unknown')}"
+                f"[DualChat] Initialized ThinkingStreamParser for {llm_config.get('name', 'unknown')} "
+                f"(always_starts_with_thinking={always_starts_with_thinking})"
             )
 
             # Stream from LLM and process through parser
@@ -376,7 +382,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 cursor = conn.execute(
                     """
                     SELECT id, name, description, base_url, api_key, model_name,
-                           is_active, created_at, updated_at
+                           is_active, always_starts_with_thinking, created_at, updated_at
                     FROM llm_configurations
                     WHERE id = ?
                 """,

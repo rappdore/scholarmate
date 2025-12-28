@@ -22,6 +22,7 @@ class OllamaService:
         self.model = None
         self.base_url = None
         self.api_key = None
+        self.always_starts_with_thinking = False
         # Session storage for reasoning traces, keyed by filename
         self._reasoning_sessions: Dict[str, list] = {}
 
@@ -45,16 +46,23 @@ class OllamaService:
                 self.base_url = config["base_url"]
                 self.api_key = config["api_key"]
                 self.model = config["model_name"]
+                self.always_starts_with_thinking = config.get(
+                    "always_starts_with_thinking", False
+                )
                 logger.info(
                     f"✅ Loaded LLM configuration from database: {config['name']}"
                 )
                 logger.info(f"   - Base URL: {self.base_url}")
                 logger.info(f"   - Model: {self.model}")
+                logger.info(
+                    f"   - Always starts with thinking: {self.always_starts_with_thinking}"
+                )
             else:
                 # No active configuration, use LM Studio defaults
                 self.base_url = DEFAULT_BASE_URL
                 self.api_key = DEFAULT_API_KEY
                 self.model = DEFAULT_MODEL
+                self.always_starts_with_thinking = False
                 logger.warning(
                     f"⚠️  No active LLM configuration found in database. "
                     f"Using default fallback: {DEFAULT_BASE_URL}"
@@ -71,6 +79,7 @@ class OllamaService:
             self.base_url = DEFAULT_BASE_URL
             self.api_key = DEFAULT_API_KEY
             self.model = DEFAULT_MODEL
+            self.always_starts_with_thinking = False
 
             self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
 
@@ -84,6 +93,9 @@ class OllamaService:
         logger.info("✅ Configuration reloaded successfully!")
         logger.info(f"   - Base URL: {self.base_url}")
         logger.info(f"   - Model: {self.model}")
+        logger.info(
+            f"   - Always starts with thinking: {self.always_starts_with_thinking}"
+        )
 
     async def analyze_page(
         self, text: str, filename: str, page_num: int, context: str = ""
@@ -266,8 +278,12 @@ Keep responses conversational but informative. When explaining a concept, emphas
 
         try:
             # NEW: Create parser for this stream
-            parser = ThinkingStreamParser()
-            logger.debug("[LLM] Initialized ThinkingStreamParser")
+            parser = ThinkingStreamParser(
+                always_starts_with_thinking=self.always_starts_with_thinking
+            )
+            logger.debug(
+                f"[LLM] Initialized ThinkingStreamParser (always_starts_with_thinking={self.always_starts_with_thinking})"
+            )
 
             stream = await self.client.chat.completions.create(
                 model=self.model,
@@ -416,8 +432,12 @@ Keep responses conversational but informative."""
 
         try:
             # NEW: Create parser for this stream
-            parser = ThinkingStreamParser()
-            logger.debug("[LLM] Initialized ThinkingStreamParser for EPUB")
+            parser = ThinkingStreamParser(
+                always_starts_with_thinking=self.always_starts_with_thinking
+            )
+            logger.debug(
+                f"[LLM] Initialized ThinkingStreamParser for EPUB (always_starts_with_thinking={self.always_starts_with_thinking})"
+            )
 
             stream = await self.client.chat.completions.create(
                 model=self.model,

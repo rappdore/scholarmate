@@ -104,6 +104,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         description: config.description,
         base_url: config.base_url,
         model_name: config.model_name,
+        always_starts_with_thinking: config.always_starts_with_thinking,
       };
 
       // Only include API key if it was changed (not empty)

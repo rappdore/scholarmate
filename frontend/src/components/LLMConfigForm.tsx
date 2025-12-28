@@ -21,6 +21,7 @@ export default function LLMConfigForm({
     api_key: '',
     model_name: '',
     is_active: false,
+    always_starts_with_thinking: false,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,6 +37,7 @@ export default function LLMConfigForm({
         api_key: '', // Don't populate password field
         model_name: editingConfig.model_name,
         is_active: editingConfig.is_active,
+        always_starts_with_thinking: editingConfig.always_starts_with_thinking,
       });
     } else {
       // Reset form when not editing
@@ -46,6 +48,7 @@ export default function LLMConfigForm({
         api_key: '',
         model_name: '',
         is_active: false,
+        always_starts_with_thinking: false,
       });
     }
     setError(null);
@@ -235,6 +238,39 @@ export default function LLMConfigForm({
                 className={`
                   absolute top-1 w-4 h-4 bg-white rounded-full transition-transform
                   ${formData.is_active ? 'translate-x-7' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+
+          {/* Always Starts with Thinking */}
+          <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg">
+            <div>
+              <label className="block text-sm font-medium text-slate-200">
+                Always Starts with Thinking
+              </label>
+              <p className="text-xs text-slate-400">
+                Model always emits thinking content before response (skips
+                opening tag)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                handleChange(
+                  'always_starts_with_thinking',
+                  !formData.always_starts_with_thinking
+                )
+              }
+              className={`
+                relative w-12 h-6 rounded-full transition-colors
+                ${formData.always_starts_with_thinking ? 'bg-purple-600' : 'bg-slate-600'}
+              `}
+            >
+              <div
+                className={`
+                  absolute top-1 w-4 h-4 bg-white rounded-full transition-transform
+                  ${formData.always_starts_with_thinking ? 'translate-x-7' : 'translate-x-1'}
                 `}
               />
             </button>

@@ -90,7 +90,7 @@ class LLMConfigService:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT id, name, description, base_url, api_key, model_name,
-                           is_active, created_at, updated_at
+                           is_active, always_starts_with_thinking, created_at, updated_at
                     FROM llm_configurations
                     ORDER BY is_active DESC, name ASC
                 """)
@@ -111,7 +111,7 @@ class LLMConfigService:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT id, name, description, base_url, api_key, model_name,
-                           is_active, created_at, updated_at
+                           is_active, always_starts_with_thinking, created_at, updated_at
                     FROM llm_configurations
                     WHERE is_active = 1
                     LIMIT 1
@@ -139,7 +139,7 @@ class LLMConfigService:
                 cursor = conn.execute(
                     """
                     SELECT id, name, description, base_url, api_key, model_name,
-                           is_active, created_at, updated_at
+                           is_active, always_starts_with_thinking, created_at, updated_at
                     FROM llm_configurations
                     WHERE id = ?
                 """,
@@ -161,6 +161,7 @@ class LLMConfigService:
         model_name: str,
         description: str = None,
         is_active: bool = False,
+        always_starts_with_thinking: bool = False,
     ) -> Dict[str, Any]:
         """
         Create a new LLM configuration.
@@ -172,6 +173,7 @@ class LLMConfigService:
             model_name: Model identifier
             description: Optional description
             is_active: Whether to set as active (deactivates others)
+            always_starts_with_thinking: Whether model always starts with thinking block
 
         Returns:
             Created configuration dictionary
@@ -197,10 +199,18 @@ class LLMConfigService:
                 cursor = conn.execute(
                     """
                     INSERT INTO llm_configurations
-                    (name, description, base_url, api_key, model_name, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (name, description, base_url, api_key, model_name, is_active, always_starts_with_thinking)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                    (name, description, base_url, api_key, model_name, is_active),
+                    (
+                        name,
+                        description,
+                        base_url,
+                        api_key,
+                        model_name,
+                        is_active,
+                        always_starts_with_thinking,
+                    ),
                 )
 
                 config_id = cursor.lastrowid
@@ -222,6 +232,7 @@ class LLMConfigService:
         base_url: str = None,
         api_key: str = None,
         model_name: str = None,
+        always_starts_with_thinking: bool = None,
     ) -> Dict[str, Any]:
         """
         Update an existing LLM configuration.
@@ -234,6 +245,7 @@ class LLMConfigService:
             base_url: New base URL (optional)
             api_key: New API key (optional)
             model_name: New model name (optional)
+            always_starts_with_thinking: Whether model always starts with thinking block (optional)
 
         Returns:
             Updated configuration dictionary
@@ -283,6 +295,10 @@ class LLMConfigService:
                 if model_name is not None:
                     updates.append("model_name = ?")
                     params.append(model_name)
+
+                if always_starts_with_thinking is not None:
+                    updates.append("always_starts_with_thinking = ?")
+                    params.append(always_starts_with_thinking)
 
                 if not updates:
                     # No updates provided, just return current config
