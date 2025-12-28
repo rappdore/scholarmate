@@ -11,6 +11,7 @@ export interface LLMConfiguration {
   base_url: string;
   model_name: string;
   is_active: boolean;
+  always_starts_with_thinking: boolean;
   created_at: string;
   updated_at: string;
   api_key_preview: string;
@@ -23,6 +24,7 @@ export interface LLMConfigCreate {
   api_key: string;
   model_name: string;
   is_active?: boolean;
+  always_starts_with_thinking?: boolean;
 }
 
 export interface LLMConfigUpdate {
@@ -31,6 +33,7 @@ export interface LLMConfigUpdate {
   base_url?: string;
   api_key?: string;
   model_name?: string;
+  always_starts_with_thinking?: boolean;
 }
 
 export interface LLMConfigListResponse {

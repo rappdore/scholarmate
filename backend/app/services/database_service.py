@@ -302,6 +302,7 @@ class DatabaseService:
                     api_key TEXT NOT NULL,                    -- Authentication key
                     model_name TEXT NOT NULL,                 -- Model identifier
                     is_active BOOLEAN DEFAULT FALSE,          -- Active configuration flag
+                    always_starts_with_thinking BOOLEAN NOT NULL DEFAULT 0,  -- Whether model always starts with thinking block
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -323,6 +324,19 @@ class DatabaseService:
                     UPDATE llm_configurations SET is_active = 0 WHERE id != NEW.id;
                 END
             """)
+
+            # Add always_starts_with_thinking column if it doesn't exist (backward compatible)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(llm_configurations)")
+            columns = [column[1] for column in cursor.fetchall()]
+            if "always_starts_with_thinking" not in columns:
+                logger.info(
+                    "Adding always_starts_with_thinking column to llm_configurations table..."
+                )
+                conn.execute(
+                    "ALTER TABLE llm_configurations ADD COLUMN always_starts_with_thinking BOOLEAN NOT NULL DEFAULT 0"
+                )
+                logger.info("always_starts_with_thinking column added successfully")
 
             conn.commit()
 

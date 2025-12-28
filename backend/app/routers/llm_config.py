@@ -48,6 +48,9 @@ class LLMConfigCreate(BaseModel):
         ..., min_length=1, max_length=200, description="Model identifier"
     )
     is_active: bool = Field(False, description="Whether to set as active configuration")
+    always_starts_with_thinking: bool = Field(
+        False, description="Whether model always starts responses with thinking block"
+    )
 
 
 class LLMConfigUpdate(BaseModel):
@@ -65,6 +68,9 @@ class LLMConfigUpdate(BaseModel):
     )
     model_name: Optional[str] = Field(
         None, min_length=1, max_length=200, description="Model identifier"
+    )
+    always_starts_with_thinking: Optional[bool] = Field(
+        None, description="Whether model always starts responses with thinking block"
     )
 
 
@@ -168,6 +174,7 @@ async def create_configuration(config: LLMConfigCreate):
             model_name=config.model_name,
             description=config.description,
             is_active=config.is_active,
+            always_starts_with_thinking=config.always_starts_with_thinking,
         )
         return created
     except ValueError as e:
@@ -202,6 +209,7 @@ async def update_configuration(config_id: int, updates: LLMConfigUpdate):
             base_url=updates.base_url,
             api_key=updates.api_key,
             model_name=updates.model_name,
+            always_starts_with_thinking=updates.always_starts_with_thinking,
         )
         return updated
     except ValueError as e:
