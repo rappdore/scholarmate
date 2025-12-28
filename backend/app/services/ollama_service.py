@@ -3,6 +3,7 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from openai import AsyncOpenAI
 
+from app.models.llm_types import LLMConfiguration
 from app.models.stream_types import StreamChunk
 from app.services.stream_parser import ThinkingStreamParser
 
@@ -39,16 +40,16 @@ class OllamaService:
             from app.services.llm_config_service import LLMConfigService
 
             llm_config_service = LLMConfigService(self.db_path)
-            config = llm_config_service.get_active_configuration()
+            config: Optional[LLMConfiguration] = (
+                llm_config_service.get_active_configuration()
+            )
 
             if config:
-                # Load from database
+                # Load from database with type safety
                 self.base_url = config["base_url"]
                 self.api_key = config["api_key"]
                 self.model = config["model_name"]
-                self.always_starts_with_thinking = config.get(
-                    "always_starts_with_thinking", False
-                )
+                self.always_starts_with_thinking = config["always_starts_with_thinking"]
                 logger.info(
                     f"✅ Loaded LLM configuration from database: {config['name']}"
                 )

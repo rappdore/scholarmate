@@ -14,6 +14,8 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
+from app.models.llm_types import LLMConfiguration
+
 from .llm_config_service import LLMConfigService
 from .pdf_service import PDFService
 from .stream_parser import ThinkingStreamParser
@@ -92,8 +94,8 @@ class DualChatService:
                 return
 
             # Create queues for each LLM's responses
-            llm1_queue = asyncio.Queue()
-            llm2_queue = asyncio.Queue()
+            llm1_queue: asyncio.Queue = asyncio.Queue()
+            llm2_queue: asyncio.Queue = asyncio.Queue()
 
             # Start both LLM tasks concurrently
             session.llm1_task = asyncio.create_task(
@@ -133,7 +135,7 @@ class DualChatService:
 
     async def _stream_from_llm(
         self,
-        llm_config: Dict,
+        llm_config: LLMConfiguration,
         message: str,
         context: str,
         history: List[Dict],
@@ -154,14 +156,12 @@ class DualChatService:
             ]
 
             # NEW: Create parser for this stream with config-specific flag
-            always_starts_with_thinking = llm_config.get(
-                "always_starts_with_thinking", False
-            )
+            always_starts_with_thinking = llm_config["always_starts_with_thinking"]
             parser = ThinkingStreamParser(
                 always_starts_with_thinking=always_starts_with_thinking
             )
             logger.debug(
-                f"[DualChat] Initialized ThinkingStreamParser for {llm_config.get('name', 'unknown')} "
+                f"[DualChat] Initialized ThinkingStreamParser for {llm_config['name']} "
                 f"(always_starts_with_thinking={always_starts_with_thinking})"
             )
 
@@ -178,17 +178,13 @@ class DualChatService:
             # Signal completion
             await queue.put({"done": True})
 
-            logger.info(
-                f"[DualChat] Stream complete for {llm_config.get('name', 'unknown')}"
-            )
+            logger.info(f"[DualChat] Stream complete for {llm_config['name']}")
 
         except asyncio.CancelledError:
-            logger.info(f"LLM stream cancelled for {llm_config.get('name', 'unknown')}")
+            logger.info(f"LLM stream cancelled for {llm_config['name']}")
             await queue.put({"cancelled": True})
         except Exception as e:
-            logger.error(
-                f"Error streaming from LLM {llm_config.get('name', 'unknown')}: {e}"
-            )
+            logger.error(f"Error streaming from LLM {llm_config['name']}: {e}")
             await queue.put({"error": str(e), "done": True})
 
     async def _merge_streams(
@@ -269,7 +265,7 @@ class DualChatService:
         yield {"done": True}
 
     async def _call_llm_stream(
-        self, llm_config: Dict, messages: List[Dict]
+        self, llm_config: LLMConfiguration, messages: List[Dict]
     ) -> AsyncGenerator[str, None]:
         """Call LLM API and stream response chunks"""
         try:
@@ -368,16 +364,11 @@ Keep responses conversational but informative. When explaining a concept, emphas
             logger.error(f"Error extracting context: {e}")
             return f"[Error extracting context from page {page_num}]"
 
-    async def _get_llm_config(self, config_id: int) -> Optional[Dict]:
+    async def _get_llm_config(self, config_id: int) -> Optional[LLMConfiguration]:
         """Get LLM configuration by ID with full API key"""
         try:
-            # Get configuration from database
-            config = self.llm_config_service.get_configuration_by_id(config_id)
-            if not config:
-                return None
-
             # We need the full API key, not the masked version
-            # Query directly with mask_key=False
+            # Query directly and use _row_to_dict_full
             with self.llm_config_service.get_connection() as conn:
                 cursor = conn.execute(
                     """
@@ -390,7 +381,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 )
                 row = cursor.fetchone()
                 if row:
-                    return self.llm_config_service._row_to_dict(row, mask_key=False)
+                    return self.llm_config_service._row_to_dict_full(row)
                 return None
 
         except Exception as e:
