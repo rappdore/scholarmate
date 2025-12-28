@@ -166,7 +166,7 @@ cython_debug/
 .idea/
 
 # uv package manager
-uv.lock
+# Note: uv.lock should be committed to ensure reproducible builds
 
 # ==============================================================================
 # NODE.JS / REACT / VITE FRONTEND
