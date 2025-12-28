@@ -67,6 +67,34 @@ class ReadingProgressService(BaseDatabaseService):
                 ON reading_progress(pdf_id)
             """)
 
+            # =============================================================================
+            # ONE-TIME BACKFILL: Populate pdf_id for existing reading_progress rows
+            #
+            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
+            # While reading_progress does get updated on access (via save_progress and
+            # update_book_status), this ensures immediate consistency for all existing rows.
+            #
+            # TODO: This backfill can be removed after all environments have been updated
+            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
+            # =============================================================================
+            cursor.execute("""
+                UPDATE reading_progress
+                SET pdf_id = (
+                    SELECT id FROM pdf_documents
+                    WHERE pdf_documents.filename = reading_progress.pdf_filename
+                )
+                WHERE pdf_id IS NULL
+                AND EXISTS (
+                    SELECT 1 FROM pdf_documents
+                    WHERE pdf_documents.filename = reading_progress.pdf_filename
+                )
+            """)
+            backfilled = cursor.rowcount
+            if backfilled > 0:
+                logger.info(
+                    f"Backfilled pdf_id for {backfilled} existing reading_progress rows"
+                )
+
             conn.commit()
 
     def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
@@ -192,6 +220,41 @@ class ReadingProgressService(BaseDatabaseService):
             return None
         except Exception as e:
             logger.error(f"Error getting reading progress: {e}")
+            return None
+
+    def get_progress_by_pdf_id(self, pdf_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve reading progress for a specific PDF by its ID.
+
+        Args:
+            pdf_id (int): ID of the PDF document
+
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing progress information or None
+        """
+        try:
+            query = """
+                SELECT pdf_filename, last_page, total_pages, last_updated,
+                       status, status_updated_at, manually_set, pdf_id
+                FROM reading_progress
+                WHERE pdf_id = ?
+            """
+            row = self.execute_query(query, (pdf_id,), fetch_one=True)
+
+            if row:
+                return {
+                    "pdf_filename": row[0],
+                    "last_page": row[1],
+                    "total_pages": row[2],
+                    "last_updated": row[3],
+                    "status": row[4] if row[4] else "new",
+                    "status_updated_at": row[5],
+                    "manually_set": bool(row[6]) if row[6] is not None else False,
+                    "pdf_id": row[7],
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting reading progress by pdf_id={pdf_id}: {e}")
             return None
 
     def get_all_progress(self) -> Dict[str, Dict[str, Any]]:

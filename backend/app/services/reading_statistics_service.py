@@ -6,10 +6,8 @@ It handles tracking session data including pages read and average reading time p
 """
 
 import logging
-from typing import Optional
 
 from .base_database_service import BaseDatabaseService
-from .pdf_documents_service import PDFDocumentsService
 from .reading_progress_service import ReadingProgressService
 
 # Configure logger for this module
@@ -36,8 +34,6 @@ class ReadingStatisticsService(BaseDatabaseService):
         super().__init__(db_path)
         self._init_table()
         self.progress_service = ReadingProgressService(db_path)
-        # Phase 3a: Initialize PDF documents service for pdf_id lookups
-        self._pdf_docs_service = PDFDocumentsService(db_path)
 
     def _init_table(self):
         """
@@ -52,7 +48,7 @@ class ReadingStatisticsService(BaseDatabaseService):
                 CREATE TABLE IF NOT EXISTS reading_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL UNIQUE,
-                    pdf_filename TEXT NOT NULL,
+                    pdf_id INTEGER NOT NULL,
                     session_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     pages_read INTEGER DEFAULT 0,
@@ -67,8 +63,8 @@ class ReadingStatisticsService(BaseDatabaseService):
             """)
 
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_reading_sessions_pdf_filename
-                ON reading_sessions(pdf_filename)
+                CREATE INDEX IF NOT EXISTS idx_reading_sessions_pdf_id
+                ON reading_sessions(pdf_id)
             """)
 
             conn.execute("""
@@ -81,89 +77,21 @@ class ReadingStatisticsService(BaseDatabaseService):
                 ON reading_sessions(last_updated)
             """)
 
-            # Phase 3a: Add pdf_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(reading_sessions)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "pdf_id" not in columns:
-                logger.info("Adding pdf_id column to reading_sessions table...")
-                conn.execute("ALTER TABLE reading_sessions ADD COLUMN pdf_id INTEGER")
-                logger.info("pdf_id column added successfully")
-
-            # Create index on pdf_id if it doesn't exist
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_reading_sessions_pdf_id
-                ON reading_sessions(pdf_id)
-            """)
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate pdf_id for existing reading_sessions rows
-            #
-            # Unlike reading_progress which gets updated on access, reading_sessions only
-            # receives INSERTs, so existing rows would never get their pdf_id populated.
-            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute("""
-                UPDATE reading_sessions
-                SET pdf_id = (
-                    SELECT id FROM pdf_documents
-                    WHERE pdf_documents.filename = reading_sessions.pdf_filename
-                )
-                WHERE pdf_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM pdf_documents
-                    WHERE pdf_documents.filename = reading_sessions.pdf_filename
-                )
-            """)
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled pdf_id for {backfilled} existing reading_sessions rows"
-                )
-
             conn.commit()
-
-    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
-        """
-        Get the pdf_id for a given PDF filename.
-
-        Phase 3a: Helper method for looking up pdf_id from pdf_documents table.
-
-        Args:
-            pdf_filename (str): Name of the PDF file
-
-        Returns:
-            Optional[int]: The pdf_id if found, None otherwise
-        """
-        try:
-            pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
-            if pdf_doc:
-                return pdf_doc.get("id")
-            return None
-        except Exception as e:
-            logger.warning(f"Could not look up pdf_id for {pdf_filename}: {e}")
-            return None
 
     def upsert_session(
         self,
         session_id: str,
-        pdf_filename: str,
+        pdf_id: int,
         pages_read: int,
         average_time_per_page: float,
     ) -> bool:
         """
         Insert or update a reading session.
 
-        If the session_id doesn't exist, creates a new session record.
-        If the session_id already exists, updates the existing record.
-
         Args:
             session_id (str): Unique session identifier (UUID from frontend)
-            pdf_filename (str): Name of the PDF file being read
+            pdf_id (int): ID of the PDF document being read
             pages_read (int): Total number of pages read in this session
             average_time_per_page (float): Average time per page in seconds
 
@@ -175,30 +103,26 @@ class ReadingStatisticsService(BaseDatabaseService):
         """
         try:
             # Check if the PDF exists in reading_progress table
-            progress = self.progress_service.get_progress(pdf_filename)
+            progress = self.progress_service.get_progress_by_pdf_id(pdf_id)
             if not progress:
                 raise ValueError(
-                    f"PDF '{pdf_filename}' does not exist in reading_progress table. "
+                    f"PDF with id={pdf_id} does not exist in reading_progress table. "
                     "Statistics updates are only allowed for tracked PDFs."
                 )
 
             # Check if the book status is "finished"
             if progress.get("status") == "finished":
                 logger.info(
-                    f"Skipping statistics update for finished book: {pdf_filename} "
+                    f"Skipping statistics update for finished book: pdf_id={pdf_id} "
                     f"(session: {session_id})"
                 )
                 return True
 
-            # Phase 3a: Look up pdf_id for auto-population
-            pdf_id = self._get_pdf_id(pdf_filename)
-
             query = """
                 INSERT INTO reading_sessions
-                    (session_id, pdf_filename, pdf_id, pages_read, average_time_per_page, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (session_id, pdf_id, pages_read, average_time_per_page, last_updated)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
-                    pdf_filename = excluded.pdf_filename,
                     pdf_id = excluded.pdf_id,
                     pages_read = excluded.pages_read,
                     average_time_per_page = excluded.average_time_per_page,
@@ -207,7 +131,6 @@ class ReadingStatisticsService(BaseDatabaseService):
 
             params = (
                 session_id,
-                pdf_filename,
                 pdf_id,
                 pages_read,
                 average_time_per_page,
@@ -218,40 +141,33 @@ class ReadingStatisticsService(BaseDatabaseService):
                 conn.execute(query, params)
                 conn.commit()
                 logger.info(
-                    f"Upserted session {session_id} for {pdf_filename} (pdf_id={pdf_id}): "
+                    f"Upserted session {session_id} for pdf_id={pdf_id}: "
                     f"{pages_read} pages, {average_time_per_page:.2f}s avg"
                 )
                 return True
 
         except ValueError:
-            # Re-raise ValueError for PDF not existing
             raise
         except Exception as e:
             logger.error(f"Error upserting session {session_id}: {e}")
             return False
 
-    def get_sessions_by_pdf(
-        self, pdf_filename: str, limit: int = None, offset: int = None
+    def get_sessions_by_pdf_id(
+        self, pdf_id: int, limit: int = None, offset: int = None
     ) -> dict:
         """
-        Get all reading sessions for a specific PDF.
+        Get all reading sessions for a specific PDF by ID.
 
         Args:
-            pdf_filename (str): Name of the PDF file
+            pdf_id (int): ID of the PDF document
             limit (int, optional): Maximum number of sessions to return
             offset (int, optional): Number of sessions to skip (for pagination)
 
         Returns:
             dict: Dictionary containing:
-                - pdf_filename (str): The PDF filename
+                - pdf_id (int): The PDF document ID
                 - total_sessions (int): Total number of sessions for this PDF
-                - sessions (list): List of session dictionaries, each containing:
-                    - session_id (str)
-                    - pdf_id (int or None): The PDF document ID (Phase 3a)
-                    - session_start (str): ISO timestamp
-                    - last_updated (str): ISO timestamp
-                    - pages_read (int)
-                    - average_time_per_page (float)
+                - sessions (list): List of session dictionaries
         """
         try:
             with self.get_connection() as conn:
@@ -259,23 +175,21 @@ class ReadingStatisticsService(BaseDatabaseService):
                 count_query = """
                     SELECT COUNT(*) as total_sessions
                     FROM reading_sessions
-                    WHERE pdf_filename = ?
+                    WHERE pdf_id = ?
                 """
-                count_result = conn.execute(count_query, (pdf_filename,)).fetchone()
+                count_result = conn.execute(count_query, (pdf_id,)).fetchone()
                 total_sessions = count_result[0] if count_result else 0
 
                 # Get sessions (ordered by most recent first)
-                # Phase 3a: Include pdf_id in query
                 sessions_query = """
-                    SELECT session_id, pdf_id, session_start, last_updated, pages_read, average_time_per_page
+                    SELECT session_id, session_start, last_updated, pages_read, average_time_per_page
                     FROM reading_sessions
-                    WHERE pdf_filename = ?
+                    WHERE pdf_id = ?
                     ORDER BY session_start DESC
                 """
 
-                params = [pdf_filename]
+                params = [pdf_id]
 
-                # Add limit/offset if provided
                 if limit is not None:
                     sessions_query += " LIMIT ?"
                     params.append(limit)
@@ -286,35 +200,32 @@ class ReadingStatisticsService(BaseDatabaseService):
 
                 sessions_result = conn.execute(sessions_query, params).fetchall()
 
-                # Convert to list of dictionaries with ISO 8601 formatted timestamps
-                # Phase 3a: Include pdf_id in response
                 sessions = [
                     {
                         "session_id": row[0],
-                        "pdf_id": row[1],
-                        "session_start": self.format_timestamp_iso(row[2]),
-                        "last_updated": self.format_timestamp_iso(row[3]),
-                        "pages_read": row[4],
-                        "average_time_per_page": row[5],
+                        "session_start": self.format_timestamp_iso(row[1]),
+                        "last_updated": self.format_timestamp_iso(row[2]),
+                        "pages_read": row[3],
+                        "average_time_per_page": row[4],
                     }
                     for row in sessions_result
                 ]
 
                 logger.info(
-                    f"Retrieved {len(sessions)} sessions for {pdf_filename} "
+                    f"Retrieved {len(sessions)} sessions for pdf_id={pdf_id} "
                     f"(total: {total_sessions})"
                 )
 
                 return {
-                    "pdf_filename": pdf_filename,
+                    "pdf_id": pdf_id,
                     "total_sessions": total_sessions,
                     "sessions": sessions,
                 }
 
         except Exception as e:
-            logger.error(f"Error retrieving sessions for {pdf_filename}: {e}")
+            logger.error(f"Error retrieving sessions for pdf_id={pdf_id}: {e}")
             return {
-                "pdf_filename": pdf_filename,
+                "pdf_id": pdf_id,
                 "total_sessions": 0,
                 "sessions": [],
             }

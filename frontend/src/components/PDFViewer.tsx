@@ -197,13 +197,13 @@ export default function PDFViewer({
       setSessionPagesRead(newPagesRead);
 
       // Send reading session data to backend
-      if (sessionId && filename) {
+      if (sessionId && pdfId) {
         fetch('/api/reading-statistics/session/update', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: sessionId,
-            pdf_filename: filename,
+            pdf_id: pdfId,
             pages_read: newPagesRead,
             average_time_per_page: newAverage,
           }),
