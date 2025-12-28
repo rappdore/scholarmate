@@ -6,7 +6,7 @@ Provides endpoints for saving, retrieving, and managing chat notes linked to EPU
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -28,8 +28,8 @@ class EPUBChatNoteRequest(BaseModel):
     chapter_title: str
     title: str
     chat_content: str
-    context_sections: Optional[List[str]] = None
-    scroll_position: Optional[int] = 0
+    context_sections: list[str] | None = None
+    scroll_position: int | None = 0
 
 
 class EPUBChatNoteResponse(BaseModel):
@@ -42,14 +42,14 @@ class EPUBChatNoteResponse(BaseModel):
     chapter_title: str
     title: str
     chat_content: str
-    context_sections: Optional[List[str]]
+    context_sections: list[str] | None
     scroll_position: int
     created_at: str
     updated_at: str
 
 
-@router.post("/chat", response_model=Dict[str, Any])
-async def save_epub_chat_note(note: EPUBChatNoteRequest) -> Dict[str, Any]:
+@router.post("/chat", response_model=dict[str, Any])
+async def save_epub_chat_note(note: EPUBChatNoteRequest) -> dict[str, Any]:
     """
     Save EPUB chat conversation as a note
 
@@ -94,10 +94,10 @@ async def save_epub_chat_note(note: EPUBChatNoteRequest) -> Dict[str, Any]:
         )
 
 
-@router.get("/chat/{epub_filename}", response_model=List[EPUBChatNoteResponse])
+@router.get("/chat/{epub_filename}", response_model=list[EPUBChatNoteResponse])
 async def get_epub_chat_notes(
-    epub_filename: str, nav_id: Optional[str] = None, chapter_id: Optional[str] = None
-) -> List[EPUBChatNoteResponse]:
+    epub_filename: str, nav_id: str | None = None, chapter_id: str | None = None
+) -> list[EPUBChatNoteResponse]:
     """
     Get EPUB chat notes with optional filtering
 
@@ -124,11 +124,11 @@ async def get_epub_chat_notes(
 
 @router.get(
     "/chat/{epub_filename}/by-chapter",
-    response_model=Dict[str, List[EPUBChatNoteResponse]],
+    response_model=dict[str, list[EPUBChatNoteResponse]],
 )
 async def get_epub_chat_notes_by_chapter(
     epub_filename: str,
-) -> Dict[str, List[EPUBChatNoteResponse]]:
+) -> dict[str, list[EPUBChatNoteResponse]]:
     """
     Get EPUB chat notes grouped by chapter for UI display
 
@@ -188,7 +188,7 @@ async def get_epub_chat_note_by_id(note_id: int) -> EPUBChatNoteResponse:
 
 
 @router.delete("/chat/{note_id}")
-async def delete_epub_chat_note(note_id: int) -> Dict[str, Any]:
+async def delete_epub_chat_note(note_id: int) -> dict[str, Any]:
     """
     Delete EPUB chat note
 
@@ -221,8 +221,8 @@ async def delete_epub_chat_note(note_id: int) -> Dict[str, Any]:
         )
 
 
-@router.get("/stats", response_model=Dict[str, Dict[str, Any]])
-async def get_epub_notes_statistics() -> Dict[str, Dict[str, Any]]:
+@router.get("/stats", response_model=dict[str, dict[str, Any]])
+async def get_epub_notes_statistics() -> dict[str, dict[str, Any]]:
     """
     Get summary statistics about notes for all EPUB documents
 

@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -26,53 +25,53 @@ epub_documents_service = EPUBDocumentsService()
 
 
 class AnalyzePageRequest(BaseModel):
-    pdf_id: Optional[int] = None  # NEW: ID-based reference
-    filename: Optional[str] = None  # Legacy: filename-based reference
+    pdf_id: int | None = None  # NEW: ID-based reference
+    filename: str | None = None  # Legacy: filename-based reference
     page_num: int
-    context: Optional[str] = ""
+    context: str | None = ""
 
 
 class AnalyzeEpubSectionRequest(BaseModel):
-    epub_id: Optional[int] = None  # NEW: ID-based reference
-    filename: Optional[str] = None  # Legacy: filename-based reference
+    epub_id: int | None = None  # NEW: ID-based reference
+    filename: str | None = None  # Legacy: filename-based reference
     nav_id: str
-    context: Optional[str] = ""
+    context: str | None = ""
 
 
 class ChatRequest(BaseModel):
     message: str
-    pdf_id: Optional[int] = None  # NEW: ID-based reference
-    filename: Optional[str] = None  # Legacy: filename-based reference
+    pdf_id: int | None = None  # NEW: ID-based reference
+    filename: str | None = None  # Legacy: filename-based reference
     page_num: int
-    chat_history: Optional[List[Dict[str, str]]] = None
-    request_id: Optional[str] = None
-    is_new_chat: Optional[bool] = False
+    chat_history: list[dict[str, str]] | None = None
+    request_id: str | None = None
+    is_new_chat: bool | None = False
 
 
 class EpubChatRequest(BaseModel):
     message: str
-    epub_id: Optional[int] = None  # NEW: ID-based reference
-    filename: Optional[str] = None  # Legacy: filename-based reference
+    epub_id: int | None = None  # NEW: ID-based reference
+    filename: str | None = None  # Legacy: filename-based reference
     nav_id: str
-    chat_history: Optional[List[Dict[str, str]]] = None
-    request_id: Optional[str] = None
-    is_new_chat: Optional[bool] = False
+    chat_history: list[dict[str, str]] | None = None
+    request_id: str | None = None
+    is_new_chat: bool | None = False
 
 
 class DualChatRequest(BaseModel):
     message: str
-    pdf_id: Optional[int] = None  # NEW: ID-based reference
-    filename: Optional[str] = None  # Legacy: filename-based reference
+    pdf_id: int | None = None  # NEW: ID-based reference
+    filename: str | None = None  # Legacy: filename-based reference
     page_num: int
-    llm1_history: Optional[List[Dict[str, str]]] = []
-    llm2_history: Optional[List[Dict[str, str]]] = []
+    llm1_history: list[dict[str, str]] | None = []
+    llm2_history: list[dict[str, str]] | None = []
     primary_llm_id: int
     secondary_llm_id: int
-    is_new_chat: Optional[bool] = False
+    is_new_chat: bool | None = False
 
 
 @router.get("/health")
-async def health_check():
+async def health_check() -> dict[str, object]:
     """
     Check if AI service is working
     """
@@ -84,7 +83,7 @@ async def health_check():
 
 
 @router.post("/analyze")
-async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
+async def analyze_page(request: AnalyzePageRequest) -> dict[str, object]:
     """
     Analyze a specific page of a PDF using AI.
     Can use either pdf_id (preferred) or filename (legacy).
@@ -141,7 +140,7 @@ async def analyze_page(request: AnalyzePageRequest) -> Dict[str, Any]:
 
 
 @router.post("/analyze-epub-section")
-async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, Any]:
+async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> dict[str, object]:
     """
     Analyze a specific section of an EPUB using AI.
     Can use either epub_id (preferred) or filename (legacy).
@@ -196,7 +195,9 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> Dict[str, 
 
 
 @router.post("/analyze-epub-section/stream")
-async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
+async def analyze_epub_section_stream(
+    request: AnalyzeEpubSectionRequest,
+) -> StreamingResponse:
     """
     Analyze a specific section of an EPUB using AI with a streaming response.
     Can use either epub_id (preferred) or filename (legacy).
@@ -265,7 +266,7 @@ async def analyze_epub_section_stream(request: AnalyzeEpubSectionRequest):
 
 
 @router.post("/analyze/stream")
-async def analyze_page_stream(request: AnalyzePageRequest):
+async def analyze_page_stream(request: AnalyzePageRequest) -> StreamingResponse:
     """
     Analyze a specific page of a PDF using AI with streaming response.
     Can use either pdf_id (preferred) or filename (legacy).
@@ -338,7 +339,7 @@ async def analyze_page_stream(request: AnalyzePageRequest):
 
 
 @router.post("/chat")
-async def chat_with_ai(request: ChatRequest):
+async def chat_with_ai(request: ChatRequest) -> StreamingResponse:
     """
     Chat with AI about the PDF content with streaming response.
     Can use either pdf_id (preferred) or filename (legacy).
@@ -443,7 +444,7 @@ async def chat_with_ai(request: ChatRequest):
 
 
 @router.post("/chat/epub")
-async def chat_with_ai_epub(request: EpubChatRequest):
+async def chat_with_ai_epub(request: EpubChatRequest) -> StreamingResponse:
     """
     Chat with AI about the EPUB content with streaming response.
     Can use either epub_id (preferred) or filename (legacy).
@@ -543,7 +544,7 @@ async def chat_with_ai_epub(request: EpubChatRequest):
 @router.get("/{filename}/context/{page_num}")
 async def get_page_context(
     filename: str, page_num: int, context_pages: int = 1
-) -> Dict[str, Any]:
+) -> dict[str, object]:
     """
     Get text context around a specific page (current page ± context_pages)
     This can be useful for providing broader context to AI analysis
@@ -580,7 +581,7 @@ async def get_page_context(
 
 
 @router.post("/chat/stop/{request_id}")
-async def stop_chat(request_id: str):
+async def stop_chat(request_id: str) -> dict[str, str]:
     """
     Stop an active PDF chat streaming request
     """
@@ -597,7 +598,7 @@ async def stop_chat(request_id: str):
 
 
 @router.post("/chat/epub/stop/{request_id}")
-async def stop_epub_chat(request_id: str):
+async def stop_epub_chat(request_id: str) -> dict[str, str]:
     """
     Stop an active EPUB chat streaming request
     """
@@ -616,7 +617,7 @@ async def stop_epub_chat(request_id: str):
 
 
 @router.post("/dual-chat")
-async def dual_chat(request: DualChatRequest):
+async def dual_chat(request: DualChatRequest) -> StreamingResponse:
     """
     Chat with two LLMs simultaneously about PDF content with streaming response.
     Can use either pdf_id (preferred) or filename (legacy).
@@ -665,7 +666,7 @@ async def dual_chat(request: DualChatRequest):
 
 
 @router.post("/dual-chat/stop/{request_id}")
-async def stop_dual_chat(request_id: str):
+async def stop_dual_chat(request_id: str) -> dict[str, str]:
     """
     Stop an active dual chat streaming request
     """

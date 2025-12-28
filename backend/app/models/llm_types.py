@@ -5,7 +5,7 @@ This module defines TypedDict classes for LLM configuration objects
 to provide type safety throughout the codebase.
 """
 
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 
 class LLMConfiguration(TypedDict):
@@ -16,7 +16,7 @@ class LLMConfiguration(TypedDict):
 
     id: int
     name: str
-    description: Optional[str]
+    description: str | None
     base_url: str
     api_key: str
     model_name: str
@@ -34,7 +34,7 @@ class LLMConfigurationMasked(TypedDict):
 
     id: int
     name: str
-    description: Optional[str]
+    description: str | None
     base_url: str
     api_key_preview: str  # Masked version
     model_name: str

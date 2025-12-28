@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ epub_documents_service = EPUBDocumentsService()
 
 
 # Helper function to get EPUB document by ID or raise 404
-def get_epub_doc_or_404(epub_id: int) -> Dict[str, Any]:
+def get_epub_doc_or_404(epub_id: int) -> dict[str, Any]:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
 
@@ -33,7 +33,7 @@ def get_epub_doc_or_404(epub_id: int) -> Dict[str, Any]:
 class EPUBHighlightRequest(BaseModel):
     epub_id: int
     nav_id: str
-    chapter_id: Optional[str] = None
+    chapter_id: str | None = None
     xpath: str
     start_offset: int
     end_offset: int
@@ -45,7 +45,7 @@ class EPUBHighlightResponse(BaseModel):
     id: int
     epub_id: int
     nav_id: str
-    chapter_id: Optional[str] = None
+    chapter_id: str | None = None
     xpath: str
     start_offset: int
     end_offset: int
@@ -59,7 +59,7 @@ class UpdateColorRequest(BaseModel):
 
 
 @router.post("/create", response_model=EPUBHighlightResponse)
-async def create_epub_highlight(payload: EPUBHighlightRequest):
+async def create_epub_highlight(payload: EPUBHighlightRequest) -> EPUBHighlightResponse:
     """Create a new highlight in an EPUB section."""
     # Validate EPUB exists and get filename
     epub_doc = get_epub_doc_or_404(payload.epub_id)
@@ -87,8 +87,8 @@ async def create_epub_highlight(payload: EPUBHighlightRequest):
     return EPUBHighlightResponse(**highlight)
 
 
-@router.get("/{epub_id:int}", response_model=List[EPUBHighlightResponse])
-async def get_all_highlights(epub_id: int):
+@router.get("/{epub_id:int}", response_model=list[EPUBHighlightResponse])
+async def get_all_highlights(epub_id: int) -> list[EPUBHighlightResponse]:
     """Retrieve all highlights for an EPUB document by ID."""
     # Validate EPUB exists and get filename
     epub_doc = get_epub_doc_or_404(epub_id)
@@ -99,9 +99,11 @@ async def get_all_highlights(epub_id: int):
 
 
 @router.get(
-    "/{epub_id:int}/section/{nav_id}", response_model=List[EPUBHighlightResponse]
+    "/{epub_id:int}/section/{nav_id}", response_model=list[EPUBHighlightResponse]
 )
-async def get_section_highlights(epub_id: int, nav_id: str):
+async def get_section_highlights(
+    epub_id: int, nav_id: str
+) -> list[EPUBHighlightResponse]:
     """Retrieve all highlights for a specific navigation section by EPUB ID."""
     # Validate EPUB exists and get filename
     epub_doc = get_epub_doc_or_404(epub_id)
@@ -112,9 +114,11 @@ async def get_section_highlights(epub_id: int, nav_id: str):
 
 
 @router.get(
-    "/{epub_id:int}/chapter/{chapter_id}", response_model=List[EPUBHighlightResponse]
+    "/{epub_id:int}/chapter/{chapter_id}", response_model=list[EPUBHighlightResponse]
 )
-async def get_chapter_highlights(epub_id: int, chapter_id: str):
+async def get_chapter_highlights(
+    epub_id: int, chapter_id: str
+) -> list[EPUBHighlightResponse]:
     """Retrieve all highlights for a chapter by EPUB ID."""
     # Validate EPUB exists and get filename
     epub_doc = get_epub_doc_or_404(epub_id)
@@ -127,7 +131,7 @@ async def get_chapter_highlights(epub_id: int, chapter_id: str):
 
 
 @router.get("/id/{highlight_id}", response_model=EPUBHighlightResponse)
-async def get_epub_highlight_by_id(highlight_id: int):
+async def get_epub_highlight_by_id(highlight_id: int) -> EPUBHighlightResponse:
     highlight = db_service.get_epub_highlight_by_id(highlight_id)
     if not highlight:
         raise HTTPException(status_code=404, detail="Highlight not found")
@@ -145,7 +149,7 @@ async def get_epub_highlight_by_id(highlight_id: int):
 
 
 @router.delete("/{highlight_id}")
-async def delete_epub_highlight(highlight_id: int):
+async def delete_epub_highlight(highlight_id: int) -> dict[str, str]:
     success = db_service.delete_epub_highlight(highlight_id)
     if not success:
         raise HTTPException(status_code=404, detail="Highlight not found")
@@ -155,7 +159,7 @@ async def delete_epub_highlight(highlight_id: int):
 @router.put("/{highlight_id}/color")
 async def update_epub_highlight_color(
     highlight_id: int, color_data: UpdateColorRequest
-):
+) -> dict[str, str]:
     success = db_service.update_epub_highlight_color(highlight_id, color_data.color)
     if not success:
         raise HTTPException(

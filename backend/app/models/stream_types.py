@@ -4,7 +4,8 @@ Type definitions for structured LLM streaming.
 Provides strong typing for thinking/response separation during streaming.
 """
 
-from typing import Literal, Optional, TypedDict
+from collections.abc import AsyncGenerator
+from typing import Literal, TypedDict
 
 
 class StreamMetadata(TypedDict, total=False):
@@ -25,9 +26,9 @@ class StreamChunk(TypedDict):
     """
 
     type: Literal["thinking", "response", "metadata"]
-    content: Optional[str]
+    content: str | None
     metadata: StreamMetadata
 
 
 # Type alias for the stream generator
-StreamGenerator = "AsyncGenerator[StreamChunk, None]"
+type StreamGenerator = "AsyncGenerator[StreamChunk, None]"

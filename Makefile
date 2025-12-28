@@ -18,3 +18,6 @@ format_backend:
 
 format_frontend:
 	cd frontend && npm run format
+
+typecheck_backend:
+	git diff --name-only --diff-filter=ACM HEAD | grep '^backend/.*\.py$$' | sed 's|^backend/||' | xargs -r sh -c 'cd backend && uv run mypy "$$@"' sh || true
