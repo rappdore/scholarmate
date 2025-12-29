@@ -201,6 +201,13 @@ async def analyze_epub_section_stream(
     """
     Analyze a specific section of an EPUB using AI with a streaming response.
     Can use either epub_id (preferred) or filename (legacy).
+    Returns structured data with separated thinking/response content.
+
+    Stream format:
+        data: {"type": "metadata", "content": null, "metadata": {"thinking_started": true}}
+        data: {"type": "thinking", "content": "chunk", "metadata": {...}, "text_extracted": true}
+        data: {"type": "response", "content": "chunk", "metadata": {...}, "text_extracted": true}
+        data: {"done": true}
     """
     try:
         # Resolve filename from epub_id if provided, otherwise use filename
@@ -221,7 +228,7 @@ async def analyze_epub_section_stream(
         if not section_text.strip():
 
             async def generate_empty_response():
-                yield f"data: {json.dumps({'content': 'This section appears to be empty or contains no extractable text.', 'text_extracted': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'response', 'content': 'This section appears to be empty or contains no extractable text.', 'metadata': {{}}, 'text_extracted': False})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
 
             return StreamingResponse(
@@ -235,13 +242,15 @@ async def analyze_epub_section_stream(
 
         async def generate_analysis():
             try:
-                async for chunk in ollama_service.analyze_epub_section_stream(
+                async for structured_data in ollama_service.analyze_epub_section_stream(
                     text=section_text,
                     filename=filename,
                     nav_id=request.nav_id,
                     context=request.context,
                 ):
-                    yield f"data: {json.dumps({'content': chunk, 'text_extracted': True})}\n\n"
+                    # Merge structured data with text_extracted flag
+                    output = {**structured_data, "text_extracted": True}
+                    yield f"data: {json.dumps(output)}\n\n"
 
                 yield f"data: {json.dumps({'done': True})}\n\n"
 
@@ -270,6 +279,13 @@ async def analyze_page_stream(request: AnalyzePageRequest) -> StreamingResponse:
     """
     Analyze a specific page of a PDF using AI with streaming response.
     Can use either pdf_id (preferred) or filename (legacy).
+    Returns structured data with separated thinking/response content.
+
+    Stream format:
+        data: {"type": "metadata", "content": null, "metadata": {"thinking_started": true}}
+        data: {"type": "thinking", "content": "chunk", "metadata": {...}, "text_extracted": true}
+        data: {"type": "response", "content": "chunk", "metadata": {...}, "text_extracted": true}
+        data: {"done": true}
     """
     try:
         # Resolve filename from pdf_id if provided, otherwise use filename
@@ -291,7 +307,7 @@ async def analyze_page_stream(request: AnalyzePageRequest) -> StreamingResponse:
         if not page_text.strip():
 
             async def generate_empty_response():
-                yield f"data: {json.dumps({'content': 'This page appears to be empty or contains no extractable text. It might contain only images, diagrams, or formatted elements that could not be processed.', 'text_extracted': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'response', 'content': 'This page appears to be empty or contains no extractable text. It might contain only images, diagrams, or formatted elements that could not be processed.', 'metadata': {{}}, 'text_extracted': False})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
 
             return StreamingResponse(
@@ -306,13 +322,15 @@ async def analyze_page_stream(request: AnalyzePageRequest) -> StreamingResponse:
 
         async def generate_analysis():
             try:
-                async for chunk in ollama_service.analyze_page_stream(
+                async for structured_data in ollama_service.analyze_page_stream(
                     text=page_text,
                     filename=filename,
                     page_num=request.page_num,
                     context=request.context,
                 ):
-                    yield f"data: {json.dumps({'content': chunk, 'text_extracted': True})}\n\n"
+                    # Merge structured data with text_extracted flag
+                    output = {**structured_data, "text_extracted": True}
+                    yield f"data: {json.dumps(output)}\n\n"
 
                 # Send end-of-stream marker
                 yield f"data: {json.dumps({'done': True})}\n\n"

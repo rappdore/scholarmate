@@ -523,9 +523,12 @@ Keep responses conversational but informative."""
 
     async def analyze_page_stream(
         self, text: str, filename: str, page_num: int, context: str = ""
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
-        Analyze a PDF page using AI with streaming response
+        Analyze a PDF page using AI with streaming response and structured thinking/response.
+
+        Returns:
+            AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
         """
         logger.info(
             f"[LLM] analyze_page_stream - Using model: {self.model}, base_url: {self.base_url}"
@@ -555,6 +558,15 @@ Page content:
 Provide a helpful analysis that will aid in understanding this content."""
 
         try:
+            # Create parser for this stream
+            parser = ThinkingStreamParser(
+                always_starts_with_thinking=self.always_starts_with_thinking
+            )
+            logger.debug(
+                f"[LLM] Initialized ThinkingStreamParser for analyze_page_stream "
+                f"(always_starts_with_thinking={self.always_starts_with_thinking})"
+            )
+
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -567,16 +579,34 @@ Provide a helpful analysis that will aid in understanding this content."""
 
             async for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    raw_content = chunk.choices[0].delta.content
+
+                    # Process through thinking parser
+                    async for structured_chunk in parser.process_chunk(raw_content):
+                        yield structured_chunk
+
+            # Finalize parser to flush buffer
+            async for final_chunk in parser.finalize():
+                yield final_chunk
+
+            logger.info(f"[LLM] analyze_page_stream complete for {filename}")
 
         except Exception as e:
-            yield f"Error: {str(e)}"
+            logger.error(f"analyze_page_stream error: {str(e)}", exc_info=True)
+            yield StreamChunk(
+                type="response",
+                content=f"Error: {str(e)}",
+                metadata={"thinking_started": False, "thinking_complete": False},
+            )
 
     async def analyze_epub_section_stream(
         self, text: str, filename: str, nav_id: str, context: str = ""
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
-        Analyze an EPUB section using AI with a streaming response.
+        Analyze an EPUB section using AI with streaming response and structured thinking/response.
+
+        Returns:
+            AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
         """
         logger.info(
             f"[LLM] analyze_epub_section_stream - Using model: {self.model}, base_url: {self.base_url}"
@@ -606,6 +636,15 @@ Section content:
 Provide a helpful analysis that will aid in understanding this content."""
 
         try:
+            # Create parser for this stream
+            parser = ThinkingStreamParser(
+                always_starts_with_thinking=self.always_starts_with_thinking
+            )
+            logger.debug(
+                f"[LLM] Initialized ThinkingStreamParser for analyze_epub_section_stream "
+                f"(always_starts_with_thinking={self.always_starts_with_thinking})"
+            )
+
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -618,10 +657,25 @@ Provide a helpful analysis that will aid in understanding this content."""
 
             async for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    raw_content = chunk.choices[0].delta.content
+
+                    # Process through thinking parser
+                    async for structured_chunk in parser.process_chunk(raw_content):
+                        yield structured_chunk
+
+            # Finalize parser to flush buffer
+            async for final_chunk in parser.finalize():
+                yield final_chunk
+
+            logger.info(f"[LLM] analyze_epub_section_stream complete for {filename}")
 
         except Exception as e:
-            yield f"Error: {str(e)}"
+            logger.error(f"analyze_epub_section_stream error: {str(e)}", exc_info=True)
+            yield StreamChunk(
+                type="response",
+                content=f"Error: {str(e)}",
+                metadata={"thinking_started": False, "thinking_complete": False},
+            )
 
 
 # Global instance

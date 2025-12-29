@@ -9,6 +9,7 @@ import 'katex/dist/katex.min.css'; // KaTeX CSS for math rendering
 import '../styles/katex-dark.css'; // Custom dark theme for KaTeX
 import type { Components } from 'react-markdown';
 import { aiService } from '../services/api';
+import { ThinkingBlock } from './ThinkBlock';
 
 interface AIPanelProps {
   pdfId?: number;
@@ -27,9 +28,12 @@ export default function AIPanel({
   currentPage,
   currentNavId,
 }: AIPanelProps) {
-  const [analysis, setAnalysis] = useState<string>('');
+  // Structured content state (same pattern as ChatInterface)
+  const [responseContent, setResponseContent] = useState<string>('');
   const [thinkingContent, setThinkingContent] = useState<string>('');
-  const [showThinking, setShowThinking] = useState(false);
+  const [hasThinking, setHasThinking] = useState(false);
+  const [isThinkingComplete, setIsThinkingComplete] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [autoAnalyze, setAutoAnalyze] = useState(false);
@@ -42,30 +46,20 @@ export default function AIPanel({
     checkAIConnection();
   }, []);
 
+  // Clear content when page/section changes
+  useEffect(() => {
+    setResponseContent('');
+    setThinkingContent('');
+    setHasThinking(false);
+    setIsThinkingComplete(false);
+  }, [pdfId, epubId, currentPage, currentNavId, documentType]);
+
   // Auto-analyze when page changes (if enabled)
   useEffect(() => {
     if (autoAnalyze && (pdfId || epubId) && (currentPage || currentNavId)) {
       analyzeDocument();
     }
   }, [pdfId, epubId, currentPage, currentNavId, autoAnalyze, documentType]);
-
-  const parseAnalysisContent = (content: string) => {
-    // Extract thinking content
-    const thinkingRegex = /<think>([\s\S]*?)<\/think>/g;
-    const thinkingMatches = content.match(thinkingRegex);
-
-    let thinking = '';
-    if (thinkingMatches) {
-      thinking = thinkingMatches
-        .map(match => match.replace(/<\/?think>/g, ''))
-        .join('\n\n---\n\n');
-    }
-
-    // Remove thinking tags from main content
-    const mainContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-
-    return { mainContent, thinking };
-  };
 
   const checkAIConnection = async () => {
     try {
@@ -84,11 +78,12 @@ export default function AIPanel({
 
     setLoading(true);
     setStreaming(true);
-    setAnalysis('');
+    setResponseContent('');
     setThinkingContent('');
+    setHasThinking(false);
+    setIsThinkingComplete(false);
 
     try {
-      let fullAnalysis = '';
       let textExtracted = true;
 
       const analysisStream =
@@ -101,12 +96,16 @@ export default function AIPanel({
           throw new Error(chunk.error);
         }
 
-        if (chunk.content) {
-          fullAnalysis += chunk.content;
-          // Update the analysis in real-time as we receive chunks
-          const { mainContent, thinking } = parseAnalysisContent(fullAnalysis);
-          setAnalysis(mainContent);
-          setThinkingContent(thinking);
+        // Handle structured streaming (same pattern as ChatInterface)
+        if (chunk.type === 'thinking') {
+          setThinkingContent(prev => prev + (chunk.content || ''));
+          setHasThinking(true);
+        } else if (chunk.type === 'response') {
+          setResponseContent(prev => prev + (chunk.content || ''));
+        } else if (chunk.type === 'metadata') {
+          if (chunk.metadata?.thinking_complete) {
+            setIsThinkingComplete(true);
+          }
         }
 
         if (chunk.text_extracted !== undefined) {
@@ -119,7 +118,7 @@ export default function AIPanel({
       }
 
       if (!textExtracted) {
-        setAnalysis(
+        setResponseContent(
           prev =>
             prev +
             '\n\n💡 Tip: This content might contain images, diagrams, or special formatting that requires visual analysis.'
@@ -127,10 +126,11 @@ export default function AIPanel({
       }
     } catch (error) {
       console.error('Analysis failed:', error);
-      setAnalysis(
+      setResponseContent(
         'Failed to analyze content. Please check if the AI service is running and try again.'
       );
       setThinkingContent('');
+      setHasThinking(false);
     } finally {
       setLoading(false);
       setStreaming(false);
@@ -312,7 +312,7 @@ export default function AIPanel({
               Retry Connection
             </button>
           </div>
-        ) : analysis ? (
+        ) : responseContent || hasThinking ? (
           <div className="space-y-4">
             {/* Streaming indicator */}
             {streaming && (
@@ -335,97 +335,33 @@ export default function AIPanel({
               </div>
             )}
 
+            {/* Thinking Block - using same component as ChatInterface */}
+            {hasThinking && (
+              <ThinkingBlock
+                content={thinkingContent}
+                isStreaming={streaming && !isThinkingComplete}
+                isComplete={isThinkingComplete}
+              />
+            )}
+
             {/* Main Analysis */}
             <div className="max-w-none text-gray-300">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeHighlight, rehypeKatex]}
-                components={markdownComponents}
-              >
-                {analysis}
-              </ReactMarkdown>
-            </div>
-
-            {/* Thinking Panel */}
-            {thinkingContent && (
-              <div className="border-t border-gray-700 pt-4">
-                <button
-                  onClick={() => setShowThinking(!showThinking)}
-                  className="flex items-center justify-between w-full px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-md text-sm font-medium text-gray-200 transition-colors"
+              {streaming ? (
+                // Show plain text while streaming for performance
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {responseContent}
+                </div>
+              ) : (
+                // Parse markdown when streaming is complete
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeHighlight, rehypeKatex]}
+                  components={markdownComponents}
                 >
-                  <span className="flex items-center">
-                    🧠 AI Thinking Process
-                    <span className="ml-2 text-xs text-gray-400">
-                      ({thinkingContent.length} chars)
-                    </span>
-                  </span>
-                  <svg
-                    className={`w-4 h-4 transition-transform ${showThinking ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </button>
-
-                {showThinking && (
-                  <div className="mt-3 p-3 bg-gray-800 rounded-md border border-gray-700">
-                    <div className="max-w-none text-gray-400">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkMath]}
-                        rehypePlugins={[rehypeHighlight, rehypeKatex]}
-                        components={{
-                          ...markdownComponents,
-                          p: ({ children }) => (
-                            <p className="text-xs text-gray-400 leading-relaxed mb-2">
-                              {children}
-                            </p>
-                          ),
-                          h1: ({ children }) => (
-                            <h1 className="text-sm font-bold text-gray-300 mt-3 mb-2 first:mt-0">
-                              {children}
-                            </h1>
-                          ),
-                          h2: ({ children }) => (
-                            <h2 className="text-xs font-bold text-gray-300 mt-2 mb-1 first:mt-0">
-                              {children}
-                            </h2>
-                          ),
-                          span: ({ className, children, ...props }) => {
-                            if (className?.includes('katex')) {
-                              return (
-                                <span
-                                  className={`${className} text-gray-300`}
-                                  {...props}
-                                >
-                                  {children}
-                                </span>
-                              );
-                            }
-                            return (
-                              <span
-                                className={`${className || ''} text-gray-400`}
-                                {...props}
-                              >
-                                {children}
-                              </span>
-                            );
-                          },
-                        }}
-                      >
-                        {thinkingContent}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  {responseContent}
+                </ReactMarkdown>
+              )}
+            </div>
           </div>
         ) : (
           <div className="text-gray-400 text-center mt-8">

@@ -234,7 +234,14 @@ export const aiService = {
     context?: string
   ): AsyncGenerator<
     {
-      content?: string;
+      // Structured streaming fields (same as chat)
+      type?: 'thinking' | 'response' | 'metadata';
+      content?: string | null;
+      metadata?: {
+        thinking_started?: boolean;
+        thinking_complete?: boolean;
+      };
+      // Control fields
       done?: boolean;
       text_extracted?: boolean;
       error?: string;
@@ -362,7 +369,14 @@ export const aiService = {
     context?: string
   ): AsyncGenerator<
     {
-      content?: string;
+      // Structured streaming fields (same as chat)
+      type?: 'thinking' | 'response' | 'metadata';
+      content?: string | null;
+      metadata?: {
+        thinking_started?: boolean;
+        thinking_complete?: boolean;
+      };
+      // Control fields
       done?: boolean;
       text_extracted?: boolean;
       error?: string;
