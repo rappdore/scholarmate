@@ -8,7 +8,7 @@ that users create while reading EPUBs with precise navigation context.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .epub_documents_service import EPUBDocumentsService
@@ -122,7 +122,7 @@ class EPUBChatNotesService(BaseDatabaseService):
 
             conn.commit()
 
-    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+    def _get_epub_id(self, epub_filename: str) -> int | None:
         """
         Get the epub_id for a given EPUB filename.
 
@@ -132,7 +132,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             epub_filename (str): Name of the EPUB file
 
         Returns:
-            Optional[int]: The epub_id if found, None otherwise
+            int | None: The epub_id if found, None otherwise
         """
         try:
             epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
@@ -151,9 +151,9 @@ class EPUBChatNotesService(BaseDatabaseService):
         chapter_title: str,
         title: str,
         chat_content: str,
-        context_sections: List[str] = None,
+        context_sections: list[str] = None,
         scroll_position: int = 0,
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Save an EPUB chat conversation as a note linked to a navigation section.
 
@@ -164,11 +164,11 @@ class EPUBChatNotesService(BaseDatabaseService):
             chapter_title (str): Human-readable chapter title
             title (str): Title for the note (can be empty)
             chat_content (str): The actual conversation or note content
-            context_sections (List[str]): List of section IDs that provided context
+            context_sections (list[str]): List of section IDs that provided context
             scroll_position (int): Scroll position within the section
 
         Returns:
-            Optional[int]: The ID of the newly created note, or None if creation failed
+            int | None: The ID of the newly created note, or None if creation failed
         """
         try:
             # Convert context sections to JSON string
@@ -211,19 +211,19 @@ class EPUBChatNotesService(BaseDatabaseService):
     def get_notes_for_epub(
         self,
         epub_filename: str,
-        nav_id: Optional[str] = None,
-        chapter_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        nav_id: str | None = None,
+        chapter_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Retrieve chat notes for an EPUB document, with fine-grained or chapter-level filtering.
 
         Args:
             epub_filename (str): Name of the EPUB file to get notes for
-            nav_id (Optional[str]): Specific navigation section to filter by
-            chapter_id (Optional[str]): Specific chapter to filter by
+            nav_id (str | None): Specific navigation section to filter by
+            chapter_id (str | None): Specific chapter to filter by
 
         Returns:
-            List[Dict[str, Any]]: List of note dictionaries
+            list[dict[str, Any]]: List of note dictionaries
         """
         try:
             # Phase 4b: Include epub_id in query
@@ -294,7 +294,7 @@ class EPUBChatNotesService(BaseDatabaseService):
 
     def get_notes_grouped_by_chapter(
         self, epub_filename: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Get notes grouped by chapter for UI display.
 
@@ -302,7 +302,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             epub_filename (str): Name of the EPUB file to get notes for
 
         Returns:
-            Dict[str, List[Dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
+            dict[str, list[dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
         """
         try:
             notes = self.get_notes_for_epub(epub_filename)
@@ -319,7 +319,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             logger.error(f"Error grouping EPUB chat notes by chapter: {e}")
             return {}
 
-    def get_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
+    def get_note_by_id(self, note_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific EPUB chat note by its unique ID.
 
@@ -327,7 +327,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             note_id (int): Unique identifier of the note to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
+            dict[str, Any] | None: Note dictionary with all fields, or None if not found
         """
         try:
             # Phase 4b: Include epub_id in query
@@ -387,12 +387,12 @@ class EPUBChatNotesService(BaseDatabaseService):
             logger.error(f"Error deleting EPUB chat note: {e}")
             return False
 
-    def get_notes_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+    def get_notes_count_by_epub(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about notes for all EPUB documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
+            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
         """
         try:
             # First query: Get count and latest note date for each EPUB

@@ -10,7 +10,6 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +21,10 @@ class ActiveRequest:
     request_id: str
     filename: str
     document_type: str  # 'pdf' or 'epub'
-    page_num: Optional[int] = None  # For PDF
-    nav_id: Optional[str] = None  # For EPUB
+    page_num: int | None = None  # For PDF
+    nav_id: str | None = None  # For EPUB
     created_at: datetime = None
-    task: Optional[asyncio.Task] = None
+    task: asyncio.Task | None = None
     cancelled: bool = False
 
     def __post_init__(self):
@@ -37,7 +36,7 @@ class RequestTrackingService:
     """Service to track and manage active streaming chat requests"""
 
     def __init__(self):
-        self._active_requests: Dict[str, ActiveRequest] = {}
+        self._active_requests: dict[str, ActiveRequest] = {}
         self._cleanup_interval = 3600  # Cleanup every hour
         self._max_request_age = timedelta(hours=2)  # Remove requests older than 2 hours
 
@@ -49,9 +48,9 @@ class RequestTrackingService:
         self,
         filename: str,
         document_type: str,
-        page_num: Optional[int] = None,
-        nav_id: Optional[str] = None,
-        request_id: Optional[str] = None,
+        page_num: int | None = None,
+        nav_id: str | None = None,
+        request_id: str | None = None,
     ) -> str:
         """
         Register a new streaming request
@@ -161,7 +160,7 @@ class RequestTrackingService:
             return True
         return False
 
-    def get_active_requests(self) -> Dict[str, ActiveRequest]:
+    def get_active_requests(self) -> dict[str, ActiveRequest]:
         """Get all active requests (for debugging/monitoring)"""
         return self._active_requests.copy()
 

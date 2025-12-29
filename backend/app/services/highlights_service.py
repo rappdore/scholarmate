@@ -8,7 +8,7 @@ while reading PDFs.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .pdf_documents_service import PDFDocumentsService
@@ -117,7 +117,7 @@ class HighlightsService(BaseDatabaseService):
 
             conn.commit()
 
-    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
+    def _get_pdf_id(self, pdf_filename: str) -> int | None:
         """
         Get the pdf_id for a given PDF filename.
 
@@ -127,7 +127,7 @@ class HighlightsService(BaseDatabaseService):
             pdf_filename (str): Name of the PDF file
 
         Returns:
-            Optional[int]: The pdf_id if found, None otherwise
+            int | None: The pdf_id if found, None otherwise
         """
         try:
             pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
@@ -146,8 +146,8 @@ class HighlightsService(BaseDatabaseService):
         start_offset: int,
         end_offset: int,
         color: str,
-        coordinates: List[Dict[str, Any]],
-    ) -> Optional[int]:
+        coordinates: list[dict[str, Any]],
+    ) -> int | None:
         """
         Save a text highlight with coordinates and metadata.
 
@@ -158,10 +158,10 @@ class HighlightsService(BaseDatabaseService):
             start_offset (int): Character position where highlight starts
             end_offset (int): Character position where highlight ends
             color (str): Highlight color in hex format (e.g., '#ffff00')
-            coordinates (List[Dict[str, Any]]): List of coordinate dictionaries with bounding box data
+            coordinates (list[dict[str, Any]]): List of coordinate dictionaries with bounding box data
 
         Returns:
-            Optional[int]: The ID of the newly created highlight, or None if creation failed
+            int | None: The ID of the newly created highlight, or None if creation failed
         """
         try:
             # Convert coordinates list to JSON string for storage
@@ -201,17 +201,17 @@ class HighlightsService(BaseDatabaseService):
             return None
 
     def get_highlights_for_pdf(
-        self, pdf_filename: str, page_number: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, pdf_filename: str, page_number: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Retrieve highlights for a PDF document, optionally filtered by page number.
 
         Args:
             pdf_filename (str): Name of the PDF file to get highlights for
-            page_number (Optional[int]): Specific page number to filter by, or None for all pages
+            page_number (int | None): Specific page number to filter by, or None for all pages
 
         Returns:
-            List[Dict[str, Any]]: List of highlight dictionaries
+            list[dict[str, Any]]: List of highlight dictionaries
         """
         try:
             # Phase 3c: Include pdf_id in query
@@ -268,7 +268,7 @@ class HighlightsService(BaseDatabaseService):
             logger.error(f"Error getting highlights: {e}")
             return []
 
-    def get_highlight_by_id(self, highlight_id: int) -> Optional[Dict[str, Any]]:
+    def get_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific highlight by its unique ID.
 
@@ -276,7 +276,7 @@ class HighlightsService(BaseDatabaseService):
             highlight_id (int): Unique identifier of the highlight to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Highlight dictionary with all fields, or None if not found
+            dict[str, Any] | None: Highlight dictionary with all fields, or None if not found
         """
         try:
             # Phase 3c: Include pdf_id in query
@@ -362,12 +362,12 @@ class HighlightsService(BaseDatabaseService):
             logger.error(f"Error updating highlight color: {e}")
             return False
 
-    def get_highlights_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
+    def get_highlights_count_by_pdf(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about highlights for all PDF documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their highlight statistics
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their highlight statistics
         """
         try:
             # First query: Get count and latest highlight date for each PDF

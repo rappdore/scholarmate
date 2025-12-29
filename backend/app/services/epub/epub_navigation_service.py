@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import ebooklib
 
@@ -6,7 +6,7 @@ import ebooklib
 class EPUBNavigationService:
     """Responsible for building navigation structures for EPUB files."""
 
-    def get_navigation_tree(self, book) -> Dict[str, Any]:
+    def get_navigation_tree(self, book) -> dict[str, Any]:
         """
         Get the hierarchical navigation structure of an EPUB
         Returns full table of contents with nested structure
@@ -31,7 +31,7 @@ class EPUBNavigationService:
         return item_type in {getattr(ebooklib, "ITEM_DOCUMENT", None), 0}
 
     # NOTE: build_navigation_index currently unused externally but ensures Step2 can leverage.
-    def build_navigation_index(self, book) -> Dict[str, Any]:
+    def build_navigation_index(self, book) -> dict[str, Any]:
         """Build both hierarchical and flattened navigation structures."""
         nav_tree = self._build_navigation_tree(book)
         flat_items = self._flatten_navigation_tree(nav_tree, book)
@@ -44,13 +44,13 @@ class EPUBNavigationService:
             "has_toc": bool(hasattr(book, "toc") and book.toc),
         }
 
-    def _build_navigation_tree(self, book) -> List[Dict[str, Any]]:
+    def _build_navigation_tree(self, book) -> list[dict[str, Any]]:
         """Return the nested navigation tree, using TOC if available."""
         if hasattr(book, "toc") and book.toc:
             return self._process_toc_items(book.toc, book)
 
         # Fallback: create navigation from spine (reading order)
-        spine_items: List[Dict[str, Any]] = []
+        spine_items: list[dict[str, Any]] = []
         for index, (item_id, _) in enumerate(book.spine):
             item = book.get_item_with_id(item_id)
             if self._is_document_item(item):
@@ -114,19 +114,19 @@ class EPUBNavigationService:
         return processed_items
 
     def _flatten_navigation_tree(
-        self, nav_items: List[Dict[str, Any]], book
-    ) -> List[Dict[str, Any]]:
+        self, nav_items: list[dict[str, Any]], book
+    ) -> list[dict[str, Any]]:
         """
         Produce a flattened, ordered list of navigation entries with metadata useful for
         precise chapter/section navigation.
         """
 
-        flat_items: List[Dict[str, Any]] = []
+        flat_items: list[dict[str, Any]] = []
 
         spine_length = len(book.spine)
 
         def walk(
-            items: List[Dict[str, Any]], parent_id: Optional[str], order_start: int
+            items: list[dict[str, Any]], parent_id: str | None, order_start: int
         ) -> int:
             order = order_start
             for item in items:
@@ -192,9 +192,7 @@ class EPUBNavigationService:
             # Fallback: use href as ID (cleaned but preserving fragments for uniqueness)
             return href.replace("/", "_").replace(".", "_")
 
-    def _find_spine_positions_for_nav_href(
-        self, href: Optional[str], book
-    ) -> List[int]:
+    def _find_spine_positions_for_nav_href(self, href: str | None, book) -> list[int]:
         if not href:
             return []
 
@@ -203,7 +201,7 @@ class EPUBNavigationService:
         else:
             base_href = href
 
-        matches: List[int] = []
+        matches: list[int] = []
         for idx, (item_id, _) in enumerate(book.spine):
             item = book.get_item_with_id(item_id)
             if self._is_document_item(item):
@@ -222,7 +220,7 @@ class EPUBNavigationService:
                     matches.append(idx)
         return matches
 
-    def build_spine_to_nav_mapping(self, book) -> Dict[int, Dict[str, Any]]:
+    def build_spine_to_nav_mapping(self, book) -> dict[int, dict[str, Any]]:
         """
         Build a mapping from spine position to navigation entry.
         This tells us which logical chapter/section each spine item belongs to.
@@ -268,7 +266,7 @@ class EPUBNavigationService:
         return spine_to_nav
 
     def _map_child_nav_items(
-        self, book, child_nav_items: List[Dict], spine_to_nav: Dict
+        self, book, child_nav_items: list[dict], spine_to_nav: dict
     ):
         """Recursively map child navigation items to spine positions."""
         for child_item in child_nav_items:
@@ -282,8 +280,8 @@ class EPUBNavigationService:
                 self._map_child_nav_items(book, child_item["children"], spine_to_nav)
 
     def _find_spine_positions_for_nav_item(
-        self, book, nav_item: Dict[str, Any]
-    ) -> List[int]:
+        self, book, nav_item: dict[str, Any]
+    ) -> list[int]:
         """
         Find which spine positions correspond to a navigation item.
         A nav item might span multiple spine items or be contained within one.
@@ -318,11 +316,11 @@ class EPUBNavigationService:
 
     def get_chapter_spine_items(
         self,
-        spine_to_nav_mapping: Dict,
-        current_nav_entry: Dict,
+        spine_to_nav_mapping: dict,
+        current_nav_entry: dict,
         start_position: int,
         book,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Get all spine items that belong to the same logical chapter as the current position.
         Uses navigation hierarchy to determine chapter boundaries.

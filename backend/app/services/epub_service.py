@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ebooklib import epub
 
@@ -41,13 +41,13 @@ class EPUBService:
         # Initialize cache with database backing (must be after other services are initialized)
         self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self, db_path)
 
-    def list_epubs(self) -> List[Dict[str, Any]]:
+    def list_epubs(self) -> list[dict[str, Any]]:
         """
         List all EPUB files in the epubs directory with metadata (from cache)
         """
         return self.cache.get_all_epubs()
 
-    def get_epub_info(self, filename: str) -> Dict[str, Any]:
+    def get_epub_info(self, filename: str) -> dict[str, Any]:
         """
         Get detailed information about a specific EPUB (with lazy-loaded extended metadata)
         """
@@ -109,7 +109,7 @@ class EPUBService:
         file_path = self.get_epub_path(filename)
         return self.image_service.get_thumbnail_path(file_path, width, height)
 
-    def get_navigation_tree(self, filename: str) -> Dict[str, Any]:
+    def get_navigation_tree(self, filename: str) -> dict[str, Any]:
         """
         Get the hierarchical navigation structure of an EPUB
         Returns full table of contents with nested structure
@@ -118,7 +118,7 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.navigation_service.get_navigation_tree(book)
 
-    def get_content_by_nav_id(self, filename: str, nav_id: str) -> Dict[str, Any]:
+    def get_content_by_nav_id(self, filename: str, nav_id: str) -> dict[str, Any]:
         """
         Get HTML content for a specific navigation section
         Enhanced to handle chapters that span multiple spine items
@@ -135,7 +135,7 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.content_processor.extract_section_text(book, nav_id, filename)
 
-    def get_epub_styles(self, filename: str) -> Dict[str, Any]:
+    def get_epub_styles(self, filename: str) -> dict[str, Any]:
         """
         Extract and return CSS styles from an EPUB
         Returns sanitized CSS content for safe browser rendering
@@ -152,7 +152,7 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.image_service.get_epub_image(book, image_path)
 
-    def get_epub_images_list(self, filename: str) -> List[Dict[str, str]]:
+    def get_epub_images_list(self, filename: str) -> list[dict[str, str]]:
         """
         Get a list of all images in an EPUB file
         """
@@ -160,14 +160,14 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.image_service.get_epub_images_list(book)
 
-    def refresh_cache(self) -> Dict[str, Any]:
+    def refresh_cache(self) -> dict[str, Any]:
         """
         Refresh the EPUB cache by rebuilding from filesystem
         """
         self.cache.refresh()
         return self.cache.get_cache_info()
 
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> dict[str, Any]:
         """
         Get metadata about the EPUB cache
         """

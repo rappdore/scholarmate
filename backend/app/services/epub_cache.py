@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import ebooklib
 from ebooklib import epub
@@ -46,11 +46,11 @@ class EPUBCache:
         # Database service for persistence
         self._db_service = EPUBDocumentsService(db_path)
 
-        # Cache storage: Dict[filename, metadata_dict]
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        # Cache storage: dict[filename, metadata_dict]
+        self._cache: dict[str, dict[str, Any]] = {}
 
         # Cache metadata
-        self._cache_built_at: Optional[str] = None
+        self._cache_built_at: str | None = None
         self._cache_epub_count: int = 0
 
         # Build cache on initialization
@@ -275,7 +275,7 @@ class EPUBCache:
             f"(DB hits: {db_hits}, new: {db_misses})"
         )
 
-    def get_all_epubs(self) -> List[Dict[str, Any]]:
+    def get_all_epubs(self) -> list[dict[str, Any]]:
         """
         Get all EPUBs with basic metadata from cache.
 
@@ -290,7 +290,7 @@ class EPUBCache:
 
         return epubs
 
-    def get_epub_info(self, filename: str) -> Dict[str, Any]:
+    def get_epub_info(self, filename: str) -> dict[str, Any]:
         """
         Get detailed EPUB info with lazy-loaded extended metadata.
 
@@ -395,7 +395,7 @@ class EPUBCache:
         self._build_cache()
         logger.info("EPUB cache refresh complete")
 
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> dict[str, Any]:
         """
         Get metadata about the cache itself.
 

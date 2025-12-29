@@ -1,11 +1,11 @@
 import re
-from typing import Any, Dict
+from typing import Any
 
 import ebooklib
 
 
 class EPUBStyleProcessor:
-    def get_epub_styles(self, book) -> Dict[str, Any]:
+    def get_epub_styles(self, book) -> dict[str, Any]:
         """
         Extract and return CSS styles from an EPUB
         Returns sanitized CSS content for safe browser rendering

@@ -9,7 +9,7 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class BaseDatabaseService:
             logger.error(f"Database query error: {e}")
             return None
 
-    def execute_insert(self, query: str, params: tuple) -> Optional[int]:
+    def execute_insert(self, query: str, params: tuple) -> int | None:
         """
         Execute an INSERT query and return the last row ID.
 
@@ -99,7 +99,7 @@ class BaseDatabaseService:
             params (tuple): Query parameters
 
         Returns:
-            Optional[int]: Last row ID or None if failed
+            int | None: Last row ID or None if failed
         """
         try:
             with self.get_connection() as conn:

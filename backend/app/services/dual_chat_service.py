@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
 
@@ -31,8 +31,8 @@ class DualChatSession:
         self.request_id = request_id
         self.primary_llm_id = primary_llm_id
         self.secondary_llm_id = secondary_llm_id
-        self.llm1_task: Optional[asyncio.Task] = None
-        self.llm2_task: Optional[asyncio.Task] = None
+        self.llm1_task: asyncio.Task | None = None
+        self.llm2_task: asyncio.Task | None = None
         self.cancelled = False
 
     async def cancel(self):
@@ -49,7 +49,7 @@ class DualChatService:
 
     def __init__(self, db_path: str = "data/reading_progress.db"):
         self.db_path = db_path
-        self.active_sessions: Dict[str, DualChatSession] = {}
+        self.active_sessions: dict[str, DualChatSession] = {}
         self.llm_config_service = LLMConfigService(db_path)
         self.pdf_service = PDFService()
 
@@ -58,8 +58,8 @@ class DualChatService:
         message: str,
         filename: str,
         page_num: int,
-        llm1_history: List[Dict],
-        llm2_history: List[Dict],
+        llm1_history: list[dict],
+        llm2_history: list[dict],
         primary_llm_id: int,
         secondary_llm_id: int,
         is_new_chat: bool,
@@ -138,7 +138,7 @@ class DualChatService:
         llm_config: LLMConfiguration,
         message: str,
         context: str,
-        history: List[Dict],
+        history: list[dict],
         queue: asyncio.Queue,
         filename: str,
         page_num: int,
@@ -192,7 +192,7 @@ class DualChatService:
         llm1_queue: asyncio.Queue,
         llm2_queue: asyncio.Queue,
         session: DualChatSession,
-    ) -> AsyncGenerator[Dict, None]:
+    ) -> AsyncGenerator[dict, None]:
         """
         Merge two LLM streams into a single event stream.
         Yields events with llm1 and/or llm2 data.
@@ -265,7 +265,7 @@ class DualChatService:
         yield {"done": True}
 
     async def _call_llm_stream(
-        self, llm_config: LLMConfiguration, messages: List[Dict]
+        self, llm_config: LLMConfiguration, messages: list[dict]
     ) -> AsyncGenerator[str, None]:
         """Call LLM API and stream response chunks"""
         try:
@@ -364,7 +364,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
             logger.error(f"Error extracting context: {e}")
             return f"[Error extracting context from page {page_num}]"
 
-    async def _get_llm_config(self, config_id: int) -> Optional[LLMConfiguration]:
+    async def _get_llm_config(self, config_id: int) -> LLMConfiguration | None:
         """Get LLM configuration by ID with full API key"""
         try:
             # We need the full API key, not the masked version

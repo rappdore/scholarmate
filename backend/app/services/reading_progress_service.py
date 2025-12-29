@@ -6,7 +6,7 @@ It handles tracking the last page read and total pages for each PDF document.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .pdf_documents_service import PDFDocumentsService
@@ -97,7 +97,7 @@ class ReadingProgressService(BaseDatabaseService):
 
             conn.commit()
 
-    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
+    def _get_pdf_id(self, pdf_filename: str) -> int | None:
         """
         Get the pdf_id for a given PDF filename.
 
@@ -105,7 +105,7 @@ class ReadingProgressService(BaseDatabaseService):
             pdf_filename (str): Name of the PDF file
 
         Returns:
-            Optional[int]: The pdf_id if found, None otherwise
+            int | None: The pdf_id if found, None otherwise
         """
         try:
             pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
@@ -184,7 +184,7 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error saving reading progress: {e}")
             return False
 
-    def get_progress(self, pdf_filename: str) -> Optional[Dict[str, Any]]:
+    def get_progress(self, pdf_filename: str) -> dict[str, Any] | None:
         """
         Retrieve reading progress for a specific PDF document.
 
@@ -192,7 +192,7 @@ class ReadingProgressService(BaseDatabaseService):
             pdf_filename (str): Name of the PDF file to get progress for
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing progress information or None
+            dict[str, Any] | None: Dictionary containing progress information or None
         """
         try:
             # Phase 2a: Include pdf_id in SELECT
@@ -222,7 +222,7 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error getting reading progress: {e}")
             return None
 
-    def get_progress_by_pdf_id(self, pdf_id: int) -> Optional[Dict[str, Any]]:
+    def get_progress_by_pdf_id(self, pdf_id: int) -> dict[str, Any] | None:
         """
         Retrieve reading progress for a specific PDF by its ID.
 
@@ -230,7 +230,7 @@ class ReadingProgressService(BaseDatabaseService):
             pdf_id (int): ID of the PDF document
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing progress information or None
+            dict[str, Any] | None: Dictionary containing progress information or None
         """
         try:
             query = """
@@ -257,12 +257,12 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error getting reading progress by pdf_id={pdf_id}: {e}")
             return None
 
-    def get_all_progress(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_progress(self) -> dict[str, dict[str, Any]]:
         """
         Retrieve reading progress for all PDF documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
         """
         try:
             # Phase 2a: Include pdf_id in SELECT
@@ -385,16 +385,16 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error updating book status: {e}")
             return False
 
-    def get_books_by_status(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_books_by_status(self, status: str | None = None) -> list[dict[str, Any]]:
         """
         Get all books filtered by status.
 
         Args:
-            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+            status (str | None): Filter by specific status ('new', 'reading', 'finished').
                                    If None, returns all books.
 
         Returns:
-            List[Dict[str, Any]]: List of books with their progress and status information
+            list[dict[str, Any]]: List of books with their progress and status information
         """
         try:
             if status is None:
@@ -464,12 +464,12 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error getting books by status: {e}")
             return []
 
-    def get_status_counts(self) -> Dict[str, int]:
+    def get_status_counts(self) -> dict[str, int]:
         """
         Get count of books for each status.
 
         Returns:
-            Dict[str, int]: Dictionary with status counts
+            dict[str, int]: Dictionary with status counts
         """
         try:
             query = """

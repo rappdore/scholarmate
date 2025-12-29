@@ -26,7 +26,7 @@ The service provides CRUD helpers that will be wrapped by DatabaseService.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .epub_documents_service import EPUBDocumentsService
@@ -136,7 +136,7 @@ class EPUBHighlightService(BaseDatabaseService):
     # CRUD helpers
     # ---------------------------------------------------------------------
 
-    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+    def _get_epub_id(self, epub_filename: str) -> int | None:
         """
         Get the epub_id for a given EPUB filename.
 
@@ -146,7 +146,7 @@ class EPUBHighlightService(BaseDatabaseService):
             epub_filename (str): Name of the EPUB file
 
         Returns:
-            Optional[int]: The epub_id if found, None otherwise
+            int | None: The epub_id if found, None otherwise
         """
         try:
             epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
@@ -161,13 +161,13 @@ class EPUBHighlightService(BaseDatabaseService):
         self,
         epub_filename: str,
         nav_id: str,
-        chapter_id: Optional[str],
+        chapter_id: str | None,
         xpath: str,
         start_offset: int,
         end_offset: int,
         highlight_text: str,
         color: str,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Persist a new highlight and return its auto-generated ID."""
         try:
             # Phase 4c: Look up epub_id for auto-population
@@ -206,7 +206,7 @@ class EPUBHighlightService(BaseDatabaseService):
             logger.exception("Error saving EPUB highlight: %s", exc)
             return None
 
-    def get_all_highlights(self, epub_filename: str) -> List[Dict[str, Any]]:
+    def get_all_highlights(self, epub_filename: str) -> list[dict[str, Any]]:
         """Return all highlights for an EPUB document."""
         try:
             query = """
@@ -222,7 +222,7 @@ class EPUBHighlightService(BaseDatabaseService):
 
     def get_highlights_for_section(
         self, epub_filename: str, nav_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Return all highlights within a specific nav_id section."""
         try:
             query = """
@@ -238,7 +238,7 @@ class EPUBHighlightService(BaseDatabaseService):
 
     def get_highlights_for_chapter(
         self, epub_filename: str, chapter_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Return all highlights aggregated for a whole chapter."""
         try:
             query = """
@@ -254,7 +254,7 @@ class EPUBHighlightService(BaseDatabaseService):
             logger.exception("Error fetching EPUB chapter highlights: %s", exc)
             return []
 
-    def get_highlight_by_id(self, highlight_id: int) -> Optional[Dict[str, Any]]:
+    def get_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
         """Retrieve a single highlight by primary key."""
         try:
             query = "SELECT * FROM epub_highlights WHERE id = ?"
@@ -294,12 +294,12 @@ class EPUBHighlightService(BaseDatabaseService):
             logger.exception("Error updating EPUB highlight color: %s", exc)
             return False
 
-    def get_highlights_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+    def get_highlights_count_by_epub(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about highlights for all EPUB documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their highlight statistics
+            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their highlight statistics
         """
         try:
             # Query: Get count for each EPUB

@@ -7,7 +7,7 @@ It handles tracking navigation position, scroll position, and reading status for
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .epub_documents_service import EPUBDocumentsService
@@ -97,7 +97,7 @@ class EPUBProgressService(BaseDatabaseService):
 
             conn.commit()
 
-    def _get_epub_id(self, epub_filename: str) -> Optional[int]:
+    def _get_epub_id(self, epub_filename: str) -> int | None:
         """
         Get the epub_id for a given EPUB filename.
 
@@ -105,7 +105,7 @@ class EPUBProgressService(BaseDatabaseService):
             epub_filename (str): Name of the EPUB file
 
         Returns:
-            Optional[int]: The epub_id if found, None otherwise
+            int | None: The epub_id if found, None otherwise
         """
         try:
             epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
@@ -125,7 +125,7 @@ class EPUBProgressService(BaseDatabaseService):
         scroll_position: int = 0,
         total_sections: int = None,
         progress_percentage: float = 0.0,
-        nav_metadata: Dict[str, Any] = None,
+        nav_metadata: dict[str, Any] = None,
     ) -> bool:
         """
         Save or update reading progress for an EPUB document.
@@ -138,7 +138,7 @@ class EPUBProgressService(BaseDatabaseService):
             scroll_position (int): Scroll position within current section
             total_sections (int): Total number of navigation sections in book
             progress_percentage (float): Overall book progress (0.0-100.0)
-            nav_metadata (Dict[str, Any]): Navigation metadata for progress calculation
+            nav_metadata (dict[str, Any]): Navigation metadata for progress calculation
 
         Returns:
             bool: True if the operation was successful, False otherwise
@@ -249,7 +249,7 @@ class EPUBProgressService(BaseDatabaseService):
         except Exception as e:
             logger.error(f"Error auto-updating status for {epub_filename}: {e}")
 
-    def get_progress(self, epub_filename: str) -> Optional[Dict[str, Any]]:
+    def get_progress(self, epub_filename: str) -> dict[str, Any] | None:
         """
         Retrieve reading progress for a specific EPUB document.
 
@@ -257,7 +257,7 @@ class EPUBProgressService(BaseDatabaseService):
             epub_filename (str): Name of the EPUB file to get progress for
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing progress information or None
+            dict[str, Any] | None: Dictionary containing progress information or None
         """
         try:
             # Phase 2b: Include epub_id in SELECT
@@ -301,12 +301,12 @@ class EPUBProgressService(BaseDatabaseService):
             logger.error(f"Error getting EPUB progress: {e}")
             return None
 
-    def get_all_progress(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_progress(self) -> dict[str, dict[str, Any]]:
         """
         Retrieve reading progress for all EPUB documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
+            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
         """
         try:
             # Phase 2b: Include epub_id in SELECT
@@ -421,16 +421,16 @@ class EPUBProgressService(BaseDatabaseService):
             logger.error(f"Error updating EPUB book status: {e}")
             return False
 
-    def get_books_by_status(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_books_by_status(self, status: str | None = None) -> list[dict[str, Any]]:
         """
         Get all EPUB books filtered by status.
 
         Args:
-            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+            status (str | None): Filter by specific status ('new', 'reading', 'finished').
                                    If None, returns all books.
 
         Returns:
-            List[Dict[str, Any]]: List of EPUB books with their progress and status information
+            list[dict[str, Any]]: List of EPUB books with their progress and status information
         """
         try:
             if status:
@@ -485,12 +485,12 @@ class EPUBProgressService(BaseDatabaseService):
             logger.error(f"Error getting EPUB books by status: {e}")
             return []
 
-    def get_status_counts(self) -> Dict[str, int]:
+    def get_status_counts(self) -> dict[str, int]:
         """
         Get count of EPUB books for each status.
 
         Returns:
-            Dict[str, int]: Dictionary with status counts
+            dict[str, int]: Dictionary with status counts
         """
         try:
             query = """
@@ -533,14 +533,14 @@ class EPUBProgressService(BaseDatabaseService):
             return False
 
     def calculate_progress_percentage(
-        self, current_nav_id: str, nav_metadata: Dict[str, Any] = None
+        self, current_nav_id: str, nav_metadata: dict[str, Any] = None
     ) -> float:
         """
         Calculate overall progress percentage based on current navigation position.
 
         Args:
             current_nav_id (str): Current navigation section ID
-            nav_metadata (Dict[str, Any]): Navigation structure metadata
+            nav_metadata (dict[str, Any]): Navigation structure metadata
 
         Returns:
             float: Progress percentage (0.0-100.0)
@@ -574,7 +574,7 @@ class EPUBProgressService(BaseDatabaseService):
 
     def get_chapter_progress_info(
         self, epub_filename: str, chapter_id: str = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get detailed progress information for a specific chapter or current chapter.
 
@@ -583,7 +583,7 @@ class EPUBProgressService(BaseDatabaseService):
             chapter_id (str): Specific chapter ID, or None for current chapter
 
         Returns:
-            Dict[str, Any]: Chapter progress information
+            dict[str, Any]: Chapter progress information
         """
         try:
             progress = self.get_progress(epub_filename)

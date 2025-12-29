@@ -7,7 +7,7 @@ that users create while reading PDFs.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base_database_service import BaseDatabaseService
 from .pdf_documents_service import PDFDocumentsService
@@ -108,7 +108,7 @@ class ChatNotesService(BaseDatabaseService):
 
             conn.commit()
 
-    def _get_pdf_id(self, pdf_filename: str) -> Optional[int]:
+    def _get_pdf_id(self, pdf_filename: str) -> int | None:
         """
         Get the pdf_id for a given PDF filename.
 
@@ -118,7 +118,7 @@ class ChatNotesService(BaseDatabaseService):
             pdf_filename (str): Name of the PDF file
 
         Returns:
-            Optional[int]: The pdf_id if found, None otherwise
+            int | None: The pdf_id if found, None otherwise
         """
         try:
             pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
@@ -131,7 +131,7 @@ class ChatNotesService(BaseDatabaseService):
 
     def save_note(
         self, pdf_filename: str, page_number: int, title: str, chat_content: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Save a chat conversation as a note linked to a specific PDF page.
 
@@ -142,7 +142,7 @@ class ChatNotesService(BaseDatabaseService):
             chat_content (str): The actual conversation or note content
 
         Returns:
-            Optional[int]: The ID of the newly created note, or None if creation failed
+            int | None: The ID of the newly created note, or None if creation failed
         """
         try:
             # Phase 3b: Look up pdf_id for auto-population
@@ -173,17 +173,17 @@ class ChatNotesService(BaseDatabaseService):
             return None
 
     def get_notes_for_pdf(
-        self, pdf_filename: str, page_number: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, pdf_filename: str, page_number: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Retrieve chat notes for a PDF document, optionally filtered by page number.
 
         Args:
             pdf_filename (str): Name of the PDF file to get notes for
-            page_number (Optional[int]): Specific page number to filter by, or None for all pages
+            page_number (int | None): Specific page number to filter by, or None for all pages
 
         Returns:
-            List[Dict[str, Any]]: List of note dictionaries
+            list[dict[str, Any]]: List of note dictionaries
         """
         try:
             # Phase 3b: Include pdf_id in query
@@ -226,7 +226,7 @@ class ChatNotesService(BaseDatabaseService):
             logger.error(f"Error getting chat notes: {e}")
             return []
 
-    def get_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
+    def get_note_by_id(self, note_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific chat note by its unique ID.
 
@@ -234,7 +234,7 @@ class ChatNotesService(BaseDatabaseService):
             note_id (int): Unique identifier of the note to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
+            dict[str, Any] | None: Note dictionary with all fields, or None if not found
         """
         try:
             # Phase 3b: Include pdf_id in query
@@ -281,12 +281,12 @@ class ChatNotesService(BaseDatabaseService):
             logger.error(f"Error deleting chat note: {e}")
             return False
 
-    def get_notes_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
+    def get_notes_count_by_pdf(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about notes for all PDF documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their note statistics
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their note statistics
         """
         try:
             # First query: Get count and latest note date for each PDF

@@ -14,7 +14,7 @@ The service manages three main entities:
 import logging
 import os
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .chat_notes_service import ChatNotesService
 from .epub_chat_notes_service import EPUBChatNotesService
@@ -359,7 +359,7 @@ class DatabaseService:
         """
         return self.reading_progress.save_progress(pdf_filename, last_page, total_pages)
 
-    def get_reading_progress(self, pdf_filename: str) -> Optional[Dict[str, Any]]:
+    def get_reading_progress(self, pdf_filename: str) -> dict[str, Any] | None:
         """
         Retrieve reading progress for a specific PDF document.
 
@@ -367,7 +367,7 @@ class DatabaseService:
             pdf_filename (str): Name of the PDF file to get progress for
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing progress information:
+            dict[str, any] | None: Dictionary containing progress information:
                 - pdf_filename: Name of the PDF file
                 - last_page: Last page that was being read
                 - total_pages: Total pages in the document
@@ -376,12 +376,12 @@ class DatabaseService:
         """
         return self.reading_progress.get_progress(pdf_filename)
 
-    def get_all_reading_progress(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_reading_progress(self) -> dict[str, dict[str, Any]]:
         """
         Retrieve reading progress for all PDFs.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
         """
         return self.reading_progress.get_all_progress()
 
@@ -398,7 +398,7 @@ class DatabaseService:
         scroll_position: int = 0,
         total_sections: int = None,
         progress_percentage: float = 0.0,
-        nav_metadata: Dict[str, Any] = None,
+        nav_metadata: dict[str, Any] = None,
     ) -> bool:
         """
         Save or update reading progress for an EPUB document.
@@ -411,7 +411,7 @@ class DatabaseService:
             scroll_position (int): Scroll position within current section
             total_sections (int): Total number of navigation sections in book
             progress_percentage (float): Overall book progress (0.0-100.0)
-            nav_metadata (Dict[str, Any]): Navigation metadata for progress calculation
+            nav_metadata (dict[str, Any]): Navigation metadata for progress calculation
 
         Returns:
             bool: True if the operation was successful, False otherwise
@@ -427,7 +427,7 @@ class DatabaseService:
             nav_metadata,
         )
 
-    def get_epub_progress(self, epub_filename: str) -> Optional[Dict[str, Any]]:
+    def get_epub_progress(self, epub_filename: str) -> dict[str, Any] | None:
         """
         Retrieve reading progress for a specific EPUB document.
 
@@ -435,7 +435,7 @@ class DatabaseService:
             epub_filename (str): Name of the EPUB file to get progress for
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing progress information:
+            dict[str, Any] | None: Dictionary containing progress information:
                 - epub_filename: Name of the EPUB file
                 - current_nav_id: Current navigation section ID
                 - chapter_id: Chapter-level ID for display
@@ -450,12 +450,12 @@ class DatabaseService:
         """
         return self.epub_progress.get_progress(epub_filename)
 
-    def get_all_epub_progress(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_epub_progress(self) -> dict[str, dict[str, Any]]:
         """
         Retrieve reading progress for all EPUB documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
+            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
         """
         return self.epub_progress.get_all_progress()
 
@@ -476,26 +476,26 @@ class DatabaseService:
         return self.epub_progress.update_book_status(epub_filename, status, manual)
 
     def get_epub_books_by_status(
-        self, status: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, status: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get all EPUB books filtered by status.
 
         Args:
-            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+            status (str | None): Filter by specific status ('new', 'reading', 'finished').
                                    If None, returns all books.
 
         Returns:
-            List[Dict[str, Any]]: List of EPUB books with their progress and status information
+            list[dict[str, Any]]: List of EPUB books with their progress and status information
         """
         return self.epub_progress.get_books_by_status(status)
 
-    def get_epub_status_counts(self) -> Dict[str, int]:
+    def get_epub_status_counts(self) -> dict[str, int]:
         """
         Get count of EPUB books for each status.
 
         Returns:
-            Dict[str, int]: Dictionary with status counts
+            dict[str, int]: Dictionary with status counts
         """
         return self.epub_progress.get_status_counts()
 
@@ -512,14 +512,14 @@ class DatabaseService:
         return self.epub_progress.delete_progress(epub_filename)
 
     def calculate_epub_progress_percentage(
-        self, current_nav_id: str, nav_metadata: Dict[str, Any] = None
+        self, current_nav_id: str, nav_metadata: dict[str, Any] = None
     ) -> float:
         """
         Calculate overall progress percentage for an EPUB based on current navigation position.
 
         Args:
             current_nav_id (str): Current navigation section ID
-            nav_metadata (Dict[str, Any]): Navigation structure metadata
+            nav_metadata (dict[str, Any]): Navigation structure metadata
 
         Returns:
             float: Progress percentage (0.0-100.0)
@@ -530,7 +530,7 @@ class DatabaseService:
 
     def get_epub_chapter_progress_info(
         self, epub_filename: str, chapter_id: str = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get detailed progress information for a specific EPUB chapter or current chapter.
 
@@ -539,7 +539,7 @@ class DatabaseService:
             chapter_id (str): Specific chapter ID, or None for current chapter
 
         Returns:
-            Dict[str, Any]: Chapter progress information
+            dict[str, Any]: Chapter progress information
         """
         return self.epub_progress.get_chapter_progress_info(epub_filename, chapter_id)
 
@@ -549,7 +549,7 @@ class DatabaseService:
 
     def save_chat_note(
         self, pdf_filename: str, page_number: int, title: str, chat_content: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Save a chat conversation as a note linked to a specific PDF page.
 
@@ -563,13 +563,13 @@ class DatabaseService:
             chat_content (str): The actual conversation or note content
 
         Returns:
-            Optional[int]: The ID of the newly created note, or None if creation failed
+            int | None: The ID of the newly created note, or None if creation failed
         """
         return self.chat_notes.save_note(pdf_filename, page_number, title, chat_content)
 
     def get_chat_notes_for_pdf(
-        self, pdf_filename: str, page_number: Optional[int] = None
-    ) -> list[Dict[str, Any]]:
+        self, pdf_filename: str, page_number: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Retrieve chat notes for a PDF document, optionally filtered by page number.
 
@@ -579,10 +579,10 @@ class DatabaseService:
 
         Args:
             pdf_filename (str): Name of the PDF file to get notes for
-            page_number (Optional[int]): Specific page number to filter by, or None for all pages
+            page_number (int | None): Specific page number to filter by, or None for all pages
 
         Returns:
-            list[Dict[str, Any]]: List of note dictionaries, each containing:
+            list[dict[str, Any]]: List of note dictionaries, each containing:
                 - id: Unique note identifier
                 - pdf_filename: PDF file name
                 - page_number: Associated page number
@@ -593,7 +593,7 @@ class DatabaseService:
         """
         return self.chat_notes.get_notes_for_pdf(pdf_filename, page_number)
 
-    def get_chat_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
+    def get_chat_note_by_id(self, note_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific chat note by its unique ID.
 
@@ -604,7 +604,7 @@ class DatabaseService:
             note_id (int): Unique identifier of the note to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
+            dict[str, Any] | None: Note dictionary with all fields, or None if not found
         """
         return self.chat_notes.get_note_by_id(note_id)
 
@@ -623,7 +623,7 @@ class DatabaseService:
         """
         return self.chat_notes.delete_note(note_id)
 
-    def get_notes_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
+    def get_notes_count_by_pdf(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about notes for all PDF documents.
 
@@ -632,7 +632,7 @@ class DatabaseService:
         This is useful for dashboard views or summary displays.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their note statistics:
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their note statistics:
                 {
                     "filename.pdf": {
                         "notes_count": int,           # Total number of notes for this PDF
@@ -655,9 +655,9 @@ class DatabaseService:
         chapter_title: str,
         title: str,
         chat_content: str,
-        context_sections: List[str] = None,
+        context_sections: list[str] = None,
         scroll_position: int = 0,
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Save an EPUB chat conversation as a note linked to a navigation section.
 
@@ -668,11 +668,11 @@ class DatabaseService:
             chapter_title (str): Human-readable chapter title
             title (str): Title for the note (can be empty)
             chat_content (str): The actual conversation or note content
-            context_sections (List[str]): List of section IDs that provided context
+            context_sections (list[str]): List of section IDs that provided context
             scroll_position (int): Scroll position within the section
 
         Returns:
-            Optional[int]: The ID of the newly created note, or None if creation failed
+            int | None: The ID of the newly created note, or None if creation failed
         """
         return self.epub_chat_notes.save_note(
             epub_filename,
@@ -688,19 +688,19 @@ class DatabaseService:
     def get_epub_chat_notes(
         self,
         epub_filename: str,
-        nav_id: Optional[str] = None,
-        chapter_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        nav_id: str | None = None,
+        chapter_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Retrieve chat notes for an EPUB document, with fine-grained or chapter-level filtering.
 
         Args:
             epub_filename (str): Name of the EPUB file to get notes for
-            nav_id (Optional[str]): Specific navigation section to filter by
-            chapter_id (Optional[str]): Specific chapter to filter by
+            nav_id (str | None): Specific navigation section to filter by
+            chapter_id (str | None): Specific chapter to filter by
 
         Returns:
-            List[Dict[str, Any]]: List of note dictionaries with navigation context
+            list[dict[str, Any]]: List of note dictionaries with navigation context
         """
         return self.epub_chat_notes.get_notes_for_epub(
             epub_filename, nav_id, chapter_id
@@ -708,7 +708,7 @@ class DatabaseService:
 
     def get_epub_chat_notes_by_chapter(
         self, epub_filename: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Get EPUB chat notes grouped by chapter for UI display.
 
@@ -716,11 +716,11 @@ class DatabaseService:
             epub_filename (str): Name of the EPUB file to get notes for
 
         Returns:
-            Dict[str, List[Dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
+            dict[str, list[dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
         """
         return self.epub_chat_notes.get_notes_grouped_by_chapter(epub_filename)
 
-    def get_epub_chat_note_by_id(self, note_id: int) -> Optional[Dict[str, Any]]:
+    def get_epub_chat_note_by_id(self, note_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific EPUB chat note by its unique ID.
 
@@ -728,7 +728,7 @@ class DatabaseService:
             note_id (int): Unique identifier of the note to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Note dictionary with all fields, or None if not found
+            dict[str, Any] | None: Note dictionary with all fields, or None if not found
         """
         return self.epub_chat_notes.get_note_by_id(note_id)
 
@@ -744,12 +744,12 @@ class DatabaseService:
         """
         return self.epub_chat_notes.delete_note(note_id)
 
-    def get_epub_notes_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+    def get_epub_notes_count_by_epub(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about notes for all EPUB documents.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
+            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
         """
         return self.epub_chat_notes.get_notes_count_by_epub()
 
@@ -765,8 +765,8 @@ class DatabaseService:
         start_offset: int,
         end_offset: int,
         color: str,
-        coordinates: List[Dict[str, Any]],
-    ) -> Optional[int]:
+        coordinates: list[dict[str, Any]],
+    ) -> int | None:
         """
         Save a text highlight with coordinates and metadata.
 
@@ -781,10 +781,10 @@ class DatabaseService:
             start_offset (int): Character position where highlight starts
             end_offset (int): Character position where highlight ends
             color (str): Highlight color in hex format (e.g., '#ffff00')
-            coordinates (List[Dict[str, Any]]): List of coordinate dictionaries with bounding box data
+            coordinates (list[dict[str, Any]]): List of coordinate dictionaries with bounding box data
 
         Returns:
-            Optional[int]: The ID of the newly created highlight, or None if creation failed
+            int | None: The ID of the newly created highlight, or None if creation failed
         """
         return self.highlights.save_highlight(
             pdf_filename,
@@ -797,8 +797,8 @@ class DatabaseService:
         )
 
     def get_highlights_for_pdf(
-        self, pdf_filename: str, page_number: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, pdf_filename: str, page_number: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Retrieve highlights for a PDF document, optionally filtered by page number.
 
@@ -808,10 +808,10 @@ class DatabaseService:
 
         Args:
             pdf_filename (str): Name of the PDF file to get highlights for
-            page_number (Optional[int]): Specific page number to filter by, or None for all pages
+            page_number (int | None): Specific page number to filter by, or None for all pages
 
         Returns:
-            List[Dict[str, Any]]: List of highlight dictionaries, each containing:
+            list[dict[str, Any]]: List of highlight dictionaries, each containing:
                 - id: Unique highlight identifier
                 - pdf_filename: PDF file name
                 - page_number: Associated page number
@@ -825,7 +825,7 @@ class DatabaseService:
         """
         return self.highlights.get_highlights_for_pdf(pdf_filename, page_number)
 
-    def get_highlight_by_id(self, highlight_id: int) -> Optional[Dict[str, Any]]:
+    def get_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
         """
         Retrieve a specific highlight by its unique ID.
 
@@ -836,7 +836,7 @@ class DatabaseService:
             highlight_id (int): Unique identifier of the highlight to retrieve
 
         Returns:
-            Optional[Dict[str, Any]]: Highlight dictionary with all fields, or None if not found
+            dict[str, Any] | None: Highlight dictionary with all fields, or None if not found
         """
         return self.highlights.get_highlight_by_id(highlight_id)
 
@@ -871,7 +871,7 @@ class DatabaseService:
         """
         return self.highlights.update_color(highlight_id, color)
 
-    def get_highlights_count_by_pdf(self) -> Dict[str, Dict[str, Any]]:
+    def get_highlights_count_by_pdf(self) -> dict[str, dict[str, Any]]:
         """
         Get summary statistics about highlights for all PDF documents.
 
@@ -880,7 +880,7 @@ class DatabaseService:
         This is useful for dashboard views or summary displays.
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary mapping PDF filenames to their highlight statistics:
+            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their highlight statistics:
                 {
                     "filename.pdf": {
                         "highlights_count": int,           # Total number of highlights for this PDF
@@ -909,25 +909,25 @@ class DatabaseService:
         """
         return self.reading_progress.update_book_status(pdf_filename, status, manual)
 
-    def get_books_by_status(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_books_by_status(self, status: str | None = None) -> list[dict[str, Any]]:
         """
         Get all books filtered by status.
 
         Args:
-            status (Optional[str]): Filter by specific status ('new', 'reading', 'finished').
+            status (str | None): Filter by specific status ('new', 'reading', 'finished').
                                    If None, returns all books.
 
         Returns:
-            List[Dict[str, Any]]: List of books with their progress and status information
+            list[dict[str, Any]]: List of books with their progress and status information
         """
         return self.reading_progress.get_books_by_status(status)
 
-    def get_status_counts(self) -> Dict[str, int]:
+    def get_status_counts(self) -> dict[str, int]:
         """
         Get count of books for each status.
 
         Returns:
-            Dict[str, int]: Dictionary with status counts
+            dict[str, int]: Dictionary with status counts
         """
         return self.reading_progress.get_status_counts()
 
@@ -943,7 +943,7 @@ class DatabaseService:
         """
         return self.reading_progress.delete_progress(pdf_filename)
 
-    def delete_all_book_data(self, pdf_filename: str) -> Dict[str, bool]:
+    def delete_all_book_data(self, pdf_filename: str) -> dict[str, bool]:
         """
         Delete all database data for a specific book.
 
@@ -951,7 +951,7 @@ class DatabaseService:
             pdf_filename (str): Name of the PDF file to delete all data for
 
         Returns:
-            Dict[str, bool]: Dictionary indicating success/failure for each data type
+            dict[str, bool]: Dictionary indicating success/failure for each data type
         """
         results = {}
 
@@ -988,7 +988,7 @@ class DatabaseService:
 
         return results
 
-    def delete_all_epub_data(self, epub_filename: str) -> Dict[str, bool]:
+    def delete_all_epub_data(self, epub_filename: str) -> dict[str, bool]:
         """
         Delete all database data for a specific EPUB book.
 
@@ -996,7 +996,7 @@ class DatabaseService:
             epub_filename (str): Name of the EPUB file to delete all data for
 
         Returns:
-            Dict[str, bool]: Dictionary indicating success/failure for each data type
+            dict[str, bool]: Dictionary indicating success/failure for each data type
         """
         results = {}
 
@@ -1041,13 +1041,13 @@ class DatabaseService:
         self,
         epub_filename: str,
         nav_id: str,
-        chapter_id: Optional[str],
+        chapter_id: str | None,
         xpath: str,
         start_offset: int,
         end_offset: int,
         highlight_text: str,
         color: str,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Create a highlight for an EPUB section."""
         return self.epub_highlights.save_highlight(
             epub_filename,
@@ -1060,25 +1060,25 @@ class DatabaseService:
             color,
         )
 
-    def get_epub_all_highlights(self, epub_filename: str) -> List[Dict[str, Any]]:
+    def get_epub_all_highlights(self, epub_filename: str) -> list[dict[str, Any]]:
         """Return all highlights for an EPUB document."""
         return self.epub_highlights.get_all_highlights(epub_filename)
 
     def get_epub_section_highlights(
         self, epub_filename: str, nav_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Return highlights for a specific nav_id section."""
         return self.epub_highlights.get_highlights_for_section(epub_filename, nav_id)
 
     def get_epub_chapter_highlights(
         self, epub_filename: str, chapter_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Return all highlights within a chapter."""
         return self.epub_highlights.get_highlights_for_chapter(
             epub_filename, chapter_id
         )
 
-    def get_epub_highlight_by_id(self, highlight_id: int) -> Optional[Dict[str, Any]]:
+    def get_epub_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
         return self.epub_highlights.get_highlight_by_id(highlight_id)
 
     def delete_epub_highlight(self, highlight_id: int) -> bool:
@@ -1087,7 +1087,7 @@ class DatabaseService:
     def update_epub_highlight_color(self, highlight_id: int, color: str) -> bool:
         return self.epub_highlights.update_color(highlight_id, color)
 
-    def get_epub_highlights_count_by_epub(self) -> Dict[str, Dict[str, Any]]:
+    def get_epub_highlights_count_by_epub(self) -> dict[str, dict[str, Any]]:
         """Return highlight count statistics for all EPUB documents."""
         return self.epub_highlights.get_highlights_count_by_epub()
 

@@ -8,7 +8,7 @@ Supports CRUD operations and ensures only one configuration is active at a time.
 import logging
 import sqlite3
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.models.llm_types import (
     LLMConfiguration,
@@ -113,12 +113,12 @@ class LLMConfigService:
             updated_at=row["updated_at"],
         )
 
-    def get_all_configurations(self) -> List[LLMConfigurationMasked]:
+    def get_all_configurations(self) -> list[LLMConfigurationMasked]:
         """
         Retrieve all LLM configurations with masked API keys.
 
         Returns:
-            List of LLMConfigurationMasked dictionaries
+            list of LLMConfigurationMasked dictionaries
         """
         try:
             with self.get_connection() as conn:
@@ -134,7 +134,7 @@ class LLMConfigService:
             logger.error(f"Error fetching all configurations: {e}")
             raise
 
-    def get_active_configuration(self) -> Optional[LLMConfiguration]:
+    def get_active_configuration(self) -> LLMConfiguration | None:
         """
         Get the currently active LLM configuration with full API key.
 
@@ -158,9 +158,7 @@ class LLMConfigService:
             logger.error(f"Error fetching active configuration: {e}")
             raise
 
-    def get_configuration_by_id(
-        self, config_id: int
-    ) -> Optional[LLMConfigurationMasked]:
+    def get_configuration_by_id(self, config_id: int) -> LLMConfigurationMasked | None:
         """
         Get a specific configuration by ID with masked API key.
 
@@ -195,7 +193,7 @@ class LLMConfigService:
         base_url: str,
         api_key: str,
         model_name: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         is_active: bool = False,
         always_starts_with_thinking: bool = False,
     ) -> LLMConfigurationMasked:
@@ -268,12 +266,12 @@ class LLMConfigService:
     def update_configuration(
         self,
         config_id: int,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model_name: Optional[str] = None,
-        always_starts_with_thinking: Optional[bool] = None,
+        name: str | None = None,
+        description: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        always_starts_with_thinking: bool | None = None,
     ) -> LLMConfigurationMasked:
         """
         Update an existing LLM configuration.
@@ -305,8 +303,8 @@ class LLMConfigService:
                     raise ValueError(f"Configuration with ID {config_id} not found")
 
                 # Build dynamic UPDATE query for provided fields
-                updates: List[str] = []
-                params: List[Any] = []
+                updates: list[str] = []
+                params: list[Any] = []
 
                 if name is not None:
                     # Check if new name conflicts with existing
@@ -371,7 +369,7 @@ class LLMConfigService:
             logger.error(f"Error updating configuration {config_id}: {e}")
             raise
 
-    def activate_configuration(self, config_id: int) -> Dict[str, Any]:
+    def activate_configuration(self, config_id: int) -> dict[str, Any]:
         """
         Set a configuration as active (deactivates all others).
 

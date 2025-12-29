@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import ebooklib
 from bs4 import BeautifulSoup
@@ -13,7 +13,7 @@ class EPUBContentProcessor:
         self.base_url = base_url
         self.navigation_service = EPUBNavigationService()
 
-    def get_content_by_nav_id(self, book, nav_id: str, filename: str) -> Dict[str, Any]:
+    def get_content_by_nav_id(self, book, nav_id: str, filename: str) -> dict[str, Any]:
         """
         Get HTML content for a specific navigation section.
         Uses the navigation index so previous/next navigation follows the book's
@@ -95,12 +95,12 @@ class EPUBContentProcessor:
     def _collect_entry_content(
         self,
         book,
-        nav_entry: Dict[str, Any],
+        nav_entry: dict[str, Any],
         filename: str,
         requested_nav_id: str,
-    ) -> Tuple[str, List[int]]:
+    ) -> tuple[str, list[int]]:
         combined_content = ""
-        used_positions: List[int] = []
+        used_positions: list[int] = []
 
         # Primary: use explicit spine positions recorded for the nav entry.
         for pos in nav_entry.get("spine_positions", []) or []:
@@ -140,7 +140,7 @@ class EPUBContentProcessor:
 
     def _legacy_nav_fallback(
         self, book, nav_id: str, filename: str
-    ) -> Tuple[str, List[int]]:
+    ) -> tuple[str, list[int]]:
         """Fallback that mimics the legacy behaviour for unexpected nav ids."""
         if not nav_id:
             return "", []
@@ -170,8 +170,8 @@ class EPUBContentProcessor:
         return "", []
 
     def _resolve_navigation_entry(
-        self, nav_id: str, navigation_index: Dict[str, Any], book
-    ) -> Optional[Dict[str, Any]]:
+        self, nav_id: str, navigation_index: dict[str, Any], book
+    ) -> dict[str, Any] | None:
         nav_lookup = navigation_index.get("by_id", {})
         flat_nav = navigation_index.get("flat", [])
 
@@ -197,8 +197,8 @@ class EPUBContentProcessor:
         return None
 
     def _adjacent_entry(
-        self, flat_nav: List[Dict[str, Any]], current_entry: Dict[str, Any], offset: int
-    ) -> Optional[Dict[str, Any]]:
+        self, flat_nav: list[dict[str, Any]], current_entry: dict[str, Any], offset: int
+    ) -> dict[str, Any] | None:
         if not flat_nav or offset == 0:
             return None
 
@@ -221,10 +221,10 @@ class EPUBContentProcessor:
 
         return None
 
-    def _entry_has_content(self, entry: Dict[str, Any]) -> bool:
+    def _entry_has_content(self, entry: dict[str, Any]) -> bool:
         return bool(entry.get("spine_positions")) or entry.get("child_count", 0) == 0
 
-    def _count_readable_sections(self, flat_nav: List[Dict[str, Any]]) -> int:
+    def _count_readable_sections(self, flat_nav: list[dict[str, Any]]) -> int:
         return sum(1 for entry in flat_nav if self._entry_has_content(entry))
 
     def _sanitize_html(self, html_content: str) -> str:
@@ -364,21 +364,21 @@ class EPUBContentProcessor:
         sanitized_content = self._sanitize_html(raw_content)
         return self._rewrite_image_paths(sanitized_content, filename)
 
-    def _positions_from_item_ids(self, book, item_ids: List[str]) -> List[int]:
+    def _positions_from_item_ids(self, book, item_ids: list[str]) -> list[int]:
         if not item_ids:
             return []
 
         id_set = {item_id for item_id in item_ids if item_id}
-        positions: List[int] = []
+        positions: list[int] = []
         for idx, (spine_item_id, _) in enumerate(book.spine):
             if spine_item_id in id_set:
                 positions.append(idx)
         return sorted(set(positions))
 
     def _find_candidate_item(
-        self, book, nav_entry: Dict[str, Any], requested_nav_id: str
+        self, book, nav_entry: dict[str, Any], requested_nav_id: str
     ):
-        candidates: List[str] = []
+        candidates: list[str] = []
         candidates.extend(nav_entry.get("spine_item_ids", []) or [])
 
         href = nav_entry.get("href") or ""
@@ -410,7 +410,7 @@ class EPUBContentProcessor:
 
         return None
 
-    def _resolve_entry_title(self, nav_entry: Dict[str, Any], book) -> str:
+    def _resolve_entry_title(self, nav_entry: dict[str, Any], book) -> str:
         title = nav_entry.get("title")
         if title:
             return str(title)

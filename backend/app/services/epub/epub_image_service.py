@@ -1,7 +1,6 @@
 import io
 import zipfile
 from pathlib import Path
-from typing import Dict, List
 
 import ebooklib
 from ebooklib import epub
@@ -165,7 +164,7 @@ class EPUBImageService:
 
         raise FileNotFoundError(f"Image {image_path} not found in EPUB")
 
-    def get_epub_images_list(self, book) -> List[Dict[str, str]]:
+    def get_epub_images_list(self, book) -> list[dict[str, str]]:
         """
         Get a list of all images in an EPUB file
         """

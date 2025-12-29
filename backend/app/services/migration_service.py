@@ -9,7 +9,6 @@ ensures they are only run once.
 import logging
 import sqlite3
 from pathlib import Path
-from typing import List, Set
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -50,12 +49,12 @@ class MigrationService:
             """)
             conn.commit()
 
-    def _get_applied_migrations(self) -> Set[str]:
+    def _get_applied_migrations(self) -> set[str]:
         """
         Get the set of migrations that have already been applied.
 
         Returns:
-            Set[str]: Set of migration names that have been applied
+            set[str]: Set of migration names that have been applied
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT migration_name FROM schema_migrations")
@@ -75,12 +74,12 @@ class MigrationService:
             )
             conn.commit()
 
-    def _get_pending_migrations(self) -> List[str]:
+    def _get_pending_migrations(self) -> list[str]:
         """
         Get list of migration files that haven't been applied yet.
 
         Returns:
-            List[str]: Sorted list of pending migration file names
+            list[str]: Sorted list of pending migration file names
         """
         if not self.migrations_dir.exists():
             logger.warning(f"Migrations directory not found: {self.migrations_dir}")

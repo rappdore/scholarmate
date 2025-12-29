@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import ebooklib
 from ebooklib import epub
@@ -42,7 +42,7 @@ class EPUBMetadataExtractor:
         except Exception:
             return ""
 
-    def list_epubs(self) -> List[Dict[str, Any]]:
+    def list_epubs(self) -> list[dict[str, Any]]:
         """
         List all EPUB files in the epubs directory with metadata
         """
@@ -102,7 +102,7 @@ class EPUBMetadataExtractor:
 
         return epubs
 
-    def get_epub_info(self, file_path: Path) -> Dict[str, Any]:
+    def get_epub_info(self, file_path: Path) -> dict[str, Any]:
         """
         Get detailed information about a specific EPUB
         """

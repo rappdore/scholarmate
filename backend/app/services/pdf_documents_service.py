@@ -14,7 +14,6 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class PDFDocumentsService:
         finally:
             conn.close()
 
-    def get_by_filename(self, filename: str) -> Optional[Dict]:
+    def get_by_filename(self, filename: str) -> dict | None:
         """
         Get PDF document by filename.
 
@@ -70,7 +69,7 @@ class PDFDocumentsService:
                 return dict(row)
             return None
 
-    def get_by_id(self, pdf_id: int) -> Optional[Dict]:
+    def get_by_id(self, pdf_id: int) -> dict | None:
         """
         Get PDF document by ID.
 
@@ -97,17 +96,17 @@ class PDFDocumentsService:
         self,
         filename: str,
         num_pages: int,
-        title: Optional[str] = None,
-        author: Optional[str] = None,
-        subject: Optional[str] = None,
-        creator: Optional[str] = None,
-        producer: Optional[str] = None,
-        file_size: Optional[int] = None,
-        file_path: Optional[str] = None,
-        thumbnail_path: Optional[str] = None,
-        created_date: Optional[str] = None,
-        modified_date: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+        title: str | None = None,
+        author: str | None = None,
+        subject: str | None = None,
+        creator: str | None = None,
+        producer: str | None = None,
+        file_size: int | None = None,
+        file_path: str | None = None,
+        thumbnail_path: str | None = None,
+        created_date: str | None = None,
+        modified_date: str | None = None,
+        metadata: dict | None = None,
     ) -> int:
         """
         Create new PDF document record or update existing one.
@@ -215,7 +214,7 @@ class PDFDocumentsService:
             conn.commit()
             return cursor.rowcount > 0
 
-    def list_all(self) -> List[Dict]:
+    def list_all(self) -> list[dict]:
         """
         List all PDF documents in the registry.
 
@@ -233,7 +232,7 @@ class PDFDocumentsService:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def sync_from_filesystem(self, pdfs_dir: str) -> Dict[str, int]:
+    def sync_from_filesystem(self, pdfs_dir: str) -> dict[str, int]:
         """
         Sync database with filesystem.
 
