@@ -1,6 +1,5 @@
 import io
 from pathlib import Path
-from typing import Any, Dict, List
 
 import fitz  # PyMuPDF
 import pdfplumber
@@ -13,7 +12,7 @@ from .pdf_cache import PDFCache
 class PDFService:
     def __init__(
         self, pdf_dir: str = "pdfs", db_path: str = "data/reading_progress.db"
-    ):
+    ) -> None:
         self.pdf_dir = Path(pdf_dir)
         self.thumbnails_dir = Path("thumbnails")
         if not self.pdf_dir.exists():
@@ -24,13 +23,13 @@ class PDFService:
         # Initialize cache with database backing (Phase 1a)
         self.cache = PDFCache(self.pdf_dir, self.thumbnails_dir, self, db_path)
 
-    def list_pdfs(self) -> List[Dict[str, Any]]:
+    def list_pdfs(self) -> list[dict[str, object]]:
         """
         List all PDF files in the pdfs directory with metadata (from cache)
         """
         return self.cache.get_all_pdfs()
 
-    def get_pdf_info(self, filename: str) -> Dict[str, Any]:
+    def get_pdf_info(self, filename: str) -> dict[str, object]:
         """
         Get detailed information about a specific PDF (with lazy-loaded extended metadata)
         """
@@ -167,14 +166,14 @@ class PDFService:
             # Fallback: generate if not in cache (shouldn't happen normally)
             return self.generate_thumbnail(filename)
 
-    def refresh_cache(self) -> Dict[str, Any]:
+    def refresh_cache(self) -> dict[str, object]:
         """
         Refresh the PDF cache by rebuilding from filesystem
         """
         self.cache.refresh()
         return self.cache.get_cache_info()
 
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> dict[str, object]:
         """
         Get metadata about the PDF cache
         """

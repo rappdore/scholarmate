@@ -1,5 +1,5 @@
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from collections.abc import AsyncGenerator
 
 from openai import AsyncOpenAI
 
@@ -17,7 +17,7 @@ DEFAULT_MODEL = ""
 
 
 class OllamaService:
-    def __init__(self, db_path: str = "data/reading_progress.db"):
+    def __init__(self, db_path: str = "data/reading_progress.db") -> None:
         self.db_path = db_path
         self.client = None
         self.model = None
@@ -25,12 +25,12 @@ class OllamaService:
         self.api_key = None
         self.always_starts_with_thinking = False
         # Session storage for reasoning traces, keyed by filename
-        self._reasoning_sessions: Dict[str, list] = {}
+        self._reasoning_sessions: dict[str, list] = {}
 
         # Load initial configuration
         self._load_active_configuration()
 
-    def _load_active_configuration(self):
+    def _load_active_configuration(self) -> None:
         """
         Load the active LLM configuration from database.
         Falls back to LM Studio defaults if no active configuration exists.
@@ -40,7 +40,7 @@ class OllamaService:
             from app.services.llm_config_service import LLMConfigService
 
             llm_config_service = LLMConfigService(self.db_path)
-            config: Optional[LLMConfiguration] = (
+            config: LLMConfiguration | None = (
                 llm_config_service.get_active_configuration()
             )
 
@@ -84,7 +84,7 @@ class OllamaService:
 
             self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
 
-    def reload_configuration(self):
+    def reload_configuration(self) -> None:
         """
         Reload configuration from database (called when active config changes).
         This allows switching LLMs without restarting the service.
@@ -200,8 +200,8 @@ Provide a helpful analysis that will aid in understanding this content."""
         filename: str,
         page_num: int,
         pdf_text: str,
-        chat_history: list = None,
-        request_id: Optional[str] = None,
+        chat_history: list | None = None,
+        request_id: str | None = None,
         is_new_chat: bool = False,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
@@ -354,8 +354,8 @@ Keep responses conversational but informative. When explaining a concept, emphas
         filename: str,
         nav_id: str,
         epub_text: str,
-        chat_history: list = None,
-        request_id: Optional[str] = None,
+        chat_history: list | None = None,
+        request_id: str | None = None,
         is_new_chat: bool = False,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
@@ -501,7 +501,7 @@ Keep responses conversational but informative."""
                 metadata={"thinking_started": False, "thinking_complete": False},
             )
 
-    async def test_connection(self) -> Dict[str, Any]:
+    async def test_connection(self) -> dict[str, object]:
         """
         Test connection to Ollama
         """

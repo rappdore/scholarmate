@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from PyPDF2 import PdfReader
 
@@ -28,9 +27,9 @@ class PDFCache:
         self,
         pdf_dir: Path,
         thumbnails_dir: Path,
-        pdf_service: Any,
+        pdf_service: object,
         db_path: str = "data/reading_progress.db",
-    ):
+    ) -> None:
         """
         Initialize the PDF cache with database backing.
 
@@ -47,11 +46,11 @@ class PDFCache:
         # Phase 1a: Database service for persistence
         self._db_service = PDFDocumentsService(db_path)
 
-        # Cache storage: Dict[filename, metadata_dict]
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        # Cache storage: dict[filename, metadata_dict]
+        self._cache: dict[str, dict[str, object]] = {}
 
         # Cache metadata
-        self._cache_built_at: Optional[str] = None
+        self._cache_built_at: str | None = None
         self._cache_pdf_count: int = 0
 
         # Build cache on initialization
@@ -237,7 +236,7 @@ class PDFCache:
             f"(DB hits: {db_hits}, new: {db_misses})"
         )
 
-    def get_all_pdfs(self) -> List[Dict[str, Any]]:
+    def get_all_pdfs(self) -> list[dict[str, object]]:
         """
         Get all PDFs with basic metadata from cache.
 
@@ -252,7 +251,7 @@ class PDFCache:
 
         return pdfs
 
-    def get_pdf_info(self, filename: str) -> Dict[str, Any]:
+    def get_pdf_info(self, filename: str) -> dict[str, object]:
         """
         Get detailed PDF info with lazy-loaded extended metadata.
 
@@ -360,7 +359,7 @@ class PDFCache:
         self._build_cache()
         logger.info("PDF cache refresh complete")
 
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> dict[str, object]:
         """
         Get metadata about the cache itself.
 
