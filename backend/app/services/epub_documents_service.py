@@ -284,18 +284,18 @@ class EPUBDocumentsService:
                 is_new = epub_filename not in db_epubs
                 self.create_or_update(
                     filename=epub_filename,
-                    chapters=epub_info.get("chapters", 0),
-                    title=epub_info.get("title"),
-                    author=epub_info.get("author"),
-                    subject=epub_info.get("subject", ""),
-                    publisher=epub_info.get("publisher", ""),
-                    language=epub_info.get("language", ""),
+                    chapters=epub_info.chapters,
+                    title=epub_info.title,
+                    author=epub_info.author,
+                    subject=epub_info.subject,
+                    publisher=epub_info.publisher,
+                    language=epub_info.language,
                     file_size=file_size,
                     file_path=str(file_path),
                     thumbnail_path=thumbnail_path,
-                    created_date=epub_info.get("created_date"),
-                    modified_date=epub_info.get("modified_date"),
-                    metadata=epub_info,
+                    created_date=epub_info.created_date,
+                    modified_date=epub_info.modified_date,
+                    metadata=epub_info.model_dump(),
                 )
 
                 if is_new:

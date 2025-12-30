@@ -67,9 +67,8 @@ async def get_epub_info_by_id(epub_id: int) -> Dict[str, Any]:
         epub_doc = get_epub_doc_or_404(epub_id)
 
         info = epub_service.get_epub_info(epub_doc["filename"])
-        # Add ID to response
-        info["id"] = epub_id
-        return info
+        # Convert model to dict and add ID to response
+        return {**info.model_dump(), "id": epub_id}
     except HTTPException:
         raise
     except FileNotFoundError:
@@ -384,7 +383,7 @@ async def list_epubs(
             # Create a set of filenames that match the status
             status_filenames = {book["epub_filename"] for book in books_by_status}
             # Filter EPUBs to only include those with the matching status
-            epubs = [epub for epub in epubs if epub.get("filename") in status_filenames]
+            epubs = [epub for epub in epubs if epub.filename in status_filenames]
 
         all_progress = db_service.get_all_epub_progress()
         all_notes = db_service.get_epub_notes_count_by_epub()
@@ -394,18 +393,21 @@ async def list_epubs(
         all_epub_docs = epub_documents_service.list_all()
         filename_to_id = {doc["filename"]: doc["id"] for doc in all_epub_docs}
 
-        # Add reading progress, notes info, and highlights info to each EPUB
+        # Convert models to dicts and enrich with additional data
+        result = []
         for epub in epubs:
-            filename = epub.get("filename")
+            # Convert model to dict for enrichment
+            epub_dict = epub.model_dump()
+            filename = epub.filename
 
             # Add EPUB ID from database using the pre-built map (O(1) lookup)
             if filename and filename in filename_to_id:
-                epub["id"] = filename_to_id[filename]
+                epub_dict["id"] = filename_to_id[filename]
 
             # Add reading progress with status information
             if filename and filename in all_progress:
                 progress = all_progress[filename]
-                epub["reading_progress"] = {
+                epub_dict["reading_progress"] = {
                     "current_nav_id": progress["current_nav_id"],
                     "chapter_id": progress["chapter_id"],
                     "chapter_title": progress["chapter_title"],
@@ -418,29 +420,31 @@ async def list_epubs(
                     "manually_set": progress.get("manually_set", False),
                 }
             else:
-                epub["reading_progress"] = None
+                epub_dict["reading_progress"] = None
 
             # Add notes information
             if filename and filename in all_notes:
                 notes_info = all_notes[filename]
-                epub["notes_info"] = {
+                epub_dict["notes_info"] = {
                     "notes_count": notes_info["notes_count"],
                     "latest_note_date": notes_info["latest_note_date"],
                     "latest_note_title": notes_info["latest_note_title"],
                 }
             else:
-                epub["notes_info"] = None
+                epub_dict["notes_info"] = None
 
             # Add highlights information
             if filename and filename in all_highlights:
                 highlights_info = all_highlights[filename]
-                epub["highlights_info"] = {
+                epub_dict["highlights_info"] = {
                     "highlights_count": highlights_info["highlights_count"],
                 }
             else:
-                epub["highlights_info"] = None
+                epub_dict["highlights_info"] = None
 
-        return epubs
+            result.append(epub_dict)
+
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing EPUBs: {str(e)}")
 
