@@ -14,7 +14,7 @@ The service manages three main entities:
 import logging
 import os
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .chat_notes_service import ChatNotesService
 from .epub_chat_notes_service import EPUBChatNotesService
@@ -24,6 +24,9 @@ from .highlights_service import HighlightsService
 from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
 from .reading_statistics_service import ReadingStatisticsService
+
+if TYPE_CHECKING:
+    from app.models.pdf_responses import DatabaseDeletionResults, ReadingProgress
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -359,7 +362,7 @@ class DatabaseService:
         """
         return self.reading_progress.save_progress(pdf_filename, last_page, total_pages)
 
-    def get_reading_progress(self, pdf_filename: str):
+    def get_reading_progress(self, pdf_filename: str) -> "ReadingProgress | None":
         """
         Retrieve reading progress for a specific PDF document.
 
@@ -371,7 +374,7 @@ class DatabaseService:
         """
         return self.reading_progress.get_progress(pdf_filename)
 
-    def get_all_reading_progress(self):
+    def get_all_reading_progress(self) -> dict[str, "ReadingProgress"]:
         """
         Retrieve reading progress for all PDFs.
 
@@ -904,7 +907,7 @@ class DatabaseService:
         """
         return self.reading_progress.update_book_status(pdf_filename, status, manual)
 
-    def get_books_by_status(self, status: str | None = None):
+    def get_books_by_status(self, status: str | None = None) -> list["ReadingProgress"]:
         """
         Get all books filtered by status.
 
@@ -938,7 +941,7 @@ class DatabaseService:
         """
         return self.reading_progress.delete_progress(pdf_filename)
 
-    def delete_all_book_data(self, pdf_filename: str):
+    def delete_all_book_data(self, pdf_filename: str) -> "DatabaseDeletionResults":
         """
         Delete all database data for a specific book.
 
