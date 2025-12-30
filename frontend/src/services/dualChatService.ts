@@ -1,6 +1,7 @@
 /**
  * Dual Chat Service - Handles communication with backend for dual LLM chat
  */
+import { API_BASE_URL } from './config';
 
 export const dualChatService = {
   /**
@@ -36,7 +37,7 @@ export const dualChatService = {
     unknown
   > {
     try {
-      const response = await fetch('http://localhost:8000/ai/dual-chat', {
+      const response = await fetch(`${API_BASE_URL}/ai/dual-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,7 +119,7 @@ export const dualChatService = {
   stopDualChat: async (requestId: string): Promise<void> => {
     try {
       const response = await fetch(
-        `http://localhost:8000/ai/dual-chat/stop/${requestId}`,
+        `${API_BASE_URL}/ai/dual-chat/stop/${requestId}`,
         {
           method: 'POST',
         }

@@ -8,8 +8,7 @@ import type {
   UpdateColorRequest,
   HighlightColor,
 } from '../types/highlights';
-
-const API_BASE_URL = 'http://127.0.0.1:8000';
+import { API_BASE_URL } from './config';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -150,7 +149,7 @@ export const pdfService = {
   },
 
   getThumbnailUrl: (pdfId: number): string => {
-    return `http://localhost:8000/pdf/${pdfId}/thumbnail`;
+    return `${API_BASE_URL}/pdf/${pdfId}/thumbnail`;
   },
 
   refreshPDFCache: async (): Promise<{
@@ -386,7 +385,7 @@ export const aiService = {
   > {
     try {
       const response = await fetch(
-        'http://localhost:8000/ai/analyze-epub-section/stream',
+        `${API_BASE_URL}/ai/analyze-epub-section/stream`,
         {
           method: 'POST',
           headers: {
@@ -628,7 +627,7 @@ export const chatService = {
     unknown
   > {
     try {
-      const response = await fetch('http://localhost:8000/ai/chat/epub', {
+      const response = await fetch(`${API_BASE_URL}/ai/chat/epub`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -863,7 +862,7 @@ export const highlightService = {
   getHighlightById: async (highlightId: string): Promise<Highlight | null> => {
     try {
       const response = await fetch(
-        `http://localhost:8000/highlights/id/${highlightId}`
+        `${API_BASE_URL}/highlights/id/${highlightId}`
       );
 
       if (response.status === 404) {
@@ -892,7 +891,7 @@ export const highlightService = {
   deleteHighlight: async (highlightId: string): Promise<boolean> => {
     try {
       const response = await fetch(
-        `http://localhost:8000/highlights/${highlightId}`,
+        `${API_BASE_URL}/highlights/${highlightId}`,
         {
           method: 'DELETE',
         }
@@ -923,7 +922,7 @@ export const highlightService = {
   ): Promise<boolean> => {
     try {
       const response = await fetch(
-        `http://localhost:8000/highlights/${highlightId}/color`,
+        `${API_BASE_URL}/highlights/${highlightId}/color`,
         {
           method: 'PUT',
           headers: {
@@ -957,9 +956,7 @@ export const highlightService = {
   // Get highlight statistics for all PDFs
   getHighlightStats: async (): Promise<Record<string, any>> => {
     try {
-      const response = await fetch(
-        'http://localhost:8000/highlights/stats/count'
-      );
+      const response = await fetch(`${API_BASE_URL}/highlights/stats/count`);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

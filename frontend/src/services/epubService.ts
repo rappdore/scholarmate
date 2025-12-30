@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { EPUBDocument, EPUBDocumentInfo } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
+import { API_BASE_URL } from './config';
 
 export interface EPUBNavigationItem {
   id: string;
@@ -30,7 +31,7 @@ export interface EPUBNavigationResponse {
 }
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: API_BASE_URL,
 });
 
 // EPUB Progress interfaces
@@ -78,7 +79,7 @@ export const epubService = {
   },
 
   getThumbnailUrl: (epubId: number): string => {
-    return `http://localhost:8000/epub/${epubId}/thumbnail`;
+    return `${API_BASE_URL}/epub/${epubId}/thumbnail`;
   },
 
   getNavigation: async (epubId: number): Promise<EPUBNavigationResponse> => {
