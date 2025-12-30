@@ -36,12 +36,10 @@ async def get_pdf_info_by_id(pdf_id: int) -> Dict[str, Any]:
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        # Get PDF info using filename
+        # Get PDF info using filename (returns PDFExtendedMetadata)
         info = pdf_service.get_pdf_info(pdf_doc["filename"])
-        # Add ID to response
-        info["id"] = pdf_id
-        info["pdf_id"] = pdf_id
-        return info
+        # Convert to dict and add ID fields
+        return {**info.model_dump(), "id": pdf_id, "pdf_id": pdf_id}
     except HTTPException:
         raise
     except FileNotFoundError:
@@ -313,14 +311,17 @@ async def list_pdfs(
             # Create a set of filenames that match the status
             status_filenames = {book["pdf_filename"] for book in books_by_status}
             # Filter PDFs to only include those with the matching status
-            pdfs = [pdf for pdf in pdfs if pdf.get("filename") in status_filenames]
+            pdfs = [pdf for pdf in pdfs if pdf.filename in status_filenames]
 
         all_progress = db_service.get_all_reading_progress()
         all_notes = db_service.get_notes_count_by_pdf()
         all_highlights = db_service.get_highlights_count_by_pdf()
 
+        # Convert PDFBasicMetadata objects to dicts for enrichment
+        pdfs_dicts = [pdf.model_dump() for pdf in pdfs]
+
         # Add reading progress, notes info, and highlights info to each PDF
-        for pdf in pdfs:
+        for pdf in pdfs_dicts:
             filename = pdf.get("filename")
 
             # Add PDF ID from database
@@ -368,7 +369,7 @@ async def list_pdfs(
             else:
                 pdf["highlights_info"] = None
 
-        return pdfs
+        return pdfs_dicts
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing PDFs: {str(e)}")
 

@@ -284,18 +284,18 @@ class PDFDocumentsService:
                 is_new = pdf_filename not in db_pdfs
                 self.create_or_update(
                     filename=pdf_filename,
-                    num_pages=pdf_info["num_pages"],
-                    title=pdf_info.get("title"),
-                    author=pdf_info.get("author"),
-                    subject=pdf_info.get("subject", ""),
-                    creator=pdf_info.get("creator", ""),
-                    producer=pdf_info.get("producer", ""),
+                    num_pages=pdf_info.num_pages,
+                    title=pdf_info.title,
+                    author=pdf_info.author,
+                    subject=pdf_info.subject,
+                    creator=pdf_info.creator,
+                    producer=pdf_info.producer,
                     file_size=file_size,
                     file_path=str(file_path),
                     thumbnail_path=thumbnail_path,
-                    created_date=pdf_info.get("created_date"),
-                    modified_date=pdf_info.get("modified_date"),
-                    metadata=pdf_info,
+                    created_date=pdf_info.created_date,
+                    modified_date=pdf_info.modified_date,
+                    metadata=pdf_info.model_dump(),
                 )
 
                 if is_new:

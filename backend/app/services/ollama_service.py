@@ -540,13 +540,10 @@ Keep responses conversational but informative."""
 
 When analyzing a page, you should:
 1. Summarize the key points and main ideas
-2. Explain any complex concepts in simpler terms
-3. Highlight important information or insights
-4. Provide context or background knowledge when helpful
-5. Point out connections to other concepts or fields
-6. Suggest questions the reader might want to explore further
+2. Provide the summary as a few bullet points
+3. Brevity is the key
 
-Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
+focus on enhancing understanding rather than just repeating the content."""
 
         user_prompt = f"""Please analyze page {page_num} of the document "{filename}".
 
