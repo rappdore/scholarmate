@@ -111,7 +111,7 @@ class ReadingStatisticsService(BaseDatabaseService):
                 )
 
             # Check if the book status is "finished"
-            if progress.get("status") == "finished":
+            if progress.status == "finished":
                 logger.info(
                     f"Skipping statistics update for finished book: pdf_id={pdf_id} "
                     f"(session: {session_id})"
