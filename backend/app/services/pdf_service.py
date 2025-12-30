@@ -6,6 +6,8 @@ import pdfplumber
 from PIL import Image
 from PyPDF2 import PdfReader
 
+from app.models.pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
+
 from .pdf_cache import PDFCache
 
 
@@ -23,13 +25,13 @@ class PDFService:
         # Initialize cache with database backing (Phase 1a)
         self.cache = PDFCache(self.pdf_dir, self.thumbnails_dir, self, db_path)
 
-    def list_pdfs(self) -> list[dict[str, object]]:
+    def list_pdfs(self) -> list[PDFBasicMetadata]:
         """
         List all PDF files in the pdfs directory with metadata (from cache)
         """
         return self.cache.get_all_pdfs()
 
-    def get_pdf_info(self, filename: str) -> dict[str, object]:
+    def get_pdf_info(self, filename: str) -> PDFExtendedMetadata:
         """
         Get detailed information about a specific PDF (with lazy-loaded extended metadata)
         """

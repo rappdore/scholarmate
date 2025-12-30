@@ -570,7 +570,7 @@ async def get_page_context(
     try:
         # Get PDF info to know total pages
         pdf_info = pdf_service.get_pdf_info(filename)
-        total_pages = pdf_info["num_pages"]
+        total_pages = pdf_info.num_pages
 
         # Calculate page range
         start_page = max(1, page_num - context_pages)

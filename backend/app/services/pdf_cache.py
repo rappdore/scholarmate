@@ -4,6 +4,8 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
+from app.models.pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
+
 from .pdf_documents_service import PDFDocumentsService
 
 logger = logging.getLogger(__name__)
@@ -46,8 +48,9 @@ class PDFCache:
         # Phase 1a: Database service for persistence
         self._db_service = PDFDocumentsService(db_path)
 
-        # Cache storage: dict[filename, metadata_dict]
-        self._cache: dict[str, dict[str, object]] = {}
+        # Cache storage: dict[filename, PDFBasicMetadata | PDFExtendedMetadata]
+        # Starts with PDFBasicMetadata, upgraded to PDFExtendedMetadata on get_pdf_info()
+        self._cache: dict[str, PDFBasicMetadata | PDFExtendedMetadata] = {}
 
         # Cache metadata
         self._cache_built_at: str | None = None
@@ -118,18 +121,18 @@ class PDFCache:
                         )
                         thumbnail_path_str = ""
 
-                pdf_info = {
-                    "filename": filename,
-                    "type": "pdf",
-                    "title": db_record.get("title", file_path.stem),
-                    "author": db_record.get("author", "Unknown"),
-                    "num_pages": db_record.get("num_pages", 0),
-                    "file_size": db_record.get("file_size", 0),
-                    "modified_date": db_record.get("modified_date", ""),
-                    "created_date": db_record.get("created_date", ""),
-                    "thumbnail_path": thumbnail_path_str,
-                    "error": None,
-                }
+                pdf_info = PDFBasicMetadata(
+                    filename=filename,
+                    type="pdf",
+                    title=db_record.get("title", file_path.stem),
+                    author=db_record.get("author", "Unknown"),
+                    num_pages=db_record.get("num_pages", 0),
+                    file_size=db_record.get("file_size", 0),
+                    modified_date=db_record.get("modified_date", ""),
+                    created_date=db_record.get("created_date", ""),
+                    thumbnail_path=thumbnail_path_str,
+                    error=None,
+                )
                 self._cache[filename] = pdf_info
                 db_hits += 1
 
@@ -163,22 +166,18 @@ class PDFCache:
                         thumbnail_path_str = ""
 
                     # Store basic metadata in cache
-                    pdf_info = {
-                        "filename": file_path.name,
-                        "type": "pdf",
-                        "title": str(title) if title else file_path.stem,
-                        "author": str(author) if author else "Unknown",
-                        "num_pages": num_pages,
-                        "file_size": stat.st_size,
-                        "modified_date": datetime.fromtimestamp(
-                            stat.st_mtime
-                        ).isoformat(),
-                        "created_date": datetime.fromtimestamp(
-                            stat.st_ctime
-                        ).isoformat(),
-                        "thumbnail_path": thumbnail_path_str,
-                        "error": None,
-                    }
+                    pdf_info = PDFBasicMetadata(
+                        filename=file_path.name,
+                        type="pdf",
+                        title=str(title) if title else file_path.stem,
+                        author=str(author) if author else "Unknown",
+                        num_pages=num_pages,
+                        file_size=stat.st_size,
+                        modified_date=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        created_date=datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                        thumbnail_path=thumbnail_path_str,
+                        error=None,
+                    )
 
                     self._cache[file_path.name] = pdf_info
 
@@ -186,14 +185,14 @@ class PDFCache:
                     try:
                         self._db_service.create_or_update(
                             filename=file_path.name,
-                            title=pdf_info["title"],
-                            author=pdf_info["author"],
+                            title=pdf_info.title,
+                            author=pdf_info.author,
                             num_pages=num_pages,
                             file_size=stat.st_size,
                             file_path=str(file_path),
                             thumbnail_path=thumbnail_path_str,
-                            created_date=pdf_info["created_date"],
-                            modified_date=pdf_info["modified_date"],
+                            created_date=pdf_info.created_date,
+                            modified_date=pdf_info.modified_date,
                         )
                     except Exception as db_error:
                         logger.error(
@@ -207,22 +206,18 @@ class PDFCache:
                     # If we can't read a PDF, still include it but with limited info
                     logger.error(f"Error processing {file_path.name}: {e}")
                     stat = file_path.stat()
-                    pdf_info = {
-                        "filename": file_path.name,
-                        "type": "pdf",
-                        "title": file_path.stem,
-                        "author": "Unknown",
-                        "num_pages": 0,
-                        "file_size": stat.st_size,
-                        "modified_date": datetime.fromtimestamp(
-                            stat.st_mtime
-                        ).isoformat(),
-                        "created_date": datetime.fromtimestamp(
-                            stat.st_ctime
-                        ).isoformat(),
-                        "thumbnail_path": "",
-                        "error": f"Could not read PDF: {str(e)}",
-                    }
+                    pdf_info = PDFBasicMetadata(
+                        filename=file_path.name,
+                        type="pdf",
+                        title=file_path.stem,
+                        author="Unknown",
+                        num_pages=0,
+                        file_size=stat.st_size,
+                        modified_date=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        created_date=datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                        thumbnail_path="",
+                        error=f"Could not read PDF: {str(e)}",
+                    )
                     self._cache[file_path.name] = pdf_info
                     db_misses += 1
 
@@ -236,22 +231,22 @@ class PDFCache:
             f"(DB hits: {db_hits}, new: {db_misses})"
         )
 
-    def get_all_pdfs(self) -> list[dict[str, object]]:
+    def get_all_pdfs(self) -> list[PDFBasicMetadata]:
         """
         Get all PDFs with basic metadata from cache.
 
         Returns:
-            List of PDF metadata dictionaries, sorted by modified_date (newest first)
+            List of PDFBasicMetadata objects, sorted by modified_date (newest first)
         """
         # Convert cache dict to list
         pdfs = list(self._cache.values())
 
         # Sort by modified date (newest first)
-        pdfs.sort(key=lambda x: x["modified_date"], reverse=True)
+        pdfs.sort(key=lambda x: x.modified_date, reverse=True)
 
         return pdfs
 
-    def get_pdf_info(self, filename: str) -> dict[str, object]:
+    def get_pdf_info(self, filename: str) -> PDFExtendedMetadata:
         """
         Get detailed PDF info with lazy-loaded extended metadata.
 
@@ -264,7 +259,7 @@ class PDFCache:
             filename: Name of the PDF file
 
         Returns:
-            Dictionary with full PDF metadata
+            PDFExtendedMetadata object with full PDF metadata
 
         Raises:
             FileNotFoundError: If PDF not found in cache
@@ -275,62 +270,76 @@ class PDFCache:
 
         pdf_info = self._cache[filename]
 
-        # Check if extended metadata is already loaded
-        # Extended metadata fields: subject, creator, producer, creation_date, modification_date
-        if "subject" not in pdf_info:
-            # Lazy-load extended metadata
-            logger.debug(f"Lazy-loading extended metadata for: {filename}")
-            try:
-                file_path = self.pdf_dir / filename
+        # Check if extended metadata is already loaded by checking the type
+        if isinstance(pdf_info, PDFExtendedMetadata):
+            # Already has extended metadata, return it
+            return pdf_info
 
-                if not file_path.exists():
-                    raise FileNotFoundError(f"PDF {filename} not found on filesystem")
+        # Need to lazy-load extended metadata
+        logger.debug(f"Lazy-loading extended metadata for: {filename}")
+        try:
+            file_path = self.pdf_dir / filename
 
-                with open(file_path, "rb") as file:
-                    reader = PdfReader(file)
-                    metadata = reader.metadata or {}
+            if not file_path.exists():
+                raise FileNotFoundError(f"PDF {filename} not found on filesystem")
 
-                    # Extract extended metadata
-                    pdf_info["subject"] = str(metadata.get("/Subject", ""))
-                    pdf_info["creator"] = str(metadata.get("/Creator", ""))
-                    pdf_info["producer"] = str(metadata.get("/Producer", ""))
-                    pdf_info["creation_date"] = str(metadata.get("/CreationDate", ""))
-                    pdf_info["modification_date"] = str(metadata.get("/ModDate", ""))
+            with open(file_path, "rb") as file:
+                reader = PdfReader(file)
+                metadata = reader.metadata or {}
 
-                    logger.debug(f"Extended metadata cached for: {filename}")
+                # Create extended metadata object
+                extended_info = PDFExtendedMetadata(
+                    **pdf_info.model_dump(),
+                    subject=str(metadata.get("/Subject", "")),
+                    creator=str(metadata.get("/Creator", "")),
+                    producer=str(metadata.get("/Producer", "")),
+                    creation_date=str(metadata.get("/CreationDate", "")),
+                    modification_date=str(metadata.get("/ModDate", "")),
+                )
 
-                    # Phase 1a: Persist extended metadata to database
-                    try:
-                        self._db_service.create_or_update(
-                            filename=filename,
-                            num_pages=pdf_info["num_pages"],
-                            title=pdf_info["title"],
-                            author=pdf_info["author"],
-                            subject=pdf_info["subject"],
-                            creator=pdf_info["creator"],
-                            producer=pdf_info["producer"],
-                            file_size=pdf_info.get("file_size"),
-                            file_path=str(file_path),
-                            thumbnail_path=pdf_info.get("thumbnail_path", ""),
-                            created_date=pdf_info.get("created_date"),
-                            modified_date=pdf_info.get("modified_date"),
-                        )
-                    except Exception as db_error:
-                        logger.error(
-                            f"Error persisting extended metadata for {filename} to database: {db_error}"
-                        )
-                        # Continue even if DB write fails
+                # Update cache with extended metadata
+                self._cache[filename] = extended_info
 
-            except Exception as e:
-                logger.error(f"Error loading extended metadata for {filename}: {e}")
-                # Set empty values on error
-                pdf_info["subject"] = ""
-                pdf_info["creator"] = ""
-                pdf_info["producer"] = ""
-                pdf_info["creation_date"] = ""
-                pdf_info["modification_date"] = ""
+                logger.debug(f"Extended metadata cached for: {filename}")
 
-        return pdf_info
+                # Phase 1a: Persist extended metadata to database
+                try:
+                    self._db_service.create_or_update(
+                        filename=filename,
+                        num_pages=extended_info.num_pages,
+                        title=extended_info.title,
+                        author=extended_info.author,
+                        subject=extended_info.subject,
+                        creator=extended_info.creator,
+                        producer=extended_info.producer,
+                        file_size=extended_info.file_size,
+                        file_path=str(file_path),
+                        thumbnail_path=extended_info.thumbnail_path,
+                        created_date=extended_info.created_date,
+                        modified_date=extended_info.modified_date,
+                    )
+                except Exception as db_error:
+                    logger.error(
+                        f"Error persisting extended metadata for {filename} to database: {db_error}"
+                    )
+                    # Continue even if DB write fails
+
+                return extended_info
+
+        except Exception as e:
+            logger.error(f"Error loading extended metadata for {filename}: {e}")
+            # Create extended metadata with empty values on error
+            extended_info = PDFExtendedMetadata(
+                **pdf_info.model_dump(),
+                subject="",
+                creator="",
+                producer="",
+                creation_date="",
+                modification_date="",
+            )
+            # Update cache with extended metadata (even if empty)
+            self._cache[filename] = extended_info
+            return extended_info
 
     def get_thumbnail_path(self, filename: str) -> str:
         """
@@ -348,7 +357,7 @@ class PDFCache:
         if filename not in self._cache:
             raise FileNotFoundError(f"PDF {filename} not found in cache")
 
-        return self._cache[filename].get("thumbnail_path", "")
+        return self._cache[filename].thumbnail_path
 
     def refresh(self) -> None:
         """

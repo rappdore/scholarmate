@@ -345,7 +345,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
                 # Next page
                 try:
                     pdf_info = self.pdf_service.get_pdf_info(filename)
-                    if page_num < pdf_info["page_count"]:
+                    if page_num < pdf_info.num_pages:
                         next_text = self.pdf_service.extract_page_text(
                             filename, page_num + 1
                         )
