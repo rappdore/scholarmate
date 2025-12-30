@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..models.pdf_responses import PDFDetailResponse
 from ..services.database_service import db_service
 from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
@@ -25,8 +26,8 @@ class BookStatusRequest(BaseModel):
     manually_set: bool = True
 
 
-@router.get("/{pdf_id:int}/info")
-async def get_pdf_info_by_id(pdf_id: int) -> Dict[str, Any]:
+@router.get("/{pdf_id:int}/info", response_model=PDFDetailResponse)
+async def get_pdf_info_by_id(pdf_id: int) -> PDFDetailResponse:
     """
     Get detailed information about a specific PDF by ID
     """
@@ -38,8 +39,8 @@ async def get_pdf_info_by_id(pdf_id: int) -> Dict[str, Any]:
 
         # Get PDF info using filename (returns PDFExtendedMetadata)
         info = pdf_service.get_pdf_info(pdf_doc["filename"])
-        # Convert to dict and add ID fields
-        return {**info.model_dump(), "id": pdf_id, "pdf_id": pdf_id}
+        # Create response model with ID fields
+        return PDFDetailResponse(**info.model_dump(), id=pdf_id, pdf_id=pdf_id)
     except HTTPException:
         raise
     except FileNotFoundError:
