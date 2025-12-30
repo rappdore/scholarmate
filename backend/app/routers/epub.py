@@ -138,7 +138,9 @@ async def get_epub_content_by_id(epub_id: int, nav_id: str) -> Dict[str, Any]:
     try:
         epub_doc = get_epub_doc_or_404(epub_id)
 
-        content = epub_service.get_content_by_nav_id(epub_doc["filename"], nav_id)
+        content = epub_service.get_content_by_nav_id(
+            epub_doc["filename"], nav_id, epub_id
+        )
         return content
     except HTTPException:
         raise
@@ -167,6 +169,42 @@ async def get_epub_styles_by_id(epub_id: int) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="EPUB not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting styles: {str(e)}")
+
+
+@router.get("/{epub_id:int}/image/{image_path:path}")
+async def get_epub_image_by_id(epub_id: int, image_path: str):
+    """
+    Get an image from an EPUB file by ID
+    """
+    try:
+        epub_doc = get_epub_doc_or_404(epub_id)
+
+        image_data = epub_service.get_epub_image(epub_doc["filename"], image_path)
+
+        # Determine media type based on file extension
+        if image_path.lower().endswith(".png"):
+            media_type = "image/png"
+        elif image_path.lower().endswith((".jpg", ".jpeg")):
+            media_type = "image/jpeg"
+        elif image_path.lower().endswith(".gif"):
+            media_type = "image/gif"
+        elif image_path.lower().endswith(".svg"):
+            media_type = "image/svg+xml"
+        elif image_path.lower().endswith(".webp"):
+            media_type = "image/webp"
+        else:
+            media_type = "application/octet-stream"
+
+        from fastapi.responses import Response
+
+        return Response(content=image_data, media_type=media_type)
+
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting image: {str(e)}")
 
 
 @router.put("/{epub_id:int}/progress")

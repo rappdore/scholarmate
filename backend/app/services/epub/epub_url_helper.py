@@ -96,7 +96,7 @@ class EPUBURLHelper:
     @staticmethod
     def build_image_url(base_url: str, filename: str, image_path: str) -> str:
         """
-        Build a complete image URL with proper encoding
+        Build a complete image URL with proper encoding (deprecated - use build_image_url_by_id)
 
         Args:
             base_url: Base URL (e.g., "http://localhost:8000")
@@ -123,6 +123,34 @@ class EPUBURLHelper:
         return (
             f"{base_url.rstrip('/')}/epub/{encoded_filename}/image/{encoded_image_path}"
         )
+
+    @staticmethod
+    def build_image_url_by_id(base_url: str, epub_id: int, image_path: str) -> str:
+        """
+        Build a complete image URL using EPUB ID with proper encoding
+
+        Args:
+            base_url: Base URL (e.g., "http://localhost:8000")
+            epub_id: EPUB document ID
+            image_path: Normalized image path
+
+        Returns:
+            Complete encoded URL
+        """
+        if not all([base_url, epub_id is not None, image_path]):
+            return ""
+
+        # Normalize the image path
+        normalized_path = EPUBURLHelper.normalize_image_path(image_path)
+
+        if not normalized_path:
+            return ""
+
+        # Encode image path for URL
+        encoded_image_path = urllib.parse.quote(normalized_path, safe="/")
+
+        # Build URL with ID-based routing
+        return f"{base_url.rstrip('/')}/epub/{epub_id}/image/{encoded_image_path}"
 
     @staticmethod
     def extract_image_path_from_epub_item(item_name: str) -> str:

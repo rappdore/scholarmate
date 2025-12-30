@@ -13,7 +13,9 @@ class EPUBContentProcessor:
         self.base_url = base_url
         self.navigation_service = EPUBNavigationService()
 
-    def get_content_by_nav_id(self, book, nav_id: str, filename: str) -> dict[str, Any]:
+    def get_content_by_nav_id(
+        self, book, nav_id: str, filename: str, epub_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Get HTML content for a specific navigation section.
         Uses the navigation index so previous/next navigation follows the book's
@@ -29,13 +31,13 @@ class EPUBContentProcessor:
         resolved_nav_id = nav_entry.get("id", nav_id)
 
         content, used_positions = self._collect_entry_content(
-            book, nav_entry, filename, resolved_nav_id
+            book, nav_entry, filename, resolved_nav_id, epub_id
         )
 
         if not content:
             # As a last resort, attempt to load the requested nav_id directly.
             fallback_content, fallback_positions = self._legacy_nav_fallback(
-                book, nav_id, filename
+                book, nav_id, filename, epub_id
             )
             content = fallback_content
             used_positions = fallback_positions
@@ -78,7 +80,7 @@ class EPUBContentProcessor:
         }
 
     def _get_single_spine_content(
-        self, book, spine_position: int, filename: str
+        self, book, spine_position: int, filename: str, epub_id: int | None = None
     ) -> str:
         """Fallback method to get content from a single spine item."""
         if spine_position >= len(book.spine):
@@ -90,7 +92,7 @@ class EPUBContentProcessor:
         if not self._is_document_item(item):
             return ""
 
-        return self._get_processed_item_content(item, filename)
+        return self._get_processed_item_content(item, filename, epub_id)
 
     def _collect_entry_content(
         self,
@@ -98,13 +100,14 @@ class EPUBContentProcessor:
         nav_entry: dict[str, Any],
         filename: str,
         requested_nav_id: str,
+        epub_id: int | None = None,
     ) -> tuple[str, list[int]]:
         combined_content = ""
         used_positions: list[int] = []
 
         # Primary: use explicit spine positions recorded for the nav entry.
         for pos in nav_entry.get("spine_positions", []) or []:
-            html = self._get_single_spine_content(book, pos, filename)
+            html = self._get_single_spine_content(book, pos, filename, epub_id)
             if html:
                 combined_content += html
                 used_positions.append(pos)
@@ -117,7 +120,7 @@ class EPUBContentProcessor:
             book, nav_entry.get("spine_item_ids", [])
         )
         for pos in item_positions:
-            html = self._get_single_spine_content(book, pos, filename)
+            html = self._get_single_spine_content(book, pos, filename, epub_id)
             if html:
                 combined_content += html
                 used_positions.append(pos)
@@ -128,7 +131,7 @@ class EPUBContentProcessor:
         # Final attempt: resolve a specific item by href/nav id.
         candidate_item = self._find_candidate_item(book, nav_entry, requested_nav_id)
         if self._is_document_item(candidate_item):
-            html = self._get_processed_item_content(candidate_item, filename)
+            html = self._get_processed_item_content(candidate_item, filename, epub_id)
             if html:
                 combined_content = html
                 used_positions = self._positions_from_item_ids(
@@ -139,7 +142,7 @@ class EPUBContentProcessor:
         return "", []
 
     def _legacy_nav_fallback(
-        self, book, nav_id: str, filename: str
+        self, book, nav_id: str, filename: str, epub_id: int | None = None
     ) -> tuple[str, list[int]]:
         """Fallback that mimics the legacy behaviour for unexpected nav ids."""
         if not nav_id:
@@ -163,7 +166,7 @@ class EPUBContentProcessor:
                     break
 
         if self._is_document_item(item):
-            content = self._get_processed_item_content(item, filename)
+            content = self._get_processed_item_content(item, filename, epub_id)
             positions = self._positions_from_item_ids(book, [item.get_id()])
             return content, positions
 
@@ -302,7 +305,9 @@ class EPUBContentProcessor:
 
         return html_content
 
-    def _rewrite_image_paths(self, content: str, filename: str) -> str:
+    def _rewrite_image_paths(
+        self, content: str, filename: str, epub_id: int | None = None
+    ) -> str:
         """
         Rewrite image paths in HTML content to point to our image serving endpoint
         Uses robust URL helper for proper encoding and security
@@ -319,8 +324,15 @@ class EPUBContentProcessor:
             if src_path.startswith(("http://", "https://", "data:", "blob:")):
                 return match.group(0)
 
-            # Use robust URL helper to build the image URL
-            new_src = EPUBURLHelper.build_image_url(self.base_url, filename, src_path)
+            # Use ID-based URL builder if epub_id is available, otherwise fall back to filename
+            if epub_id is not None:
+                new_src = EPUBURLHelper.build_image_url_by_id(
+                    self.base_url, epub_id, src_path
+                )
+            else:
+                new_src = EPUBURLHelper.build_image_url(
+                    self.base_url, filename, src_path
+                )
 
             # If URL building failed, keep original
             if not new_src:
@@ -352,7 +364,9 @@ class EPUBContentProcessor:
         html_content = section_data.get("content", "")
         return self._extract_text_from_html(html_content)
 
-    def _get_processed_item_content(self, item, filename: str) -> str:
+    def _get_processed_item_content(
+        self, item, filename: str, epub_id: int | None = None
+    ) -> str:
         if not self._is_document_item(item):
             return ""
 
@@ -362,7 +376,7 @@ class EPUBContentProcessor:
             return ""
 
         sanitized_content = self._sanitize_html(raw_content)
-        return self._rewrite_image_paths(sanitized_content, filename)
+        return self._rewrite_image_paths(sanitized_content, filename, epub_id)
 
     def _positions_from_item_ids(self, book, item_ids: list[str]) -> list[int]:
         if not item_ids:

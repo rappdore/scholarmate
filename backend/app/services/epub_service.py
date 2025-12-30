@@ -120,14 +120,18 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.navigation_service.get_navigation_tree(book)
 
-    def get_content_by_nav_id(self, filename: str, nav_id: str) -> dict[str, Any]:
+    def get_content_by_nav_id(
+        self, filename: str, nav_id: str, epub_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Get HTML content for a specific navigation section
         Enhanced to handle chapters that span multiple spine items
         """
         file_path = self.get_epub_path(filename)
         book = epub.read_epub(str(file_path))
-        return self.content_processor.get_content_by_nav_id(book, nav_id, filename)
+        return self.content_processor.get_content_by_nav_id(
+            book, nav_id, filename, epub_id
+        )
 
     def extract_section_text(self, filename: str, nav_id: str) -> str:
         """
