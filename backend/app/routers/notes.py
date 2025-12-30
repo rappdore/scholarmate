@@ -42,7 +42,7 @@ async def save_chat_note(note: ChatNoteRequest) -> Dict[str, Any]:
             pdf_doc = pdf_documents_service.get_by_id(note.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            pdf_filename = pdf_doc["filename"]
+            pdf_filename = pdf_doc.filename
         elif note.pdf_filename is not None:
             pdf_filename = note.pdf_filename
         else:
@@ -90,7 +90,7 @@ async def get_chat_notes_for_pdf_by_id(
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        notes = db_service.get_chat_notes_for_pdf(pdf_doc["filename"], page_number)
+        notes = db_service.get_chat_notes_for_pdf(pdf_doc.filename, page_number)
         return [ChatNoteResponse(**note) for note in notes]
     except HTTPException:
         raise

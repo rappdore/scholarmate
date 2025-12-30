@@ -90,7 +90,7 @@ class PDFCache:
                 logger.debug(f"Loading from database: {filename}")
 
                 # Get thumbnail path from database
-                thumbnail_path_str = db_record.get("thumbnail_path", "")
+                thumbnail_path_str = db_record.thumbnail_path or ""
 
                 # Only generate thumbnail if DB has no path or file doesn't exist
                 if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
@@ -102,14 +102,14 @@ class PDFCache:
                         try:
                             self._db_service.create_or_update(
                                 filename=filename,
-                                num_pages=db_record.get("num_pages", 0),
-                                title=db_record.get("title"),
-                                author=db_record.get("author"),
-                                file_size=db_record.get("file_size"),
-                                file_path=db_record.get("file_path"),
+                                num_pages=db_record.num_pages,
+                                title=db_record.title,
+                                author=db_record.author,
+                                file_size=db_record.file_size,
+                                file_path=db_record.file_path,
                                 thumbnail_path=thumbnail_path_str,
-                                created_date=db_record.get("created_date"),
-                                modified_date=db_record.get("modified_date"),
+                                created_date=db_record.created_date,
+                                modified_date=db_record.modified_date,
                             )
                         except Exception as db_error:
                             logger.warning(
@@ -124,12 +124,12 @@ class PDFCache:
                 pdf_info = PDFBasicMetadata(
                     filename=filename,
                     type="pdf",
-                    title=db_record.get("title", file_path.stem),
-                    author=db_record.get("author", "Unknown"),
-                    num_pages=db_record.get("num_pages", 0),
-                    file_size=db_record.get("file_size", 0),
-                    modified_date=db_record.get("modified_date", ""),
-                    created_date=db_record.get("created_date", ""),
+                    title=db_record.title or file_path.stem,
+                    author=db_record.author or "Unknown",
+                    num_pages=db_record.num_pages,
+                    file_size=db_record.file_size or 0,
+                    modified_date=db_record.modified_date or "",
+                    created_date=db_record.created_date or "",
                     thumbnail_path=thumbnail_path_str,
                     error=None,
                 )

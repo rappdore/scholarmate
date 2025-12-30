@@ -15,6 +15,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.models.pdf_responses import PDFDocumentRecord
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,7 +48,7 @@ class PDFDocumentsService:
         finally:
             conn.close()
 
-    def get_by_filename(self, filename: str) -> dict | None:
+    def get_by_filename(self, filename: str) -> PDFDocumentRecord | None:
         """
         Get PDF document by filename.
 
@@ -54,7 +56,7 @@ class PDFDocumentsService:
             filename: Name of the PDF file
 
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            PDFDocumentRecord with PDF metadata, or None if not found
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -66,10 +68,10 @@ class PDFDocumentsService:
             )
             row = cursor.fetchone()
             if row:
-                return dict(row)
+                return PDFDocumentRecord(**dict(row))
             return None
 
-    def get_by_id(self, pdf_id: int) -> dict | None:
+    def get_by_id(self, pdf_id: int) -> PDFDocumentRecord | None:
         """
         Get PDF document by ID.
 
@@ -77,7 +79,7 @@ class PDFDocumentsService:
             pdf_id: Unique identifier of the PDF document
 
         Returns:
-            Dictionary with PDF metadata, or None if not found
+            PDFDocumentRecord with PDF metadata, or None if not found
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -89,7 +91,7 @@ class PDFDocumentsService:
             )
             row = cursor.fetchone()
             if row:
-                return dict(row)
+                return PDFDocumentRecord(**dict(row))
             return None
 
     def create_or_update(
@@ -214,12 +216,12 @@ class PDFDocumentsService:
             conn.commit()
             return cursor.rowcount > 0
 
-    def list_all(self) -> list[dict]:
+    def list_all(self) -> list[PDFDocumentRecord]:
         """
         List all PDF documents in the registry.
 
         Returns:
-            List of dictionaries containing PDF metadata,
+            List of PDFDocumentRecord containing PDF metadata,
             sorted by last_accessed (most recent first)
         """
         with self.get_connection() as conn:
@@ -230,7 +232,7 @@ class PDFDocumentsService:
                 ORDER BY last_accessed DESC
                 """
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [PDFDocumentRecord(**dict(row)) for row in cursor.fetchall()]
 
     def sync_from_filesystem(self, pdfs_dir: str) -> dict[str, int]:
         """
@@ -263,7 +265,7 @@ class PDFDocumentsService:
         filesystem_pdfs = {f.name for f in pdfs_path.glob("*.pdf")}
 
         # Get all PDFs from database
-        db_pdfs = {doc["filename"]: doc["id"] for doc in self.list_all()}
+        db_pdfs = {doc.filename: doc.id for doc in self.list_all()}
 
         # Add/update PDFs from filesystem
         for pdf_filename in filesystem_pdfs:

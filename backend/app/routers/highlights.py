@@ -71,7 +71,7 @@ async def create_highlight(highlight_data: HighlightRequest):
             pdf_doc = pdf_documents_service.get_by_id(highlight_data.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            pdf_filename = pdf_doc["filename"]
+            pdf_filename = pdf_doc.filename
         elif highlight_data.pdf_filename is not None:
             pdf_filename = highlight_data.pdf_filename
         else:
@@ -135,7 +135,7 @@ async def get_highlights_for_pdf_by_id(pdf_id: int, page_number: Optional[int] =
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        highlights = db_service.get_highlights_for_pdf(pdf_doc["filename"], page_number)
+        highlights = db_service.get_highlights_for_pdf(pdf_doc.filename, page_number)
         return [HighlightResponse(**highlight) for highlight in highlights]
     except HTTPException:
         raise
@@ -165,7 +165,7 @@ async def get_highlights_for_page_by_id(pdf_id: int, page_number: int):
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        highlights = db_service.get_highlights_for_pdf(pdf_doc["filename"], page_number)
+        highlights = db_service.get_highlights_for_pdf(pdf_doc.filename, page_number)
         return [HighlightResponse(**highlight) for highlight in highlights]
     except HTTPException:
         raise
