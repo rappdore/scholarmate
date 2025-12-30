@@ -359,7 +359,7 @@ class DatabaseService:
         """
         return self.reading_progress.save_progress(pdf_filename, last_page, total_pages)
 
-    def get_reading_progress(self, pdf_filename: str) -> dict[str, Any] | None:
+    def get_reading_progress(self, pdf_filename: str):
         """
         Retrieve reading progress for a specific PDF document.
 
@@ -367,21 +367,16 @@ class DatabaseService:
             pdf_filename (str): Name of the PDF file to get progress for
 
         Returns:
-            dict[str, any] | None: Dictionary containing progress information:
-                - pdf_filename: Name of the PDF file
-                - last_page: Last page that was being read
-                - total_pages: Total pages in the document
-                - last_updated: Timestamp of last update
-            Returns None if no progress is found for the PDF.
+            ReadingProgress | None: Progress information or None if not found
         """
         return self.reading_progress.get_progress(pdf_filename)
 
-    def get_all_reading_progress(self) -> dict[str, dict[str, Any]]:
+    def get_all_reading_progress(self):
         """
         Retrieve reading progress for all PDFs.
 
         Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
+            dict[str, ReadingProgress]: Dictionary mapping PDF filenames to their progress info
         """
         return self.reading_progress.get_all_progress()
 
@@ -909,7 +904,7 @@ class DatabaseService:
         """
         return self.reading_progress.update_book_status(pdf_filename, status, manual)
 
-    def get_books_by_status(self, status: str | None = None) -> list[dict[str, Any]]:
+    def get_books_by_status(self, status: str | None = None):
         """
         Get all books filtered by status.
 
@@ -918,7 +913,7 @@ class DatabaseService:
                                    If None, returns all books.
 
         Returns:
-            list[dict[str, Any]]: List of books with their progress and status information
+            list[ReadingProgress]: List of books with their progress and status information
         """
         return self.reading_progress.get_books_by_status(status)
 
@@ -943,7 +938,7 @@ class DatabaseService:
         """
         return self.reading_progress.delete_progress(pdf_filename)
 
-    def delete_all_book_data(self, pdf_filename: str) -> dict[str, bool]:
+    def delete_all_book_data(self, pdf_filename: str):
         """
         Delete all database data for a specific book.
 
@@ -951,42 +946,46 @@ class DatabaseService:
             pdf_filename (str): Name of the PDF file to delete all data for
 
         Returns:
-            dict[str, bool]: Dictionary indicating success/failure for each data type
+            DatabaseDeletionResults: Results indicating success/failure for each data type
         """
-        results = {}
+        from app.models.pdf_responses import DatabaseDeletionResults
 
         # Delete reading progress
-        results["reading_progress"] = self.delete_reading_progress(pdf_filename)
+        reading_progress_deleted = self.delete_reading_progress(pdf_filename)
 
         # Delete notes
+        notes_deleted = False
         try:
             with self.chat_notes.get_connection() as conn:
                 cursor = conn.execute(
                     "DELETE FROM chat_notes WHERE pdf_filename = ?", (pdf_filename,)
                 )
                 conn.commit()
-                results["notes"] = (
+                notes_deleted = (
                     cursor.rowcount >= 0
                 )  # Consider successful even if no rows were deleted
         except Exception as e:
             logger.error(f"Error deleting notes for {pdf_filename}: {e}")
-            results["notes"] = False
 
         # Delete highlights
+        highlights_deleted = False
         try:
             with self.highlights.get_connection() as conn:
                 cursor = conn.execute(
                     "DELETE FROM highlights WHERE pdf_filename = ?", (pdf_filename,)
                 )
                 conn.commit()
-                results["highlights"] = (
+                highlights_deleted = (
                     cursor.rowcount >= 0
                 )  # Consider successful even if no rows were deleted
         except Exception as e:
             logger.error(f"Error deleting highlights for {pdf_filename}: {e}")
-            results["highlights"] = False
 
-        return results
+        return DatabaseDeletionResults(
+            reading_progress=reading_progress_deleted,
+            notes=notes_deleted,
+            highlights=highlights_deleted,
+        )
 
     def delete_all_epub_data(self, epub_filename: str) -> dict[str, bool]:
         """

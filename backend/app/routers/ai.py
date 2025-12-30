@@ -94,7 +94,7 @@ async def analyze_page(request: AnalyzePageRequest) -> dict[str, object]:
             pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            filename = pdf_doc["filename"]
+            filename = pdf_doc.filename
         elif request.filename is not None:
             filename = request.filename
         else:
@@ -293,7 +293,7 @@ async def analyze_page_stream(request: AnalyzePageRequest) -> StreamingResponse:
             pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            filename = pdf_doc["filename"]
+            filename = pdf_doc.filename
         elif request.filename is not None:
             filename = request.filename
         else:
@@ -376,7 +376,7 @@ async def chat_with_ai(request: ChatRequest) -> StreamingResponse:
             pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            filename = pdf_doc["filename"]
+            filename = pdf_doc.filename
         elif request.filename is not None:
             filename = request.filename
         else:
@@ -647,7 +647,7 @@ async def dual_chat(request: DualChatRequest) -> StreamingResponse:
             pdf_doc = pdf_documents_service.get_by_id(request.pdf_id)
             if not pdf_doc:
                 raise HTTPException(status_code=404, detail="PDF not found")
-            filename = pdf_doc["filename"]
+            filename = pdf_doc.filename
         elif request.filename is not None:
             filename = request.filename
         else:

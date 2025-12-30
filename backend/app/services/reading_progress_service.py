@@ -6,7 +6,8 @@ It handles tracking the last page read and total pages for each PDF document.
 """
 
 import logging
-from typing import Any
+
+from app.models.pdf_responses import BookStatus, ReadingProgress
 
 from .base_database_service import BaseDatabaseService
 from .pdf_documents_service import PDFDocumentsService
@@ -110,7 +111,7 @@ class ReadingProgressService(BaseDatabaseService):
         try:
             pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
             if pdf_doc:
-                return pdf_doc.get("id")
+                return pdf_doc.id
             return None
         except Exception as e:
             logger.warning(f"Could not look up pdf_id for {pdf_filename}: {e}")
@@ -184,7 +185,7 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error saving reading progress: {e}")
             return False
 
-    def get_progress(self, pdf_filename: str) -> dict[str, Any] | None:
+    def get_progress(self, pdf_filename: str) -> ReadingProgress | None:
         """
         Retrieve reading progress for a specific PDF document.
 
@@ -192,7 +193,7 @@ class ReadingProgressService(BaseDatabaseService):
             pdf_filename (str): Name of the PDF file to get progress for
 
         Returns:
-            dict[str, Any] | None: Dictionary containing progress information or None
+            ReadingProgress | None: Progress information or None if not found
         """
         try:
             # Phase 2a: Include pdf_id in SELECT
@@ -205,24 +206,21 @@ class ReadingProgressService(BaseDatabaseService):
             row = self.execute_query(query, (pdf_filename,), fetch_one=True)
 
             if row:
-                return {
-                    "pdf_filename": row[0],
-                    "last_page": row[1],
-                    "total_pages": row[2],
-                    "last_updated": row[3],
-                    "status": row[4] if row[4] else "new",
-                    "status_updated_at": row[5],
-                    "manually_set": bool(row[6]) if row[6] is not None else False,
-                    "pdf_id": row[7]
-                    if len(row) > 7
-                    else None,  # Phase 2a: Include pdf_id
-                }
+                return ReadingProgress(
+                    pdf_filename=row[0],
+                    last_page=row[1],
+                    total_pages=row[2],
+                    last_updated=row[3],
+                    status=BookStatus(row[4]) if row[4] else BookStatus.NEW,
+                    status_updated_at=row[5],
+                    manually_set=bool(row[6]) if row[6] is not None else False,
+                )
             return None
         except Exception as e:
             logger.error(f"Error getting reading progress: {e}")
             return None
 
-    def get_progress_by_pdf_id(self, pdf_id: int) -> dict[str, Any] | None:
+    def get_progress_by_pdf_id(self, pdf_id: int) -> ReadingProgress | None:
         """
         Retrieve reading progress for a specific PDF by its ID.
 
@@ -230,7 +228,7 @@ class ReadingProgressService(BaseDatabaseService):
             pdf_id (int): ID of the PDF document
 
         Returns:
-            dict[str, Any] | None: Dictionary containing progress information or None
+            ReadingProgress | None: Progress information or None if not found
         """
         try:
             query = """
@@ -242,27 +240,26 @@ class ReadingProgressService(BaseDatabaseService):
             row = self.execute_query(query, (pdf_id,), fetch_one=True)
 
             if row:
-                return {
-                    "pdf_filename": row[0],
-                    "last_page": row[1],
-                    "total_pages": row[2],
-                    "last_updated": row[3],
-                    "status": row[4] if row[4] else "new",
-                    "status_updated_at": row[5],
-                    "manually_set": bool(row[6]) if row[6] is not None else False,
-                    "pdf_id": row[7],
-                }
+                return ReadingProgress(
+                    pdf_filename=row[0],
+                    last_page=row[1],
+                    total_pages=row[2],
+                    last_updated=row[3],
+                    status=BookStatus(row[4]) if row[4] else BookStatus.NEW,
+                    status_updated_at=row[5],
+                    manually_set=bool(row[6]) if row[6] is not None else False,
+                )
             return None
         except Exception as e:
             logger.error(f"Error getting reading progress by pdf_id={pdf_id}: {e}")
             return None
 
-    def get_all_progress(self) -> dict[str, dict[str, Any]]:
+    def get_all_progress(self) -> dict[str, ReadingProgress]:
         """
         Retrieve reading progress for all PDF documents.
 
         Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their progress info
+            dict[str, ReadingProgress]: Dictionary mapping PDF filenames to their progress info
         """
         try:
             # Phase 2a: Include pdf_id in SELECT
@@ -277,17 +274,15 @@ class ReadingProgressService(BaseDatabaseService):
             progress = {}
             if rows:
                 for row in rows:
-                    progress[row[0]] = {
-                        "last_page": row[1],
-                        "total_pages": row[2],
-                        "last_updated": row[3],
-                        "status": row[4] if row[4] else "new",
-                        "status_updated_at": row[5],
-                        "manually_set": bool(row[6]) if row[6] is not None else False,
-                        "pdf_id": row[7]
-                        if len(row) > 7
-                        else None,  # Phase 2a: Include pdf_id
-                    }
+                    progress[row[0]] = ReadingProgress(
+                        pdf_filename=row[0],
+                        last_page=row[1],
+                        total_pages=row[2],
+                        last_updated=row[3],
+                        status=BookStatus(row[4]) if row[4] else BookStatus.NEW,
+                        status_updated_at=row[5],
+                        manually_set=bool(row[6]) if row[6] is not None else False,
+                    )
             return progress
         except Exception as e:
             logger.error(f"Error getting all reading progress: {e}")
@@ -385,7 +380,7 @@ class ReadingProgressService(BaseDatabaseService):
             logger.error(f"Error updating book status: {e}")
             return False
 
-    def get_books_by_status(self, status: str | None = None) -> list[dict[str, Any]]:
+    def get_books_by_status(self, status: str | None = None) -> list[ReadingProgress]:
         """
         Get all books filtered by status.
 
@@ -394,7 +389,7 @@ class ReadingProgressService(BaseDatabaseService):
                                    If None, returns all books.
 
         Returns:
-            list[dict[str, Any]]: List of books with their progress and status information
+            list[ReadingProgress]: List of books with their progress and status information
         """
         try:
             if status is None:
@@ -432,27 +427,16 @@ class ReadingProgressService(BaseDatabaseService):
             books = []
             if rows:
                 for row in rows:
-                    # Calculate progress percentage
-                    progress_percentage = 0
-                    total_pages = row[2]  # total_pages is index 2
-                    last_page = row[1]  # last_page is index 1
-                    if total_pages and total_pages > 0:
-                        progress_percentage = round((last_page / total_pages) * 100, 1)
-
-                    book_data = {
-                        "pdf_filename": row[0],
-                        "last_page": last_page,
-                        "total_pages": total_pages,
-                        "progress_percentage": progress_percentage,
-                        "last_updated": row[3],
-                        "status": row[4] if row[4] else "new",
-                        "status_updated_at": row[5],
-                        "manually_set": bool(row[6]) if row[6] is not None else False,
-                        "pdf_id": row[7]
-                        if len(row) > 7
-                        else None,  # Phase 2a: Include pdf_id
-                    }
-                    books.append(book_data)
+                    book_progress = ReadingProgress(
+                        pdf_filename=row[0],
+                        last_page=row[1],
+                        total_pages=row[2],
+                        last_updated=row[3],
+                        status=BookStatus(row[4]) if row[4] else BookStatus.NEW,
+                        status_updated_at=row[5],
+                        manually_set=bool(row[6]) if row[6] is not None else False,
+                    )
+                    books.append(book_progress)
 
             logger.info(
                 f"Retrieved {len(books)} books"
