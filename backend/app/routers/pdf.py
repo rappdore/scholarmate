@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 from ..models.pdf_responses import (
     AllReadingProgressResponse,
     BookDeletionResponse,
+    BookStatus,
     CacheRefreshResponse,
     DeletionResults,
     PageTextResponse,
@@ -146,10 +148,6 @@ async def get_reading_progress_by_id(pdf_id: int) -> ReadingProgressWithId:
             return ReadingProgressWithId(**progress.model_dump(), pdf_id=pdf_id)
         else:
             # Return default progress if none found
-            from datetime import datetime
-
-            from ..models.pdf_responses import BookStatus
-
             return ReadingProgressWithId(
                 pdf_filename=pdf_doc.filename,
                 last_page=1,
@@ -220,8 +218,6 @@ async def update_book_status_by_id(
         )
 
         if success:
-            from ..models.pdf_responses import BookStatus
-
             return StatusUpdateResponse(
                 success=True,
                 message=f"Status updated for PDF ID {pdf_id}",
