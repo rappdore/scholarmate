@@ -235,6 +235,7 @@ class StatusCountsResponse(BaseModel):
     new: int = 0
     reading: int = 0
     finished: int = 0
+    all: int = 0
 
 
 class CacheRefreshResponse(BaseModel):
