@@ -3,6 +3,8 @@ from typing import Any
 
 from ebooklib import epub
 
+from app.models.epub_metadata import EPUBBasicMetadata, EPUBExtendedMetadata
+
 from .epub import (
     EPUBContentProcessor,
     EPUBImageService,
@@ -41,13 +43,13 @@ class EPUBService:
         # Initialize cache with database backing (must be after other services are initialized)
         self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self, db_path)
 
-    def list_epubs(self) -> list[dict[str, Any]]:
+    def list_epubs(self) -> list[EPUBBasicMetadata]:
         """
         List all EPUB files in the epubs directory with metadata (from cache)
         """
         return self.cache.get_all_epubs()
 
-    def get_epub_info(self, filename: str) -> dict[str, Any]:
+    def get_epub_info(self, filename: str) -> EPUBExtendedMetadata:
         """
         Get detailed information about a specific EPUB (with lazy-loaded extended metadata)
         """
