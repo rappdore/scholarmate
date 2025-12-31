@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -11,6 +12,8 @@ from ..models.pdf_responses import (
     BookStatus,
     CacheRefreshResponse,
     DeletionResults,
+    HighlightsInfo,
+    NotesInfo,
     PageTextResponse,
     PDFDetailResponse,
     PDFListItemEnriched,
@@ -24,6 +27,8 @@ from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
+
+logger = logging.getLogger(__name__)
 
 # Initialize services
 pdf_service = PDFService()
@@ -346,11 +351,15 @@ async def list_pdfs(
             # Get reading progress
             progress = all_progress.get(pdf.filename)
 
-            # Get notes info
-            notes_info = all_notes.get(pdf.filename)
+            # Get notes info and convert to NotesInfo if exists
+            notes_data = all_notes.get(pdf.filename)
+            notes_info = NotesInfo(**notes_data) if notes_data else None
 
-            # Get highlights info
-            highlights_info = all_highlights.get(pdf.filename)
+            # Get highlights info and convert to HighlightsInfo if exists
+            highlights_data = all_highlights.get(pdf.filename)
+            highlights_info = (
+                HighlightsInfo(**highlights_data) if highlights_data else None
+            )
 
             # Create enriched item
             enriched_item = PDFListItemEnriched(
@@ -368,7 +377,7 @@ async def list_pdfs(
                 # Add IDs
                 id=pdf_doc.id,
                 pdf_id=pdf_doc.id,
-                # Add enrichments (already typed)
+                # Add enrichments
                 reading_progress=progress,
                 notes_info=notes_info,
                 highlights_info=highlights_info,
@@ -437,11 +446,21 @@ async def refresh_pdf_cache() -> CacheRefreshResponse:
     try:
         cache_info = pdf_service.refresh_cache()
 
-        return CacheRefreshResponse(
-            success=True,
-            cache_built_at=cache_info["cache_built_at"],
-            pdf_count=cache_info["pdf_count"],
-            message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
-        )
+        try:
+            return CacheRefreshResponse(
+                success=True,
+                **cache_info,
+                message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
+            )
+        except Exception as validation_error:
+            logger.error(
+                f"Failed to validate cache refresh response: {validation_error}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid cache info format: {str(validation_error)}",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing cache: {str(e)}")

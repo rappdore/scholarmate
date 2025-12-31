@@ -114,18 +114,18 @@ async def get_active_configuration():
             )
 
         # Convert to masked version for response
-        masked_config: LLMConfigurationMasked = {
-            "id": config["id"],
-            "name": config["name"],
-            "description": config["description"],
-            "base_url": config["base_url"],
-            "api_key_preview": llm_config_service.mask_api_key(config["api_key"]),
-            "model_name": config["model_name"],
-            "is_active": config["is_active"],
-            "always_starts_with_thinking": config["always_starts_with_thinking"],
-            "created_at": config["created_at"],
-            "updated_at": config["updated_at"],
-        }
+        masked_config = LLMConfigurationMasked(
+            id=config.id,
+            name=config.name,
+            description=config.description,
+            base_url=config.base_url,
+            api_key_preview=llm_config_service.mask_api_key(config.api_key),
+            model_name=config.model_name,
+            is_active=config.is_active,
+            always_starts_with_thinking=config.always_starts_with_thinking,
+            created_at=config.created_at,
+            updated_at=config.updated_at,
+        )
 
         return masked_config
     except HTTPException:
