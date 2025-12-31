@@ -1,14 +1,14 @@
 """
 LLM Configuration Type Definitions
 
-This module defines TypedDict classes for LLM configuration objects
-to provide type safety throughout the codebase.
+This module defines Pydantic models for LLM configuration objects
+to provide type safety and validation throughout the codebase.
 """
 
-from typing import TypedDict
+from pydantic import BaseModel
 
 
-class LLMConfiguration(TypedDict):
+class LLMConfiguration(BaseModel):
     """
     Complete LLM configuration as stored in database.
     All fields are required unless marked Optional.
@@ -26,7 +26,7 @@ class LLMConfiguration(TypedDict):
     updated_at: str
 
 
-class LLMConfigurationMasked(TypedDict):
+class LLMConfigurationMasked(BaseModel):
     """
     LLM configuration with masked API key for external use.
     Used when returning configs to frontend or logging.
@@ -44,15 +44,15 @@ class LLMConfigurationMasked(TypedDict):
     updated_at: str
 
 
-class LLMConfigurationPartial(TypedDict, total=False):
+class LLMConfigurationPartial(BaseModel):
     """
     Partial LLM configuration for updates.
-    All fields are optional (total=False).
+    All fields are optional.
     """
 
-    name: str
-    description: str
-    base_url: str
-    api_key: str
-    model_name: str
-    always_starts_with_thinking: bool
+    name: str | None = None
+    description: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model_name: str | None = None
+    always_starts_with_thinking: bool | None = None

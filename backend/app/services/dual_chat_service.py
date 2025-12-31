@@ -156,12 +156,12 @@ class DualChatService:
             ]
 
             # NEW: Create parser for this stream with config-specific flag
-            always_starts_with_thinking = llm_config["always_starts_with_thinking"]
+            always_starts_with_thinking = llm_config.always_starts_with_thinking
             parser = ThinkingStreamParser(
                 always_starts_with_thinking=always_starts_with_thinking
             )
             logger.debug(
-                f"[DualChat] Initialized ThinkingStreamParser for {llm_config['name']} "
+                f"[DualChat] Initialized ThinkingStreamParser for {llm_config.name} "
                 f"(always_starts_with_thinking={always_starts_with_thinking})"
             )
 
@@ -178,13 +178,13 @@ class DualChatService:
             # Signal completion
             await queue.put({"done": True})
 
-            logger.info(f"[DualChat] Stream complete for {llm_config['name']}")
+            logger.info(f"[DualChat] Stream complete for {llm_config.name}")
 
         except asyncio.CancelledError:
-            logger.info(f"LLM stream cancelled for {llm_config['name']}")
+            logger.info(f"LLM stream cancelled for {llm_config.name}")
             await queue.put({"cancelled": True})
         except Exception as e:
-            logger.error(f"Error streaming from LLM {llm_config['name']}: {e}")
+            logger.error(f"Error streaming from LLM {llm_config.name}: {e}")
             await queue.put({"error": str(e), "done": True})
 
     async def _merge_streams(
@@ -271,12 +271,12 @@ class DualChatService:
         try:
             # Create OpenAI-compatible client
             client = AsyncOpenAI(
-                base_url=llm_config["base_url"], api_key=llm_config["api_key"]
+                base_url=llm_config.base_url, api_key=llm_config.api_key
             )
 
             # Make streaming request
             stream = await client.chat.completions.create(
-                model=llm_config["model_name"], messages=messages, stream=True
+                model=llm_config.model_name, messages=messages, stream=True
             )
 
             # Stream chunks

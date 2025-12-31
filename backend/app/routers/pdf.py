@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -11,6 +11,8 @@ from ..models.pdf_responses import (
     BookStatus,
     CacheRefreshResponse,
     DeletionResults,
+    HighlightsInfo,
+    NotesInfo,
     PageTextResponse,
     PDFDetailResponse,
     PDFListItemEnriched,
@@ -346,11 +348,15 @@ async def list_pdfs(
             # Get reading progress
             progress = all_progress.get(pdf.filename)
 
-            # Get notes info
-            notes_info = all_notes.get(pdf.filename)
+            # Get notes info and convert to NotesInfo if exists
+            notes_data = all_notes.get(pdf.filename)
+            notes_info = NotesInfo(**notes_data) if notes_data else None
 
-            # Get highlights info
-            highlights_info = all_highlights.get(pdf.filename)
+            # Get highlights info and convert to HighlightsInfo if exists
+            highlights_data = all_highlights.get(pdf.filename)
+            highlights_info = (
+                HighlightsInfo(**highlights_data) if highlights_data else None
+            )
 
             # Create enriched item
             enriched_item = PDFListItemEnriched(
@@ -368,7 +374,7 @@ async def list_pdfs(
                 # Add IDs
                 id=pdf_doc.id,
                 pdf_id=pdf_doc.id,
-                # Add enrichments (already typed)
+                # Add enrichments
                 reading_progress=progress,
                 notes_info=notes_info,
                 highlights_info=highlights_info,
@@ -439,8 +445,8 @@ async def refresh_pdf_cache() -> CacheRefreshResponse:
 
         return CacheRefreshResponse(
             success=True,
-            cache_built_at=cache_info["cache_built_at"],
-            pdf_count=cache_info["pdf_count"],
+            cache_built_at=cast(str, cache_info["cache_built_at"]),
+            pdf_count=cast(int, cache_info["pdf_count"]),
             message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
         )
     except Exception as e:

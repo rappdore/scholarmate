@@ -19,11 +19,11 @@ DEFAULT_MODEL = ""
 class OllamaService:
     def __init__(self, db_path: str = "data/reading_progress.db") -> None:
         self.db_path = db_path
-        self.client = None
-        self.model = None
-        self.base_url = None
-        self.api_key = None
-        self.always_starts_with_thinking = False
+        self.client: AsyncOpenAI | None = None
+        self.model: str | None = None
+        self.base_url: str | None = None
+        self.api_key: str | None = None
+        self.always_starts_with_thinking: bool = False
         # Session storage for reasoning traces, keyed by filename
         self._reasoning_sessions: dict[str, list] = {}
 
@@ -46,13 +46,11 @@ class OllamaService:
 
             if config:
                 # Load from database with type safety
-                self.base_url = config["base_url"]
-                self.api_key = config["api_key"]
-                self.model = config["model_name"]
-                self.always_starts_with_thinking = config["always_starts_with_thinking"]
-                logger.info(
-                    f"✅ Loaded LLM configuration from database: {config['name']}"
-                )
+                self.base_url = config.base_url
+                self.api_key = config.api_key
+                self.model = config.model_name
+                self.always_starts_with_thinking = config.always_starts_with_thinking
+                logger.info(f"✅ Loaded LLM configuration from database: {config.name}")
                 logger.info(f"   - Base URL: {self.base_url}")
                 logger.info(f"   - Model: {self.model}")
                 logger.info(
