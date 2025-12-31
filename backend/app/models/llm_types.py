@@ -14,6 +14,8 @@ class LLMConfiguration(BaseModel):
     All fields are required unless marked Optional.
     """
 
+    model_config = {"frozen": True, "extra": "forbid"}
+
     id: int
     name: str
     description: str | None
@@ -32,6 +34,8 @@ class LLMConfigurationMasked(BaseModel):
     Used when returning configs to frontend or logging.
     """
 
+    model_config = {"frozen": True, "extra": "forbid"}
+
     id: int
     name: str
     description: str | None
@@ -49,6 +53,8 @@ class LLMConfigurationPartial(BaseModel):
     Partial LLM configuration for updates.
     All fields are optional.
     """
+
+    model_config = {"extra": "forbid"}
 
     name: str | None = None
     description: str | None = None

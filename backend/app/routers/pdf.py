@@ -1,5 +1,6 @@
+import logging
 from datetime import datetime
-from typing import Optional, cast
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -26,6 +27,8 @@ from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
+
+logger = logging.getLogger(__name__)
 
 # Initialize services
 pdf_service = PDFService()
@@ -443,11 +446,21 @@ async def refresh_pdf_cache() -> CacheRefreshResponse:
     try:
         cache_info = pdf_service.refresh_cache()
 
-        return CacheRefreshResponse(
-            success=True,
-            cache_built_at=cast(str, cache_info["cache_built_at"]),
-            pdf_count=cast(int, cache_info["pdf_count"]),
-            message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
-        )
+        try:
+            return CacheRefreshResponse(
+                success=True,
+                **cache_info,
+                message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
+            )
+        except Exception as validation_error:
+            logger.error(
+                f"Failed to validate cache refresh response: {validation_error}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid cache info format: {str(validation_error)}",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing cache: {str(e)}")
