@@ -16,6 +16,7 @@ from app.routers import (
     notes,
     pdf,
     reading_statistics,
+    tts,
 )
 
 logging.basicConfig(
@@ -85,6 +86,7 @@ app.include_router(highlights.router)
 app.include_router(epub_highlights.router)
 app.include_router(reading_statistics.router)
 app.include_router(llm_config.router)
+app.include_router(tts.router)
 
 if __name__ == "__main__":
     import uvicorn
