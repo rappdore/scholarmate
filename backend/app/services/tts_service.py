@@ -12,6 +12,13 @@ from kokoro import KPipeline
 
 logger = logging.getLogger(__name__)
 
+
+class AudioConversionError(Exception):
+    """Raised when audio tensor conversion to bytes fails."""
+
+    pass
+
+
 # Supported voice identifiers
 SUPPORTED_VOICES = {
     "af_heart",  # Female American
@@ -83,6 +90,77 @@ class TTSService:
         if speed < MIN_SPEED:
             raise ValueError(f"Speed too low (min {MIN_SPEED}), got {speed}")
 
+    def _generate_audio_chunks(
+        self, text: str, voice: str, speed: float
+    ) -> Generator[bytes, None, None]:
+        """Private helper to generate audio chunks with shared logic.
+
+        Args:
+            text: Text to convert to speech
+            voice: Voice identifier (already validated)
+            speed: Speech speed multiplier (already validated)
+
+        Yields:
+            bytes: Raw PCM audio data chunks
+
+        Raises:
+            AudioConversionError: If audio conversion fails
+            RuntimeError: If audio generation fails
+        """
+        try:
+            generator = self.pipeline(text, voice=voice, speed=speed)
+            for chunk in generator:
+                try:
+                    # Convert torch tensor to numpy, then to bytes
+                    audio_array = chunk.audio.cpu().numpy()
+                    yield audio_array.tobytes()
+                except Exception as e:
+                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
+                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
+        except AudioConversionError:
+            raise  # Re-raise our own conversion errors
+        except Exception as e:
+            logger.error(f"Audio pipeline failed: {e}")
+            raise RuntimeError(f"Audio generation failed: {e}") from e
+
+    def _generate_audio_chunks_sync(
+        self, text: str, voice: str, speed: float
+    ) -> list[bytes]:
+        """Synchronous audio generation for use in thread pool.
+
+        This method runs the entire pipeline and collects all chunks
+        to avoid generator issues across thread boundaries.
+
+        Args:
+            text: Text to convert to speech
+            voice: Voice identifier (already validated)
+            speed: Speech speed multiplier (already validated)
+
+        Returns:
+            List[bytes]: All audio data chunks
+
+        Raises:
+            AudioConversionError: If audio conversion fails
+            RuntimeError: If audio generation fails
+        """
+        try:
+            generator = self.pipeline(text, voice=voice, speed=speed)
+            chunks = []
+            for chunk in generator:
+                try:
+                    # Convert torch tensor to numpy, then to bytes
+                    audio_array = chunk.audio.cpu().numpy()
+                    chunks.append(audio_array.tobytes())
+                except Exception as e:
+                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
+                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
+            return chunks
+        except AudioConversionError:
+            raise  # Re-raise our own conversion errors
+        except Exception as e:
+            logger.error(f"Audio pipeline failed: {e}")
+            raise RuntimeError(f"Audio generation failed: {e}") from e
+
     def generate_audio(
         self, text: str, voice: str = "af_heart", speed: float = 1.0
     ) -> Generator[bytes, None, None]:
@@ -107,22 +185,7 @@ class TTSService:
             RuntimeError: If audio generation fails
         """
         self._validate_parameters(voice, speed)
-
-        try:
-            generator = self.pipeline(text, voice=voice, speed=speed)
-            for chunk in generator:
-                try:
-                    # Convert torch tensor to numpy, then to bytes
-                    audio_array = chunk.audio.cpu().numpy()
-                    yield audio_array.tobytes()
-                except Exception as e:
-                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
-                    raise RuntimeError(f"Audio conversion failed: {e}") from e
-        except Exception as e:
-            if "Failed to convert audio tensor to bytes" in str(e):
-                raise  # Re-raise our own conversion errors
-            logger.error(f"Audio pipeline failed: {e}")
-            raise RuntimeError(f"Audio generation failed: {e}") from e
+        yield from self._generate_audio_chunks(text, voice, speed)
 
     async def generate_audio_async(
         self, text: str, voice: str = "af_heart", speed: float = 1.0
@@ -150,21 +213,18 @@ class TTSService:
         self._validate_parameters(voice, speed)
 
         try:
-            generator = self.pipeline(text, voice=voice, speed=speed)
-            for chunk in generator:
-                try:
-                    # Convert torch tensor to numpy, then to bytes
-                    audio_array = chunk.audio.cpu().numpy()
-                    yield audio_array.tobytes()
-                    # Yield control to allow cancellation checks
-                    await asyncio.sleep(0)
-                except Exception as e:
-                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
-                    raise RuntimeError(f"Audio conversion failed: {e}") from e
+            # Run the CPU-bound pipeline in a thread pool to avoid blocking the event loop
+            chunks = await asyncio.to_thread(
+                self._generate_audio_chunks_sync, text, voice, speed
+            )
+
+            # Yield each chunk with async sleep to allow event loop control
+            for chunk in chunks:
+                yield chunk
+                await asyncio.sleep(0)  # Yield control to allow cancellation checks
+
         except Exception as e:
-            if "Failed to convert audio tensor to bytes" in str(e):
-                raise  # Re-raise our own conversion errors
-            logger.error(f"Audio pipeline failed: {e}")
+            logger.error(f"Async audio generation failed: {e}")
             raise RuntimeError(f"Audio generation failed: {e}") from e
 
 
