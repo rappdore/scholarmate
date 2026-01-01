@@ -90,6 +90,50 @@ class TTSService:
         if speed < MIN_SPEED:
             raise ValueError(f"Speed too low (min {MIN_SPEED}), got {speed}")
 
+    def _process_audio_generator(
+        self, text: str, voice: str, speed: float, collect_chunks: bool = False
+    ):
+        """Process audio generator with centralized error handling.
+
+        Args:
+            text: Text to convert to speech
+            voice: Voice identifier (already validated)
+            speed: Speech speed multiplier (already validated)
+            collect_chunks: If True, collect and return chunks as list. If False, yield chunks.
+
+        Yields/Returns:
+            bytes or List[bytes]: Audio data chunks (yielded or collected)
+
+        Raises:
+            AudioConversionError: If audio conversion fails
+            RuntimeError: If audio generation fails
+        """
+        try:
+            generator = self.pipeline(text, voice=voice, speed=speed)
+            chunks = [] if collect_chunks else None
+
+            for chunk in generator:
+                try:
+                    # Convert torch tensor to numpy, then to bytes
+                    audio_array = chunk.audio.cpu().numpy()
+                    audio_bytes = audio_array.tobytes()
+
+                    if collect_chunks:
+                        chunks.append(audio_bytes)
+                    else:
+                        yield audio_bytes
+                except Exception as e:
+                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
+                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
+
+            if collect_chunks:
+                return chunks
+        except AudioConversionError:
+            raise  # Re-raise our own conversion errors
+        except Exception as e:
+            logger.error(f"Audio pipeline failed: {e}")
+            raise RuntimeError(f"Audio generation failed: {e}") from e
+
     def _generate_audio_chunks(
         self, text: str, voice: str, speed: float
     ) -> Generator[bytes, None, None]:
@@ -107,21 +151,9 @@ class TTSService:
             AudioConversionError: If audio conversion fails
             RuntimeError: If audio generation fails
         """
-        try:
-            generator = self.pipeline(text, voice=voice, speed=speed)
-            for chunk in generator:
-                try:
-                    # Convert torch tensor to numpy, then to bytes
-                    audio_array = chunk.audio.cpu().numpy()
-                    yield audio_array.tobytes()
-                except Exception as e:
-                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
-                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
-        except AudioConversionError:
-            raise  # Re-raise our own conversion errors
-        except Exception as e:
-            logger.error(f"Audio pipeline failed: {e}")
-            raise RuntimeError(f"Audio generation failed: {e}") from e
+        yield from self._process_audio_generator(
+            text, voice, speed, collect_chunks=False
+        )
 
     def _generate_audio_chunks_sync(
         self, text: str, voice: str, speed: float
@@ -143,23 +175,7 @@ class TTSService:
             AudioConversionError: If audio conversion fails
             RuntimeError: If audio generation fails
         """
-        try:
-            generator = self.pipeline(text, voice=voice, speed=speed)
-            chunks = []
-            for chunk in generator:
-                try:
-                    # Convert torch tensor to numpy, then to bytes
-                    audio_array = chunk.audio.cpu().numpy()
-                    chunks.append(audio_array.tobytes())
-                except Exception as e:
-                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
-                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
-            return chunks
-        except AudioConversionError:
-            raise  # Re-raise our own conversion errors
-        except Exception as e:
-            logger.error(f"Audio pipeline failed: {e}")
-            raise RuntimeError(f"Audio generation failed: {e}") from e
+        return self._process_audio_generator(text, voice, speed, collect_chunks=True)
 
     def generate_audio(
         self, text: str, voice: str = "af_heart", speed: float = 1.0

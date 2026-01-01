@@ -25,6 +25,10 @@ dependencies = [
     "pip>=25.3",
 ]
 
+# we added pip because the kokoro code downloads and
+# installs required libraries if not found using pip
+# so having pip in the venv is essential
+
 [dependency-groups]
 dev = [
     "ruff>=0.14.10",
