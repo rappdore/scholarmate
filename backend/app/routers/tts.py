@@ -129,8 +129,17 @@ async def tts_websocket(websocket: WebSocket):
                                     )
                                     current_task = None
                                     break
-                        except Exception:
-                            pass
+                        except json.JSONDecodeError:
+                            await websocket.send_json(
+                                {"type": "error", "message": "Invalid JSON message"}
+                            )
+                        except Exception as e:
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": f"Message processing error: {e!s}",
+                                }
+                            )
                     else:
                         # TTS task completed or errored - cancel receive task
                         receive_task.cancel()
@@ -177,3 +186,7 @@ async def tts_websocket(websocket: WebSocket):
         finally:
             if current_task and not current_task.done():
                 current_task.cancel()
+                try:
+                    await current_task
+                except asyncio.CancelledError:
+                    pass
