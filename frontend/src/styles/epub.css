@@ -503,3 +503,70 @@
 .epub-highlight-menu .delete-button:hover {
   background-color: #b91c1c;
 }
+
+/* TTS Read Aloud Button */
+.epub-highlight-menu .tts-read-aloud-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #e0e0e0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+  margin-left: 4px;
+}
+
+.epub-highlight-menu .tts-read-aloud-btn:hover {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+/* TTS Continue Reading Button */
+.epub-highlight-menu .tts-continue-reading-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #e0e0e0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+  margin-left: 2px;
+}
+
+.epub-highlight-menu .tts-continue-reading-btn:hover {
+  background-color: rgba(34, 197, 94, 0.3);
+  color: #22c55e;
+}
+
+/* ============================================ */
+/* TTS READING HIGHLIGHT STYLES               */
+/* ============================================ */
+
+/* TTS Reading Highlight */
+.tts-reading-highlight {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+/* Light theme TTS highlight */
+.epub-content-container[data-theme='light'] .tts-reading-highlight {
+  background-color: rgba(59, 130, 246, 0.25);
+}
+
+/* Sepia theme TTS highlight */
+.epub-content-container[data-theme='sepia'] .tts-reading-highlight {
+  background-color: rgba(139, 90, 43, 0.3);
+}

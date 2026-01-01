@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.services.tts_service import tts_service
+from app.services.tts_service import DEFAULT_SPEED, tts_service
 
 router = APIRouter(prefix="/ws", tags=["tts"])
 
@@ -67,7 +67,7 @@ async def tts_websocket(websocket: WebSocket):
 
                 text = message.get("text", "")
                 voice = message.get("voice", "af_heart")
-                speed = message.get("speed", 1.0)
+                speed = message.get("speed", DEFAULT_SPEED)
 
                 if not text.strip():
                     await websocket.send_json(
@@ -117,7 +117,7 @@ async def tts_websocket(websocket: WebSocket):
 
                                 text = new_message.get("text", "")
                                 voice = new_message.get("voice", "af_heart")
-                                speed = new_message.get("speed", 1.0)
+                                speed = new_message.get("speed", DEFAULT_SPEED)
 
                                 if text.strip():
                                     current_task = asyncio.create_task(

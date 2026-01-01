@@ -230,7 +230,7 @@ export function getEPUBSelection(
     const startContainer = range.startContainer;
     const endContainer = range.endContainer;
 
-    // For now, handle simple case where selection is within same text node
+    // Simple case: selection is within same text node
     if (
       startContainer === endContainer &&
       startContainer.nodeType === Node.TEXT_NODE
@@ -247,15 +247,64 @@ export function getEPUBSelection(
       };
     }
 
-    // TODO: Handle complex selections spanning multiple elements
-    console.warn(
-      'Complex selections spanning multiple elements not yet supported'
+    // Complex case: selection spans multiple nodes (e.g., entire paragraph)
+    // Find the common ancestor element and use it as the reference point
+    console.log(
+      '📍 Complex selection spanning multiple nodes, using common ancestor approach'
     );
-    return null;
+
+    // Get the common ancestor that contains the entire selection
+    let commonAncestor = range.commonAncestorContainer;
+
+    // If common ancestor is a text node, get its parent
+    if (commonAncestor.nodeType === Node.TEXT_NODE) {
+      commonAncestor = commonAncestor.parentNode!;
+    }
+
+    // Find the first text node in the selection to use as anchor
+    const firstTextNode = findFirstTextNode(startContainer);
+    if (!firstTextNode) {
+      console.warn('Could not find first text node in selection');
+      return null;
+    }
+
+    const xpath = generateXPath(firstTextNode);
+    const startOffset =
+      startContainer.nodeType === Node.TEXT_NODE ? range.startOffset : 0;
+
+    // For multi-node selections, we store the full selected text
+    // The end offset represents the length of text from the start node
+    // We'll use the selected text itself to determine the highlight range
+    return {
+      xpath,
+      startOffset,
+      endOffset: startOffset + selectedText.length, // Approximate, actual highlight will use text matching
+      selectedText,
+      navId,
+      chapterId,
+    };
   } catch (error) {
     console.error('Error processing selection:', error);
     return null;
   }
+}
+
+/**
+ * Find the first text node within a node (depth-first)
+ */
+function findFirstTextNode(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node as Text;
+  }
+
+  for (const child of Array.from(node.childNodes)) {
+    const textNode = findFirstTextNode(child);
+    if (textNode) {
+      return textNode;
+    }
+  }
+
+  return null;
 }
 
 /**

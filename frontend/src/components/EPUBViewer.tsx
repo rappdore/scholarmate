@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   epubService,
   type EPUBProgress,
@@ -16,6 +16,11 @@ import {
   type EPUBHighlight,
   type HighlightColor,
 } from '../utils/epubHighlights';
+import { ttsService } from '../services/ttsService';
+import {
+  highlightSentence,
+  clearAllHighlights as clearTTSHighlights,
+} from '../utils/ttsHighlight';
 
 interface EPUBViewerProps {
   epubId?: number;
@@ -106,6 +111,10 @@ export default function EPUBViewer({
 
   // Ref for the HTML container that holds the injected EPUB content
   const htmlRef = useRef<HTMLDivElement>(null);
+
+  // TTS state
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
+  const ttsCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!epubId) return;
@@ -897,6 +906,84 @@ export default function EPUBViewer({
     };
   }, [currentContent, currentNavId]);
 
+  // TTS service setup
+  useEffect(() => {
+    ttsService.setHandlers({
+      onStateChange: state => {
+        setIsTTSPlaying(state === 'playing');
+        if (state === 'idle') {
+          // Cleanup any remaining highlights
+          if (ttsCleanupRef.current) {
+            ttsCleanupRef.current();
+            ttsCleanupRef.current = null;
+          }
+          if (htmlRef.current) {
+            clearTTSHighlights(htmlRef.current);
+          }
+        }
+      },
+      onSentenceStart: (_index, text) => {
+        // Remove previous highlight
+        if (ttsCleanupRef.current) {
+          ttsCleanupRef.current();
+        }
+
+        // Add new highlight
+        if (htmlRef.current) {
+          ttsCleanupRef.current = highlightSentence(htmlRef.current, text);
+        }
+      },
+      onSentenceEnd: () => {
+        // Highlight will be replaced by next sentence_start
+      },
+      onDone: () => {
+        setIsTTSPlaying(false);
+        if (ttsCleanupRef.current) {
+          ttsCleanupRef.current();
+          ttsCleanupRef.current = null;
+        }
+      },
+      onError: msg => {
+        console.error('TTS Error:', msg);
+        setIsTTSPlaying(false);
+      },
+    });
+
+    return () => {
+      ttsService.stop();
+    };
+  }, []);
+
+  // TTS handlers
+  const handleReadAloud = useCallback((text: string) => {
+    ttsService.start(text);
+  }, []);
+
+  const handleContinueReading = useCallback((selectedText: string) => {
+    // Get all text content from the EPUB container
+    if (!htmlRef.current) return;
+
+    const fullText = htmlRef.current.textContent || '';
+
+    // Find where the selected text starts in the full content
+    const startIndex = fullText.indexOf(selectedText);
+    if (startIndex === -1) {
+      // Fallback: just read the selected text
+      ttsService.start(selectedText);
+      return;
+    }
+
+    // Get text from the selection point to the end of the chapter
+    const textFromSelection = fullText.slice(startIndex);
+
+    // Start TTS with the remaining text
+    ttsService.start(textFromSelection);
+  }, []);
+
+  const handleStopTTS = useCallback(() => {
+    ttsService.stop();
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-gray-300">
@@ -970,6 +1057,24 @@ export default function EPUBViewer({
                 </span>
               )}
             </div>
+            {/* TTS Stop Button */}
+            {isTTSPlaying && (
+              <button
+                onClick={handleStopTTS}
+                className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                title="Stop Reading"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+                Stop
+              </button>
+            )}
             {/* Settings Button */}
             <button
               onClick={() => setShowSettings(!showSettings)}
@@ -1151,6 +1256,8 @@ export default function EPUBViewer({
             selectedText={selectedText}
             onHighlight={handleCreateHighlight}
             onClose={handleCloseHighlightMenu}
+            onReadAloud={handleReadAloud}
+            onContinueReading={handleContinueReading}
           />
         )}
       </div>
