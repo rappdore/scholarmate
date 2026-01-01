@@ -36,7 +36,8 @@ SUPPORTED_VOICES = {
 MAX_SPEED = 3.0
 MIN_SPEED = 0.1
 
-# Audio format constants
+# Audio format constants (Kokoro pipeline output format)
+# Not yet used programmatically but reserved for WAV encoding, client negotiation, etc.
 SAMPLE_RATE = 24000  # Hz
 CHANNELS = 1  # Mono
 SAMPLE_FORMAT = "float32"  # 32-bit floating point
@@ -90,54 +91,29 @@ class TTSService:
         if speed < MIN_SPEED:
             raise ValueError(f"Speed too low (min {MIN_SPEED}), got {speed}")
 
-    def _process_audio_generator(
-        self, text: str, voice: str, speed: float, collect_chunks: bool = False
-    ):
-        """Process audio generator with centralized error handling.
+    def _convert_chunk_to_bytes(self, chunk) -> bytes:
+        """Convert a pipeline audio chunk to bytes.
 
         Args:
-            text: Text to convert to speech
-            voice: Voice identifier (already validated)
-            speed: Speech speed multiplier (already validated)
-            collect_chunks: If True, collect and return chunks as list. If False, yield chunks.
+            chunk: Audio chunk from the pipeline containing a torch tensor
 
-        Yields/Returns:
-            bytes or List[bytes]: Audio data chunks (yielded or collected)
+        Returns:
+            bytes: Raw PCM audio data
 
         Raises:
             AudioConversionError: If audio conversion fails
-            RuntimeError: If audio generation fails
         """
         try:
-            generator = self.pipeline(text, voice=voice, speed=speed)
-            chunks = [] if collect_chunks else None
-
-            for chunk in generator:
-                try:
-                    # Convert torch tensor to numpy, then to bytes
-                    audio_array = chunk.audio.cpu().numpy()
-                    audio_bytes = audio_array.tobytes()
-
-                    if collect_chunks:
-                        chunks.append(audio_bytes)
-                    else:
-                        yield audio_bytes
-                except Exception as e:
-                    logger.error(f"Failed to convert audio tensor to bytes: {e}")
-                    raise AudioConversionError(f"Audio conversion failed: {e}") from e
-
-            if collect_chunks:
-                return chunks
-        except AudioConversionError:
-            raise  # Re-raise our own conversion errors
+            audio_array = chunk.audio.cpu().numpy()
+            return audio_array.tobytes()
         except Exception as e:
-            logger.error(f"Audio pipeline failed: {e}")
-            raise RuntimeError(f"Audio generation failed: {e}") from e
+            logger.error(f"Failed to convert audio tensor to bytes: {e}")
+            raise AudioConversionError(f"Audio conversion failed: {e}") from e
 
     def _generate_audio_chunks(
         self, text: str, voice: str, speed: float
     ) -> Generator[bytes, None, None]:
-        """Private helper to generate audio chunks with shared logic.
+        """Generate audio chunks for streaming.
 
         Args:
             text: Text to convert to speech
@@ -151,17 +127,24 @@ class TTSService:
             AudioConversionError: If audio conversion fails
             RuntimeError: If audio generation fails
         """
-        yield from self._process_audio_generator(
-            text, voice, speed, collect_chunks=False
-        )
+        try:
+            generator = self.pipeline(text, voice=voice, speed=speed)
+            for chunk in generator:
+                yield self._convert_chunk_to_bytes(chunk)
+        except AudioConversionError:
+            raise
+        except Exception as e:
+            logger.error(f"Audio pipeline failed: {e}")
+            raise RuntimeError(f"Audio generation failed: {e}") from e
 
     def _generate_audio_chunks_sync(
         self, text: str, voice: str, speed: float
     ) -> list[bytes]:
-        """Synchronous audio generation for use in thread pool.
+        """Collect all audio chunks synchronously.
 
         This method runs the entire pipeline and collects all chunks
-        to avoid generator issues across thread boundaries.
+        into a list. Use this for thread pool execution where generators
+        cannot cross thread boundaries.
 
         Args:
             text: Text to convert to speech
@@ -169,13 +152,13 @@ class TTSService:
             speed: Speech speed multiplier (already validated)
 
         Returns:
-            List[bytes]: All audio data chunks
+            list[bytes]: All audio data chunks
 
         Raises:
             AudioConversionError: If audio conversion fails
             RuntimeError: If audio generation fails
         """
-        return self._process_audio_generator(text, voice, speed, collect_chunks=True)
+        return list(self._generate_audio_chunks(text, voice, speed))
 
     def generate_audio(
         self, text: str, voice: str = "af_heart", speed: float = 1.0
