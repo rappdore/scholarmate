@@ -37,6 +37,8 @@ def get_epub_doc_or_404(epub_id: int) -> dict[str, Any]:
     Raises:
         HTTPException: 404 if EPUB not found
     """
+    if epub_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid EPUB ID: must be positive")
     epub_doc = epub_documents_service.get_by_id(epub_id)
     if not epub_doc:
         raise HTTPException(status_code=404, detail="EPUB not found")

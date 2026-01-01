@@ -189,7 +189,7 @@ export default function EPUBViewer({
         current_nav_id: navId,
         chapter_id: chapterInfo.chapterId,
         chapter_title: chapterInfo.chapterTitle,
-        scroll_position: Math.round(currentScrollPos || scrollPosition),
+        scroll_position: Math.round(currentScrollPos ?? scrollPosition),
         total_sections: contentData?.total_sections || navigation?.spine_length,
         progress_percentage: progressPercentage,
         nav_metadata: navMetadata,
