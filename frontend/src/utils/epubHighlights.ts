@@ -8,6 +8,9 @@ export interface EPUBSelection {
   selectedText: string;
   navId: string;
   chapterId: string;
+  // For multi-node selections, store end boundary info
+  endXPath?: string;
+  endXPathOffset?: number;
 }
 
 export interface EPUBHighlight {
@@ -248,40 +251,46 @@ export function getEPUBSelection(
     }
 
     // Complex case: selection spans multiple nodes (e.g., entire paragraph)
-    // Find the common ancestor element and use it as the reference point
+    // Store precise boundary information for both start and end
     console.log(
-      '📍 Complex selection spanning multiple nodes, using common ancestor approach'
+      '📍 Complex selection spanning multiple nodes, capturing precise boundaries'
     );
 
-    // Get the common ancestor that contains the entire selection
-    let commonAncestor = range.commonAncestorContainer;
-
-    // If common ancestor is a text node, get its parent
-    if (commonAncestor.nodeType === Node.TEXT_NODE) {
-      commonAncestor = commonAncestor.parentNode!;
-    }
-
-    // Find the first text node in the selection to use as anchor
+    // Find the first text node in the selection to use as start anchor
     const firstTextNode = findFirstTextNode(startContainer);
     if (!firstTextNode) {
       console.warn('Could not find first text node in selection');
       return null;
     }
 
-    const xpath = generateXPath(firstTextNode);
+    // Find the last text node in the selection to use as end anchor
+    const lastTextNode = findLastTextNode(endContainer);
+    if (!lastTextNode) {
+      console.warn('Could not find last text node in selection');
+      return null;
+    }
+
+    const startXPath = generateXPath(firstTextNode);
     const startOffset =
       startContainer.nodeType === Node.TEXT_NODE ? range.startOffset : 0;
 
-    // For multi-node selections, we store the full selected text
-    // The end offset represents the length of text from the start node
-    // We'll use the selected text itself to determine the highlight range
+    const endXPath = generateXPath(lastTextNode);
+    const endOffset =
+      endContainer.nodeType === Node.TEXT_NODE
+        ? range.endOffset
+        : lastTextNode.textContent?.length || 0;
+
+    // For multi-node selections, store both boundaries
     return {
-      xpath,
+      xpath: startXPath,
       startOffset,
-      endOffset: startOffset + selectedText.length, // Approximate, actual highlight will use text matching
+      endOffset:
+        startXPath === endXPath ? endOffset : startOffset + selectedText.length, // Keep backwards compatibility for single node
       selectedText,
       navId,
       chapterId,
+      endXPath: startXPath !== endXPath ? endXPath : undefined,
+      endXPathOffset: startXPath !== endXPath ? endOffset : undefined,
     };
   } catch (error) {
     console.error('Error processing selection:', error);
@@ -308,33 +317,62 @@ function findFirstTextNode(node: Node): Text | null {
 }
 
 /**
+ * Find the last text node within a node (depth-first, reverse order)
+ */
+function findLastTextNode(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node as Text;
+  }
+
+  // Search children in reverse order to find the last text node
+  const children = Array.from(node.childNodes).reverse();
+  for (const child of children) {
+    const textNode = findLastTextNode(child);
+    if (textNode) {
+      return textNode;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Apply highlight styling to text based on stored highlight data
  */
 export function applyHighlight(highlight: EPUBHighlight): boolean {
   try {
-    const element = getElementByXPath(highlight.xpath);
-    if (!element || element.nodeType !== Node.TEXT_NODE) {
-      console.warn('Could not find element for highlight:', highlight.xpath);
+    const startElement = getElementByXPath(highlight.xpath);
+    if (!startElement || startElement.nodeType !== Node.TEXT_NODE) {
+      console.warn(
+        'Could not find start element for highlight:',
+        highlight.xpath
+      );
       return false;
     }
 
-    const textNode = element as unknown as Text;
-    const fullText = textNode.textContent || '';
+    const startTextNode = startElement as unknown as Text;
+    const startText = startTextNode.textContent || '';
 
-    // Validate offsets
+    // Check if endOffset exceeds the start node's text length (multi-node case)
+    if (highlight.end_offset > startText.length) {
+      // This is likely a multi-node selection, use text matching approach
+      return applyHighlightByTextMatching(highlight, startTextNode);
+    }
+
+    // Single-node highlight: validate offsets normally
     if (
-      highlight.start_offset >= fullText.length ||
-      highlight.end_offset > fullText.length ||
+      highlight.start_offset >= startText.length ||
+      highlight.end_offset > startText.length ||
       highlight.start_offset >= highlight.end_offset
     ) {
-      console.warn('Invalid highlight offsets:', highlight);
+      console.warn('Invalid single-node highlight offsets:', highlight);
       return false;
     }
 
     // Create range for the highlight
     const range = document.createRange();
-    range.setStart(textNode, highlight.start_offset);
-    range.setEnd(textNode, highlight.end_offset);
+    range.setStart(startTextNode, highlight.start_offset);
+    range.setEnd(startTextNode, highlight.end_offset);
 
     // Create highlight span
     const highlightSpan = document.createElement('span');
@@ -351,6 +389,137 @@ export function applyHighlight(highlight: EPUBHighlight): boolean {
     }
   } catch (error) {
     console.error('Error applying highlight:', error);
+    return false;
+  }
+}
+
+/**
+ * Apply highlight for multi-node selections using text matching
+ */
+function applyHighlightByTextMatching(
+  highlight: EPUBHighlight,
+  startTextNode: Text
+): boolean {
+  console.log('🔍 Applying multi-node highlight using text matching');
+
+  // Find the common ancestor that likely contains the entire selection
+  let container = startTextNode.parentElement;
+  while (container && !container.classList.contains('epub-content-container')) {
+    // Expand search scope up the DOM tree to find a container that likely holds the full text
+    const textContent = container.textContent || '';
+    if (textContent.includes(highlight.highlight_text)) {
+      break;
+    }
+    container = container.parentElement;
+  }
+
+  if (!container) {
+    console.warn('Could not find container for multi-node highlight');
+    return false;
+  }
+
+  // Create a range that encompasses the highlight text
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode: Text | null;
+  let textSoFar = '';
+  let startNode: Text | null = null;
+  let startOffset = 0;
+  let endNode: Text | null = null;
+  let endOffset = 0;
+
+  // Walk through all text nodes to find the start and end positions
+  while ((currentNode = walker.nextNode() as Text)) {
+    const nodeText = currentNode.textContent || '';
+    const nextTextSoFar = textSoFar + nodeText;
+
+    // Check if we found the start of our highlight text
+    if (!startNode) {
+      const highlightStart = nextTextSoFar.indexOf(highlight.highlight_text);
+      if (highlightStart >= 0) {
+        // Calculate which text node contains the start and the offset within it
+        if (highlightStart >= textSoFar.length) {
+          // Start is in current node
+          startNode = currentNode;
+          startOffset = highlightStart - textSoFar.length;
+        } else {
+          // Start is in a previous node, backtrack
+          console.warn('Multi-node highlight start detection needs refinement');
+          return false;
+        }
+
+        // Calculate end position
+        const highlightEnd = highlightStart + highlight.highlight_text.length;
+        if (highlightEnd <= nextTextSoFar.length) {
+          // End is also within the text we've seen so far
+          if (highlightEnd <= textSoFar.length + nodeText.length) {
+            // End is in current node
+            endNode = currentNode;
+            endOffset = highlightEnd - textSoFar.length;
+          }
+        }
+
+        break;
+      }
+    }
+
+    textSoFar = nextTextSoFar;
+  }
+
+  // Continue walking to find end node if not found yet
+  if (startNode && !endNode) {
+    const targetLength = highlight.highlight_text.length;
+    let lengthSoFar = (startNode.textContent?.length || 0) - startOffset;
+
+    while (
+      lengthSoFar < targetLength &&
+      (currentNode = walker.nextNode() as Text)
+    ) {
+      const nodeText = currentNode.textContent || '';
+      if (lengthSoFar + nodeText.length >= targetLength) {
+        endNode = currentNode;
+        endOffset = targetLength - lengthSoFar;
+        break;
+      }
+      lengthSoFar += nodeText.length;
+    }
+  }
+
+  if (!startNode || !endNode) {
+    console.warn('Could not find start/end nodes for multi-node highlight');
+    return false;
+  }
+
+  // Create range and apply highlight
+  const range = document.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+
+  // Verify the range text matches what we expect
+  const rangeText = range.toString();
+  if (rangeText !== highlight.highlight_text) {
+    console.warn('Range text mismatch:', {
+      expected: highlight.highlight_text,
+      actual: rangeText,
+    });
+    return false;
+  }
+
+  // Create highlight span
+  const highlightSpan = document.createElement('span');
+  highlightSpan.className = `epub-highlight epub-highlight-${highlight.color}`;
+  highlightSpan.setAttribute('data-highlight-id', highlight.id || '');
+  highlightSpan.setAttribute('data-highlight-text', highlight.highlight_text);
+
+  try {
+    range.surroundContents(highlightSpan);
+    return true;
+  } catch (error) {
+    console.error('Error applying multi-node highlight span:', error);
     return false;
   }
 }

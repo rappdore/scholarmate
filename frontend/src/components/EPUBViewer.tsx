@@ -959,26 +959,66 @@ export default function EPUBViewer({
     ttsService.start(text);
   }, []);
 
-  const handleContinueReading = useCallback((selectedText: string) => {
-    // Get all text content from the EPUB container
+  // Helper function to calculate precise character offset from selection
+  const getSelectionCharacterOffset = useCallback((): number | null => {
+    if (!htmlRef.current) return null;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container = htmlRef.current;
+
+    // Ensure selection is within the EPUB container
+    if (!container.contains(range.startContainer)) {
+      return null;
+    }
+
+    // Walk through all text nodes to calculate cumulative offset
+    let currentOffset = 0;
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text)) {
+      if (node === range.startContainer) {
+        // Found our start node, add the start offset within this text node
+        return currentOffset + range.startOffset;
+      }
+      // Add the full length of this text node to our running total
+      currentOffset += node.textContent?.length || 0;
+    }
+
+    return null;
+  }, []);
+
+  const handleContinueReading = useCallback(() => {
     if (!htmlRef.current) return;
 
     const fullText = htmlRef.current.textContent || '';
 
-    // Find where the selected text starts in the full content
-    const startIndex = fullText.indexOf(selectedText);
-    if (startIndex === -1) {
-      // Fallback: just read the selected text
-      ttsService.start(selectedText);
+    // Calculate precise character offset using the current selection
+    const startOffset = getSelectionCharacterOffset();
+
+    if (startOffset === null) {
+      // Fallback: if we can't determine offset, try using pending selection
+      if (pendingSelection) {
+        ttsService.start(pendingSelection.selectedText);
+      }
       return;
     }
 
-    // Get text from the selection point to the end of the chapter
-    const textFromSelection = fullText.slice(startIndex);
+    // Get text from the precise selection point to the end of the chapter
+    const textFromSelection = fullText.slice(startOffset);
 
     // Start TTS with the remaining text
     ttsService.start(textFromSelection);
-  }, []);
+  }, [getSelectionCharacterOffset, pendingSelection]);
 
   const handleStopTTS = useCallback(() => {
     ttsService.stop();

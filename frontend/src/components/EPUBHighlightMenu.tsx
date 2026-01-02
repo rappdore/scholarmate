@@ -7,7 +7,7 @@ interface EPUBHighlightMenuProps {
   onClose: () => void;
   selectedText: string;
   onReadAloud?: (text: string) => void;
-  onContinueReading?: (text: string) => void;
+  onContinueReading?: () => void;
 }
 
 const HIGHLIGHT_COLORS: Array<{
@@ -166,7 +166,7 @@ export default function EPUBHighlightMenu({
           className="tts-continue-reading-btn"
           title="Continue Reading from Here"
           onClick={() => {
-            onContinueReading(selectedText);
+            onContinueReading();
             onClose();
           }}
           aria-label="Continue reading from selection to end of chapter"

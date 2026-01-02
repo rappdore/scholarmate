@@ -53,7 +53,10 @@ export function highlightSentence(
             textNode,
             actualOffset,
             textNode,
-            Math.min(actualOffset + sentenceText.length, textNode.length)
+            Math.min(
+              actualOffset + sentenceText.length,
+              (textNode.textContent || '').length
+            )
           );
         }
       }
@@ -109,7 +112,12 @@ function highlightRange(
   try {
     const range = document.createRange();
     range.setStart(startNode, Math.max(0, startOffset));
-    range.setEnd(endNode, Math.min(endNode.length, endOffset));
+    const range = document.createRange();
+    range.setStart(startNode, Math.max(0, startOffset));
+    range.setEnd(
+      endNode,
+      Math.min((endNode.textContent || '').length, endOffset)
+    );
 
     const wrapper = document.createElement('span');
     wrapper.className = HIGHLIGHT_CLASS;

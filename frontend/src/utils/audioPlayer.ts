@@ -3,7 +3,10 @@
  * Handles queuing, sequential playback, and cleanup.
  */
 
-type SentenceCallback = (sentenceIndex: number) => void;
+type SentenceCallback = (
+  sentenceIndex: number,
+  status?: 'completed' | 'interrupted'
+) => void;
 
 class AudioPlayer {
   private audioContext: AudioContext | null = null;
@@ -13,6 +16,7 @@ class AudioPlayer {
   private currentSentenceIndex: number = -1;
   private onSentenceStart: SentenceCallback | null = null;
   private onSentenceComplete: SentenceCallback | null = null;
+  private abortPlayback = false;
 
   private readonly SAMPLE_RATE = 24000;
 
@@ -67,38 +71,52 @@ class AudioPlayer {
     this.queue.push({ buffer, sentenceIndex });
 
     if (!this.isPlaying) {
+      this.abortPlayback = false; // Clear abort flag when starting playback
       this.playNext();
     }
   }
 
   private async playNext() {
+    this.abortPlayback = false; // Clear abort flag at start of new run
+
     if (this.queue.length === 0) {
       this.isPlaying = false;
       // Final sentence completed when queue empties
       if (this.currentSentenceIndex >= 0) {
-        this.onSentenceComplete?.(this.currentSentenceIndex);
+        this.onSentenceComplete?.(this.currentSentenceIndex, 'completed');
         this.currentSentenceIndex = -1;
       }
       return;
     }
 
-    this.isPlaying = true;
     const { buffer, sentenceIndex } = this.queue.shift()!;
     const ctx = this.getContext();
 
     if (ctx.state === 'suspended') {
       await ctx.resume();
+      // Check for abort after await
+      if (this.abortPlayback) {
+        return;
+      }
     }
+
+    this.isPlaying = true;
 
     // Check if this is a new sentence starting
     if (sentenceIndex !== this.currentSentenceIndex) {
       // Previous sentence completed (if there was one)
       if (this.currentSentenceIndex >= 0) {
-        this.onSentenceComplete?.(this.currentSentenceIndex);
+        this.onSentenceComplete?.(this.currentSentenceIndex, 'completed');
       }
       // New sentence starting
       this.currentSentenceIndex = sentenceIndex;
       this.onSentenceStart?.(sentenceIndex);
+    }
+
+    // Check for abort before scheduling audio
+    if (this.abortPlayback) {
+      this.isPlaying = false;
+      return;
     }
 
     const source = ctx.createBufferSource();
@@ -115,6 +133,17 @@ class AudioPlayer {
   }
 
   stop() {
+    this.abortPlayback = true;
+
+    // Notify current sentence as interrupted before clearing state
+    if (this.currentSentenceIndex >= 0) {
+      try {
+        this.onSentenceComplete?.(this.currentSentenceIndex, 'interrupted');
+      } catch (error) {
+        console.error('Error calling onSentenceComplete during stop:', error);
+      }
+    }
+
     this.queue = [];
 
     if (this.currentSource) {

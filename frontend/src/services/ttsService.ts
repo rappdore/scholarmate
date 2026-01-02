@@ -113,10 +113,15 @@ class TTSService {
             break;
 
           case 'done':
-            this.waitForAudioComplete().then(() => {
-              this.cleanup();
-              this.handlers.onDone?.();
-            });
+            this.waitForAudioComplete()
+              .then(() => {
+                this.cleanup();
+                this.handlers.onDone?.();
+              })
+              .catch(err => {
+                console.error('TTS: Error during completion handling:', err);
+                this.cleanup();
+              });
             break;
 
           case 'stopped':
