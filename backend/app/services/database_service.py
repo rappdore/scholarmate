@@ -16,6 +16,7 @@ import os
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
+from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
 from .chat_notes_service import ChatNotesService
 from .epub_chat_notes_service import EPUBChatNotesService
 from .epub_highlights_service import EPUBHighlightService
@@ -1020,15 +1021,22 @@ class DatabaseService:
             logger.error(f"Error deleting EPUB chat notes for {epub_filename}: {e}")
             results["epub_chat_notes"] = False
 
-        # Delete EPUB highlights (new in Phase 5)
+        # Delete EPUB highlights - need to look up epub_id first
         try:
-            with self.epub_highlights.get_connection() as conn:
-                cursor = conn.execute(
-                    "DELETE FROM epub_highlights WHERE epub_filename = ?",
-                    (epub_filename,),
-                )
-                conn.commit()
-                results["epub_highlights"] = cursor.rowcount >= 0
+            from .epub_documents_service import EPUBDocumentsService
+
+            epub_docs_service = EPUBDocumentsService(self.db_path)
+            epub_doc = epub_docs_service.get_by_filename(epub_filename)
+            if epub_doc:
+                epub_id = epub_doc.get("id")
+                if epub_id:
+                    results["epub_highlights"] = self.delete_epub_highlights_for_epub(
+                        epub_id
+                    )
+                else:
+                    results["epub_highlights"] = True  # No ID, nothing to delete
+            else:
+                results["epub_highlights"] = True  # Doc not found, nothing to delete
         except Exception as e:
             logger.error(f"Error deleting EPUB highlights for {epub_filename}: {e}")
             results["epub_highlights"] = False
@@ -1039,48 +1047,27 @@ class DatabaseService:
     # EPUB Highlight Delegation Methods
     # ------------------------------------------------------------------
 
-    def save_epub_highlight(
-        self,
-        epub_filename: str,
-        nav_id: str,
-        chapter_id: str | None,
-        xpath: str,
-        start_offset: int,
-        end_offset: int,
-        highlight_text: str,
-        color: str,
-    ) -> int | None:
+    def save_epub_highlight(self, data: EPUBHighlightCreate) -> int | None:
         """Create a highlight for an EPUB section."""
-        return self.epub_highlights.save_highlight(
-            epub_filename,
-            nav_id,
-            chapter_id,
-            xpath,
-            start_offset,
-            end_offset,
-            highlight_text,
-            color,
-        )
+        return self.epub_highlights.save_highlight(data)
 
-    def get_epub_all_highlights(self, epub_filename: str) -> list[dict[str, Any]]:
+    def get_epub_all_highlights(self, epub_id: int) -> list[EPUBHighlight]:
         """Return all highlights for an EPUB document."""
-        return self.epub_highlights.get_all_highlights(epub_filename)
+        return self.epub_highlights.get_all_highlights(epub_id)
 
     def get_epub_section_highlights(
-        self, epub_filename: str, nav_id: str
-    ) -> list[dict[str, Any]]:
+        self, epub_id: int, nav_id: str
+    ) -> list[EPUBHighlight]:
         """Return highlights for a specific nav_id section."""
-        return self.epub_highlights.get_highlights_for_section(epub_filename, nav_id)
+        return self.epub_highlights.get_highlights_for_section(epub_id, nav_id)
 
     def get_epub_chapter_highlights(
-        self, epub_filename: str, chapter_id: str
-    ) -> list[dict[str, Any]]:
+        self, epub_id: int, chapter_id: str
+    ) -> list[EPUBHighlight]:
         """Return all highlights within a chapter."""
-        return self.epub_highlights.get_highlights_for_chapter(
-            epub_filename, chapter_id
-        )
+        return self.epub_highlights.get_highlights_for_chapter(epub_id, chapter_id)
 
-    def get_epub_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
+    def get_epub_highlight_by_id(self, highlight_id: int) -> EPUBHighlight | None:
         return self.epub_highlights.get_highlight_by_id(highlight_id)
 
     def delete_epub_highlight(self, highlight_id: int) -> bool:
@@ -1089,9 +1076,13 @@ class DatabaseService:
     def update_epub_highlight_color(self, highlight_id: int, color: str) -> bool:
         return self.epub_highlights.update_color(highlight_id, color)
 
-    def get_epub_highlights_count_by_epub(self) -> dict[str, dict[str, Any]]:
+    def get_epub_highlights_count_by_epub(self) -> dict[int, dict[str, int]]:
         """Return highlight count statistics for all EPUB documents."""
         return self.epub_highlights.get_highlights_count_by_epub()
+
+    def delete_epub_highlights_for_epub(self, epub_id: int) -> bool:
+        """Delete all highlights for an EPUB document."""
+        return self.epub_highlights.delete_highlights_for_epub(epub_id)
 
 
 # Global instance

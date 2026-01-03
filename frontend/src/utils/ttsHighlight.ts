@@ -1,8 +1,100 @@
 /**
  * Utilities for highlighting the currently-being-read sentence in EPUB content.
+ * Uses shared EPUBTextRange utilities from epubHighlights.ts for ephemeral TTS highlighting.
  */
 
+import {
+  type EPUBTextRange,
+  generateXPath,
+  applyRangeHighlight,
+  removeHighlight,
+} from './epubHighlights';
+
 const HIGHLIGHT_CLASS = 'tts-reading-highlight';
+
+/**
+ * Normalize text for comparison (collapse whitespace)
+ */
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Find sentence in DOM and return as EPUBTextRange
+ * Uses text matching to locate, then captures precise XPath boundaries
+ */
+export function findSentenceRange(
+  container: HTMLElement,
+  sentenceText: string
+): EPUBTextRange | null {
+  const normalizedTarget = normalizeText(sentenceText);
+
+  // Find all text nodes in container
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let accumulatedText = '';
+  const textNodes: { node: Text; startPos: number }[] = [];
+
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    if (node.textContent?.trim()) {
+      textNodes.push({ node, startPos: accumulatedText.length });
+      accumulatedText += node.textContent;
+    }
+  }
+
+  const normalizedAccumulated = normalizeText(accumulatedText);
+  const matchIndex = normalizedAccumulated.indexOf(normalizedTarget);
+
+  if (matchIndex === -1) {
+    return null;
+  }
+
+  // Find which text nodes contain the start and end
+  const matchEnd = matchIndex + normalizedTarget.length;
+  let startNode: Text | null = null;
+  let startOffset = 0;
+  let endNode: Text | null = null;
+  let endOffset = 0;
+
+  for (let i = 0; i < textNodes.length; i++) {
+    const { node: textNode, startPos } = textNodes[i];
+    const nodeText = normalizeText(textNode.textContent || '');
+    const nodeEnd = startPos + nodeText.length;
+
+    // Find start node
+    if (!startNode && startPos <= matchIndex && matchIndex < nodeEnd) {
+      startNode = textNode;
+      startOffset = matchIndex - startPos;
+    }
+
+    // Find end node
+    if (startNode && startPos < matchEnd && matchEnd <= nodeEnd) {
+      endNode = textNode;
+      endOffset = matchEnd - startPos;
+      break;
+    }
+  }
+
+  if (!startNode || !endNode) {
+    return null;
+  }
+
+  // Return as EPUBTextRange (same structure used by highlights)
+  return {
+    startXPath: generateXPath(startNode),
+    startOffset,
+    endXPath: generateXPath(endNode),
+    endOffset,
+    text: sentenceText,
+    navId: '', // Not needed for ephemeral TTS
+    chapterId: '',
+  };
+}
 
 /**
  * Find and highlight text within a container.
@@ -12,7 +104,6 @@ export function highlightSentence(
   container: HTMLElement,
   sentenceText: string
 ): (() => void) | null {
-  // Normalize text for comparison
   const normalizedTarget = normalizeText(sentenceText);
 
   // Find all text nodes in container
@@ -68,6 +159,15 @@ export function highlightSentence(
     }
   }
 
+  // Try using the EPUBTextRange-based approach
+  const range = findSentenceRange(container, sentenceText);
+  if (range) {
+    const highlightSpan = applyRangeHighlight(range, HIGHLIGHT_CLASS);
+    if (highlightSpan) {
+      return () => removeHighlight(highlightSpan);
+    }
+  }
+
   // Fallback: try to find by substring in innerHTML
   const html = container.innerHTML;
   const textIndex = html.indexOf(sentenceText.substring(0, 30));
@@ -78,13 +178,6 @@ export function highlightSentence(
   }
 
   return null;
-}
-
-/**
- * Normalize text for comparison (collapse whitespace)
- */
-function normalizeText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /**
@@ -110,8 +203,6 @@ function highlightRange(
   endOffset: number
 ): (() => void) | null {
   try {
-    const range = document.createRange();
-    range.setStart(startNode, Math.max(0, startOffset));
     const range = document.createRange();
     range.setStart(startNode, Math.max(0, startOffset));
     range.setEnd(

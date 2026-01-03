@@ -1,283 +1,190 @@
 """
-EPUB Highlights Service Module
+EPUB Highlights Service
 
-This module provides specialized database operations for managing text highlights
-inside EPUB documents. Unlike PDF highlights that rely on pixel-based coordinates,
-EPUB highlights use DOM positioning (XPath + character offsets) that are specific
-to a navigation section (nav_id).
-
-Schema (created via migration 002_create_epub_highlights.sql):
-    epub_highlights (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        epub_filename TEXT NOT NULL,
-        nav_id TEXT NOT NULL,
-        chapter_id TEXT,
-        xpath TEXT NOT NULL,
-        start_offset INTEGER NOT NULL,
-        end_offset INTEGER NOT NULL,
-        highlight_text TEXT NOT NULL,
-        color TEXT DEFAULT '#ffff00',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-
-The service provides CRUD helpers that will be wrapped by DatabaseService.
+Service for managing persistent text highlights in EPUB documents.
+Uses XPath + offset pairs for both start and end boundaries.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
 from .base_database_service import BaseDatabaseService
-from .epub_documents_service import EPUBDocumentsService
 
 logger = logging.getLogger(__name__)
 
 
 class EPUBHighlightService(BaseDatabaseService):
-    """SQLite helper for EPUB text highlights."""
+    """SQLite helper for EPUB highlights."""
 
     def __init__(self, db_path: str = "data/reading_progress.db"):
         super().__init__(db_path)
-        # Phase 4c: Initialize EPUB documents service for epub_id lookups
-        # Note: Must be initialized before _init_table() for consistency,
-        # though backfill uses direct SQL joins, not the helper method
-        self._epub_docs_service = EPUBDocumentsService(db_path)
         self._init_table()
 
-    # NOTE: Table is created via migration; this is a safeguard to support fresh
-    # databases during unit tests or first-time setups where migrations may not
-    # run yet (e.g., in CI). It uses the exact same definition as the migration,
-    # but wrapped in IF NOT EXISTS so it is idempotent.
-    def _init_table(self) -> None:  # noqa: D401
-        """Ensure the epub_highlights table & indexes exist."""
+    def _init_table(self) -> None:
+        """Ensure the epub_highlights table exists with new schema."""
         with self.get_connection() as conn:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS epub_highlights (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    epub_filename TEXT NOT NULL,
+                    epub_id INTEGER NOT NULL,
                     nav_id TEXT NOT NULL,
                     chapter_id TEXT,
-                    xpath TEXT NOT NULL,
+                    start_xpath TEXT NOT NULL,
                     start_offset INTEGER NOT NULL,
+                    end_xpath TEXT NOT NULL,
                     end_offset INTEGER NOT NULL,
                     highlight_text TEXT NOT NULL,
-                    color TEXT DEFAULT '#ffff00',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    color TEXT DEFAULT 'yellow',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (epub_id) REFERENCES epub_documents(id) ON DELETE CASCADE
                 )
-                """
-            )
+            """)
 
-            conn.execute(
-                """
+            # Create indexes
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_highlights_epub_nav
-                ON epub_highlights(epub_filename, nav_id)
-                """
-            )
-            conn.execute(
-                """
+                ON epub_highlights(epub_id, nav_id)
+            """)
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_highlights_epub_chapter
-                ON epub_highlights(epub_filename, chapter_id)
-                """
-            )
-
-            # Phase 4c: Add epub_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(epub_highlights)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "epub_id" not in columns:
-                logger.info("Adding epub_id column to epub_highlights table...")
-                conn.execute("ALTER TABLE epub_highlights ADD COLUMN epub_id INTEGER")
-                logger.info("epub_id column added successfully")
-
-            # Create index on epub_id if it doesn't exist
-            conn.execute(
-                """
+                ON epub_highlights(epub_id, chapter_id)
+            """)
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_highlights_epub_id
                 ON epub_highlights(epub_id)
-                """
-            )
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate epub_id for existing epub_highlights rows
-            #
-            # Unlike epub_reading_progress which gets updated on access, epub_highlights only
-            # receives INSERTs, so existing rows would never get their epub_id populated.
-            # This backfill runs once on startup and updates all rows where epub_id IS NULL.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL epub_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute(
-                """
-                UPDATE epub_highlights
-                SET epub_id = (
-                    SELECT id FROM epub_documents
-                    WHERE epub_documents.filename = epub_highlights.epub_filename
-                )
-                WHERE epub_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM epub_documents
-                    WHERE epub_documents.filename = epub_highlights.epub_filename
-                )
-                """
-            )
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled epub_id for {backfilled} existing epub_highlights rows"
-                )
-
+            """)
             conn.commit()
 
-    # ---------------------------------------------------------------------
-    # CRUD helpers
-    # ---------------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────
+    # CRUD Operations
+    # ─────────────────────────────────────────────────────────────────
 
-    def _get_epub_id(self, epub_filename: str) -> int | None:
-        """
-        Get the epub_id for a given EPUB filename.
-
-        Phase 4c: Helper method for looking up epub_id from epub_documents table.
-
-        Args:
-            epub_filename (str): Name of the EPUB file
-
-        Returns:
-            int | None: The epub_id if found, None otherwise
-        """
+    def save_highlight(self, data: EPUBHighlightCreate) -> int | None:
+        """Create a new highlight and return its ID."""
         try:
-            epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
-            if epub_doc:
-                return epub_doc.get("id")
-            return None
-        except Exception as e:
-            logger.warning(f"Could not look up epub_id for {epub_filename}: {e}")
-            return None
-
-    def save_highlight(
-        self,
-        epub_filename: str,
-        nav_id: str,
-        chapter_id: str | None,
-        xpath: str,
-        start_offset: int,
-        end_offset: int,
-        highlight_text: str,
-        color: str,
-    ) -> int | None:
-        """Persist a new highlight and return its auto-generated ID."""
-        try:
-            # Phase 4c: Look up epub_id for auto-population
-            epub_id = self._get_epub_id(epub_filename)
-
             query = """
                 INSERT INTO epub_highlights (
-                    epub_filename, epub_id, nav_id, chapter_id, xpath,
-                    start_offset, end_offset, highlight_text, color, created_at
+                    epub_id, nav_id, chapter_id,
+                    start_xpath, start_offset, end_xpath, end_offset,
+                    highlight_text, color, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
-                epub_filename,
-                epub_id,
-                nav_id,
-                chapter_id,
-                xpath,
-                start_offset,
-                end_offset,
-                highlight_text,
-                color,
+                data.epub_id,
+                data.nav_id,
+                data.chapter_id,
+                data.start_xpath,
+                data.start_offset,
+                data.end_xpath,
+                data.end_offset,
+                data.highlight_text,
+                data.color,
                 self.get_current_timestamp(),
             )
             highlight_id = self.execute_insert(query, params)
-            if highlight_id:
-                logger.info(
-                    "Saved EPUB highlight %s (%s) nav=%s xpath=%s (epub_id=%s)",
-                    epub_filename,
-                    highlight_id,
-                    nav_id,
-                    xpath,
-                    epub_id,
-                )
+            logger.info(
+                "Created highlight %s for epub %s nav=%s",
+                highlight_id,
+                data.epub_id,
+                data.nav_id,
+            )
             return highlight_id
         except Exception as exc:
-            logger.exception("Error saving EPUB highlight: %s", exc)
+            logger.exception("Error creating highlight: %s", exc)
             return None
 
-    def get_all_highlights(self, epub_filename: str) -> list[dict[str, Any]]:
-        """Return all highlights for an EPUB document."""
-        try:
-            query = """
-                SELECT * FROM epub_highlights
-                WHERE epub_filename = ?
-                ORDER BY created_at ASC
-            """
-            rows = self.execute_query(query, (epub_filename,), fetch_all=True)
-            return [dict(row) for row in rows] if rows else []
-        except Exception as exc:
-            logger.exception("Error fetching all EPUB highlights: %s", exc)
-            return []
+    def _row_to_model(self, row) -> EPUBHighlight:
+        """Convert a database row to EPUBHighlight model."""
+        return EPUBHighlight(
+            id=row["id"],
+            epub_id=row["epub_id"],
+            nav_id=row["nav_id"],
+            chapter_id=row["chapter_id"],
+            start_xpath=row["start_xpath"],
+            start_offset=row["start_offset"],
+            end_xpath=row["end_xpath"],
+            end_offset=row["end_offset"],
+            highlight_text=row["highlight_text"],
+            color=row["color"],
+            created_at=row["created_at"],
+        )
 
-    def get_highlights_for_section(
-        self, epub_filename: str, nav_id: str
-    ) -> list[dict[str, Any]]:
-        """Return all highlights within a specific nav_id section."""
-        try:
-            query = """
-                SELECT * FROM epub_highlights
-                WHERE epub_filename = ? AND nav_id = ?
-                ORDER BY created_at ASC
-            """
-            rows = self.execute_query(query, (epub_filename, nav_id), fetch_all=True)
-            return [dict(row) for row in rows] if rows else []
-        except Exception as exc:
-            logger.exception("Error fetching EPUB section highlights: %s", exc)
-            return []
-
-    def get_highlights_for_chapter(
-        self, epub_filename: str, chapter_id: str
-    ) -> list[dict[str, Any]]:
-        """Return all highlights aggregated for a whole chapter."""
-        try:
-            query = """
-                SELECT * FROM epub_highlights
-                WHERE epub_filename = ? AND chapter_id = ?
-                ORDER BY nav_id, created_at ASC
-            """
-            rows = self.execute_query(
-                query, (epub_filename, chapter_id), fetch_all=True
-            )
-            return [dict(row) for row in rows] if rows else []
-        except Exception as exc:
-            logger.exception("Error fetching EPUB chapter highlights: %s", exc)
-            return []
-
-    def get_highlight_by_id(self, highlight_id: int) -> dict[str, Any] | None:
-        """Retrieve a single highlight by primary key."""
+    def get_highlight_by_id(self, highlight_id: int) -> EPUBHighlight | None:
+        """Get a single highlight by ID."""
         try:
             query = "SELECT * FROM epub_highlights WHERE id = ?"
             row = self.execute_query(query, (highlight_id,), fetch_one=True)
-            return dict(row) if row else None
+            return self._row_to_model(row) if row else None
         except Exception as exc:
-            logger.exception("Error fetching EPUB highlight by id: %s", exc)
+            logger.exception("Error fetching highlight by id: %s", exc)
             return None
 
+    def get_highlights_for_section(
+        self,
+        epub_id: int,
+        nav_id: str,
+    ) -> list[EPUBHighlight]:
+        """Get all highlights for a specific section."""
+        try:
+            query = """
+                SELECT * FROM epub_highlights
+                WHERE epub_id = ? AND nav_id = ?
+                ORDER BY created_at ASC
+            """
+            rows = self.execute_query(query, (epub_id, nav_id), fetch_all=True)
+            return [self._row_to_model(row) for row in rows] if rows else []
+        except Exception as exc:
+            logger.exception("Error fetching section highlights: %s", exc)
+            return []
+
+    def get_highlights_for_chapter(
+        self,
+        epub_id: int,
+        chapter_id: str,
+    ) -> list[EPUBHighlight]:
+        """Get all highlights for a chapter."""
+        try:
+            query = """
+                SELECT * FROM epub_highlights
+                WHERE epub_id = ? AND chapter_id = ?
+                ORDER BY nav_id, created_at ASC
+            """
+            rows = self.execute_query(query, (epub_id, chapter_id), fetch_all=True)
+            return [self._row_to_model(row) for row in rows] if rows else []
+        except Exception as exc:
+            logger.exception("Error fetching chapter highlights: %s", exc)
+            return []
+
+    def get_all_highlights(self, epub_id: int) -> list[EPUBHighlight]:
+        """Get all highlights for an EPUB."""
+        try:
+            query = """
+                SELECT * FROM epub_highlights
+                WHERE epub_id = ?
+                ORDER BY nav_id, created_at ASC
+            """
+            rows = self.execute_query(query, (epub_id,), fetch_all=True)
+            return [self._row_to_model(row) for row in rows] if rows else []
+        except Exception as exc:
+            logger.exception("Error fetching all highlights: %s", exc)
+            return []
+
     def delete_highlight(self, highlight_id: int) -> bool:
-        """Remove a highlight permanently."""
+        """Delete a highlight by ID."""
         try:
             query = "DELETE FROM epub_highlights WHERE id = ?"
             deleted = self.execute_update_delete(query, (highlight_id,))
             if deleted:
-                logger.info("Deleted EPUB highlight %s", highlight_id)
+                logger.info("Deleted highlight %s", highlight_id)
             return deleted
         except Exception as exc:
-            logger.exception("Error deleting EPUB highlight: %s", exc)
+            logger.exception("Error deleting highlight: %s", exc)
             return False
 
     def update_color(self, highlight_id: int, color: str) -> bool:
-        """Change the highlight's color."""
+        """Update the color of a highlight."""
         try:
             query = """
                 UPDATE epub_highlights
@@ -286,36 +193,33 @@ class EPUBHighlightService(BaseDatabaseService):
             """
             updated = self.execute_update_delete(query, (color, highlight_id))
             if updated:
-                logger.info(
-                    "Updated color for EPUB highlight %s to %s", highlight_id, color
-                )
+                logger.info("Updated color for highlight %s to %s", highlight_id, color)
             return updated
         except Exception as exc:
-            logger.exception("Error updating EPUB highlight color: %s", exc)
+            logger.exception("Error updating highlight color: %s", exc)
             return False
 
-    def get_highlights_count_by_epub(self) -> dict[str, dict[str, Any]]:
+    def get_highlights_count_by_epub(self) -> dict[int, dict[str, int]]:
         """
         Get summary statistics about highlights for all EPUB documents.
 
         Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their highlight statistics
+            dict[int, dict[str, int]]: Dictionary mapping EPUB IDs to their highlight statistics
         """
         try:
-            # Query: Get count for each EPUB
             query = """
                 SELECT
-                    epub_filename,
+                    epub_id,
                     COUNT(*) as highlights_count
                 FROM epub_highlights
-                GROUP BY epub_filename
+                GROUP BY epub_id
             """
             rows = self.execute_query(query, fetch_all=True)
 
-            highlights_info = {}
+            highlights_info: dict[int, dict[str, int]] = {}
             if rows:
                 for row in rows:
-                    highlights_info[row["epub_filename"]] = {
+                    highlights_info[row["epub_id"]] = {
                         "highlights_count": row["highlights_count"],
                     }
 
@@ -323,3 +227,14 @@ class EPUBHighlightService(BaseDatabaseService):
         except Exception as exc:
             logger.exception("Error getting EPUB highlights count: %s", exc)
             return {}
+
+    def delete_highlights_for_epub(self, epub_id: int) -> bool:
+        """Delete all highlights for an EPUB document."""
+        try:
+            query = "DELETE FROM epub_highlights WHERE epub_id = ?"
+            self.execute_update_delete(query, (epub_id,))
+            logger.info("Deleted all highlights for epub_id %s", epub_id)
+            return True
+        except Exception as exc:
+            logger.exception("Error deleting highlights for epub: %s", exc)
+            return False

@@ -101,10 +101,11 @@ export default function EPUBViewer({
   });
   const [selectedText, setSelectedText] = useState('');
   const [pendingSelection, setPendingSelection] = useState<{
-    xpath: string;
+    startXPath: string;
     startOffset: number;
+    endXPath: string;
     endOffset: number;
-    selectedText: string;
+    text: string;
     navId: string;
     chapterId: string;
   } | null>(null);
@@ -802,7 +803,7 @@ export default function EPUBViewer({
       if (selection) {
         console.log('✅ Valid selection found, showing menu');
         // Show highlight menu
-        setSelectedText(selection.selectedText);
+        setSelectedText(selection.text);
         setPendingSelection(selection);
         setHighlightMenuPosition({ x: event.clientX, y: event.clientY });
         setShowHighlightMenu(true);
@@ -825,10 +826,11 @@ export default function EPUBViewer({
       const newHighlight = await epubService.createEPUBHighlight(epubId, {
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
-        xpath: pendingSelection.xpath,
+        start_xpath: pendingSelection.startXPath,
         start_offset: pendingSelection.startOffset,
+        end_xpath: pendingSelection.endXPath,
         end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.selectedText,
+        highlight_text: pendingSelection.text,
         color,
       });
 
@@ -845,16 +847,25 @@ export default function EPUBViewer({
 
       // For now, create a local highlight even if API fails
       const localHighlight: EPUBHighlight = {
-        id: Date.now().toString(),
+        id: Date.now(),
         epub_id: epubId,
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
-        xpath: pendingSelection.xpath,
+        start_xpath: pendingSelection.startXPath,
         start_offset: pendingSelection.startOffset,
+        end_xpath: pendingSelection.endXPath,
         end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.selectedText,
+        highlight_text: pendingSelection.text,
         color,
         created_at: new Date().toISOString(),
+        // EPUBTextRange fields for compatibility
+        startXPath: pendingSelection.startXPath,
+        startOffset: pendingSelection.startOffset,
+        endXPath: pendingSelection.endXPath,
+        endOffset: pendingSelection.endOffset,
+        navId: pendingSelection.navId,
+        chapterId: pendingSelection.chapterId,
+        text: pendingSelection.text,
       };
 
       console.log('📝 Creating local highlight for testing:', localHighlight);
@@ -1008,7 +1019,7 @@ export default function EPUBViewer({
     if (startOffset === null) {
       // Fallback: if we can't determine offset, try using pending selection
       if (pendingSelection) {
-        ttsService.start(pendingSelection.selectedText);
+        ttsService.start(pendingSelection.text);
       }
       return;
     }
