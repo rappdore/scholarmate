@@ -15,7 +15,7 @@ export interface EPUBTextRange {
 
   // Context
   navId: string;
-  chapterId: string;
+  chapterId?: string;
 
   // Content
   text: string;
@@ -35,7 +35,7 @@ export interface EPUBHighlight extends EPUBTextRange {
   id?: number;
   epub_id: number;
   nav_id: string;
-  chapter_id: string;
+  chapter_id?: string;
   start_xpath: string;
   start_offset: number;
   end_xpath: string;
