@@ -18,9 +18,13 @@ import {
 } from '../utils/epubHighlights';
 import { ttsService } from '../services/ttsService';
 import {
-  highlightSentence,
+  highlightByOffset,
   clearAllHighlights as clearTTSHighlights,
 } from '../utils/ttsHighlight';
+import {
+  type TextPositionMap,
+  buildTextPositionMap,
+} from '../utils/textPositionMap';
 
 interface EPUBViewerProps {
   epubId?: number;
@@ -116,6 +120,10 @@ export default function EPUBViewer({
   // TTS state
   const [isTTSPlaying, setIsTTSPlaying] = useState(false);
   const ttsCleanupRef = useRef<(() => void) | null>(null);
+  const textPositionMapRef = useRef<TextPositionMap | null>(null);
+  // Base offset: where the TTS text starts in the full document
+  // Backend offsets are relative to the text sent, so we add this to get absolute positions
+  const ttsBaseOffsetRef = useRef<number>(0);
 
   useEffect(() => {
     if (!epubId) return;
@@ -931,17 +939,27 @@ export default function EPUBViewer({
           if (htmlRef.current) {
             clearTTSHighlights(htmlRef.current);
           }
+          // Clear the position map when TTS stops
+          textPositionMapRef.current = null;
         }
       },
-      onSentenceStart: (_index, text) => {
+      onSentenceStart: (_index, _text, startOffset, endOffset) => {
         // Remove previous highlight
         if (ttsCleanupRef.current) {
           ttsCleanupRef.current();
         }
 
-        // Add new highlight
-        if (htmlRef.current) {
-          ttsCleanupRef.current = highlightSentence(htmlRef.current, text);
+        // Add new highlight using offsets
+        // Backend offsets are relative to the text sent, so add base offset
+        // to get absolute positions in the full document
+        if (textPositionMapRef.current) {
+          const absoluteStart = ttsBaseOffsetRef.current + startOffset;
+          const absoluteEnd = ttsBaseOffsetRef.current + endOffset;
+          ttsCleanupRef.current = highlightByOffset(
+            textPositionMapRef.current,
+            absoluteStart,
+            absoluteEnd
+          );
         }
       },
       onSentenceEnd: () => {
@@ -953,20 +971,34 @@ export default function EPUBViewer({
           ttsCleanupRef.current();
           ttsCleanupRef.current = null;
         }
+        textPositionMapRef.current = null;
       },
       onError: msg => {
         console.error('TTS Error:', msg);
         setIsTTSPlaying(false);
+        textPositionMapRef.current = null;
       },
     });
 
     return () => {
       ttsService.stop();
+      textPositionMapRef.current = null;
     };
   }, []);
 
   // TTS handlers
   const handleReadAloud = useCallback((text: string) => {
+    if (!htmlRef.current) return;
+
+    // Build position map BEFORE starting TTS so we can map offsets to DOM
+    textPositionMapRef.current = buildTextPositionMap(htmlRef.current);
+
+    // Find where the selected text starts in the full document
+    // This is needed because backend offsets are relative to the text sent
+    const fullText = textPositionMapRef.current.fullText;
+    const baseOffset = fullText.indexOf(text);
+    ttsBaseOffsetRef.current = baseOffset >= 0 ? baseOffset : 0;
+
     ttsService.start(text);
   }, []);
 
@@ -1011,7 +1043,10 @@ export default function EPUBViewer({
   const handleContinueReading = useCallback(() => {
     if (!htmlRef.current) return;
 
-    const fullText = htmlRef.current.textContent || '';
+    // Build position map BEFORE starting TTS so we can map offsets to DOM
+    textPositionMapRef.current = buildTextPositionMap(htmlRef.current);
+
+    const fullText = textPositionMapRef.current.fullText;
 
     // Calculate precise character offset using the current selection
     const startOffset = getSelectionCharacterOffset();
@@ -1019,10 +1054,16 @@ export default function EPUBViewer({
     if (startOffset === null) {
       // Fallback: if we can't determine offset, try using pending selection
       if (pendingSelection) {
+        // For fallback, find where the pending selection starts
+        const baseOffset = fullText.indexOf(pendingSelection.text);
+        ttsBaseOffsetRef.current = baseOffset >= 0 ? baseOffset : 0;
         ttsService.start(pendingSelection.text);
       }
       return;
     }
+
+    // Set base offset to where the sliced text starts
+    ttsBaseOffsetRef.current = startOffset;
 
     // Get text from the precise selection point to the end of the chapter
     const textFromSelection = fullText.slice(startOffset);

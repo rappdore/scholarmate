@@ -9,9 +9,20 @@ export const DEFAULT_TTS_SPEED = 1.5;
 
 type TTSState = 'idle' | 'connecting' | 'playing' | 'stopping';
 
+interface SentenceInfo {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+}
+
 interface TTSEventHandlers {
   onStateChange?: (state: TTSState) => void;
-  onSentenceStart?: (index: number, text: string) => void;
+  onSentenceStart?: (
+    index: number,
+    text: string,
+    startOffset: number,
+    endOffset: number
+  ) => void;
   onSentenceEnd?: (index: number) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
@@ -21,7 +32,7 @@ class TTSService {
   private ws: WebSocket | null = null;
   private state: TTSState = 'idle';
   private handlers: TTSEventHandlers = {};
-  private currentSentences: string[] = [];
+  private currentSentences: SentenceInfo[] = [];
   private cleanupPromise: Promise<void> | null = null;
 
   private getWsUrl(): string {
@@ -36,8 +47,15 @@ class TTSService {
 
     // Trigger sentence start when audio actually starts playing (not when received)
     audioPlayer.setOnSentenceStart(index => {
-      const text = this.currentSentences[index] || '';
-      this.handlers.onSentenceStart?.(index, text);
+      const sentenceInfo = this.currentSentences[index];
+      if (sentenceInfo) {
+        this.handlers.onSentenceStart?.(
+          index,
+          sentenceInfo.text,
+          sentenceInfo.startOffset,
+          sentenceInfo.endOffset
+        );
+      }
     });
 
     audioPlayer.setOnSentenceComplete(index => {
@@ -54,7 +72,7 @@ class TTSService {
     return this.state;
   }
 
-  getSentences(): string[] {
+  getSentences(): SentenceInfo[] {
     return this.currentSentences;
   }
 
@@ -97,8 +115,12 @@ class TTSService {
 
         switch (data.type) {
           case 'sentence_start':
-            // Store the sentence text for when audio actually starts playing
-            this.currentSentences[data.index] = data.text;
+            // Store sentence info (text + offsets) for when audio actually starts playing
+            this.currentSentences[data.index] = {
+              text: data.text,
+              startOffset: data.startOffset,
+              endOffset: data.endOffset,
+            };
             // Note: onSentenceStart is NOT called here - it's called by audioPlayer
             // when the audio for this sentence actually begins playing
             break;

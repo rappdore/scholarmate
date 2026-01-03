@@ -9,6 +9,7 @@ import {
   applyRangeHighlight,
   removeHighlight,
 } from './epubHighlights';
+import { type TextPositionMap } from './textPositionMap';
 
 const HIGHLIGHT_CLASS = 'tts-reading-highlight';
 
@@ -354,4 +355,113 @@ export function clearAllHighlights(container: HTMLElement) {
       parent.normalize();
     }
   });
+}
+
+/**
+ * Highlight a sentence using character offsets from the backend.
+ * This is the preferred method - uses pre-computed position map for accuracy.
+ *
+ * Uses a non-destructive approach: wraps only text node content within each
+ * affected node, preserving the original DOM structure. This prevents issues
+ * where sentences spanning multiple elements would break the document structure.
+ *
+ * @param map - TextPositionMap built from the container before TTS started
+ * @param startOffset - Character offset where the sentence starts
+ * @param endOffset - Character offset where the sentence ends
+ * @returns Cleanup function to remove the highlight, or null if highlighting failed
+ */
+export function highlightByOffset(
+  map: TextPositionMap,
+  startOffset: number,
+  endOffset: number
+): (() => void) | null {
+  // Find all text nodes that overlap with the range
+  const affectedNodes: {
+    node: Text;
+    highlightStart: number;
+    highlightEnd: number;
+  }[] = [];
+
+  for (const pos of map.positions) {
+    // Check if this node overlaps with our range
+    if (pos.textEnd <= startOffset || pos.textStart >= endOffset) {
+      // No overlap
+      continue;
+    }
+
+    // Calculate the portion of this node to highlight
+    const highlightStart = Math.max(0, startOffset - pos.textStart);
+    const highlightEnd = Math.min(
+      pos.node.textContent?.length || 0,
+      endOffset - pos.textStart
+    );
+
+    if (highlightStart < highlightEnd) {
+      affectedNodes.push({
+        node: pos.node,
+        highlightStart,
+        highlightEnd,
+      });
+    }
+  }
+
+  if (affectedNodes.length === 0) {
+    console.warn('TTS: No text nodes found for offset range', {
+      startOffset,
+      endOffset,
+    });
+    return null;
+  }
+
+  // Wrap each affected portion in a highlight span
+  // Process in reverse order to avoid offset shifts affecting later nodes
+  const wrappers: HTMLSpanElement[] = [];
+
+  for (const {
+    node,
+    highlightStart,
+    highlightEnd,
+  } of affectedNodes.reverse()) {
+    try {
+      // Split the text node to isolate the portion to highlight
+      const nodeText = node.textContent || '';
+
+      // Only proceed if the node still has the expected content
+      if (highlightEnd > nodeText.length) {
+        continue;
+      }
+
+      // Create a range for just this portion
+      const range = document.createRange();
+      range.setStart(node, highlightStart);
+      range.setEnd(node, highlightEnd);
+
+      // Use surroundContents for single-node ranges (safe operation)
+      const wrapper = document.createElement('span');
+      wrapper.className = HIGHLIGHT_CLASS;
+      range.surroundContents(wrapper);
+      wrappers.push(wrapper);
+    } catch (e) {
+      // If wrapping fails for this node, continue with others
+      console.warn('TTS: Failed to highlight text node portion:', e);
+    }
+  }
+
+  if (wrappers.length === 0) {
+    return null;
+  }
+
+  // Return cleanup function that removes all wrappers
+  return () => {
+    for (const wrapper of wrappers) {
+      const parent = wrapper.parentNode;
+      if (parent) {
+        while (wrapper.firstChild) {
+          parent.insertBefore(wrapper.firstChild, wrapper);
+        }
+        parent.removeChild(wrapper);
+        parent.normalize();
+      }
+    }
+  };
 }
