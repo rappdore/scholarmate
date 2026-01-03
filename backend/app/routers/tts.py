@@ -1,10 +1,13 @@
 import asyncio
 import base64
 import json
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.tts_service import DEFAULT_SPEED, tts_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["tts"])
 
@@ -20,27 +23,59 @@ async def generate_tts(
     This runs as an asyncio task that can be cancelled.
     Raises asyncio.CancelledError when stop is requested.
     """
-    sentences = tts_service.segment_text(text)
+    segments = tts_service.segment_text_with_offsets(text)
+    logger.info(f"TTS: Starting generation for {len(segments)} sentences")
 
-    for idx, sentence in enumerate(sentences):
-        # Notify sentence start
-        await websocket.send_json(
-            {"type": "sentence_start", "index": idx, "text": sentence}
-        )
-
-        # Generate and stream audio
-        async for audio_chunk in tts_service.generate_audio_async(
-            sentence, voice=voice, speed=speed
-        ):
-            # Encode as base64 for JSON transport
-            audio_b64 = base64.b64encode(audio_chunk).decode("utf-8")
+    for idx, segment in enumerate(segments):
+        try:
+            # Notify sentence start with character offsets for highlighting
             await websocket.send_json(
-                {"type": "audio", "index": idx, "data": audio_b64}
+                {
+                    "type": "sentence_start",
+                    "index": idx,
+                    "text": segment.text,
+                    "startOffset": segment.start_offset,
+                    "endOffset": segment.end_offset,
+                }
             )
 
-        # Notify sentence end
-        await websocket.send_json({"type": "sentence_end", "index": idx})
+            # Generate and stream audio
+            chunk_count = 0
+            async for audio_chunk in tts_service.generate_audio_async(
+                segment.text, voice=voice, speed=speed
+            ):
+                # Encode as base64 for JSON transport
+                audio_b64 = base64.b64encode(audio_chunk).decode("utf-8")
+                await websocket.send_json(
+                    {"type": "audio", "index": idx, "data": audio_b64}
+                )
+                chunk_count += 1
 
+            logger.debug(
+                f"TTS: Sentence {idx} complete, sent {chunk_count} audio chunks"
+            )
+
+            # Notify sentence end
+            await websocket.send_json({"type": "sentence_end", "index": idx})
+
+        except asyncio.CancelledError:
+            # Re-raise cancellation to allow proper cleanup
+            logger.info(f"TTS: Generation cancelled at sentence {idx}")
+            raise
+        except Exception as e:
+            # Log the error but try to continue with the next sentence
+            logger.error(f"TTS: Error generating audio for sentence {idx}: {e}")
+            # Notify client of the error for this sentence
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": f"Failed to generate audio for sentence {idx}: {e!s}",
+                }
+            )
+            # Skip to next sentence rather than failing entirely
+            continue
+
+    logger.info("TTS: Generation complete")
     await websocket.send_json({"type": "done"})
 
 

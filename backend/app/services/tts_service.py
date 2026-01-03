@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
 
 from pysbd import Segmenter
 
@@ -45,6 +46,21 @@ SAMPLE_FORMAT = "float32"  # 32-bit floating point
 BYTE_ORDER = "little"  # Little endian
 
 
+@dataclass
+class SentenceSegment:
+    """A sentence with its position in the original text.
+
+    Attributes:
+        text: The sentence text (may be stripped of whitespace)
+        start_offset: Character offset where this sentence starts in the original text
+        end_offset: Character offset where this sentence ends in the original text
+    """
+
+    text: str
+    start_offset: int
+    end_offset: int
+
+
 class TTSService:
     _instance = None
     _pipeline = None
@@ -72,6 +88,61 @@ class TTSService:
         sentences = self.segmenter.segment(text)
         # Filter empty sentences
         return [s.strip() for s in sentences if s.strip()]
+
+    def segment_text_with_offsets(self, text: str) -> list[SentenceSegment]:
+        """Split text into sentences with character offsets.
+
+        The offsets are relative to the original input text, allowing the
+        frontend to map sentences back to DOM positions for highlighting.
+
+        Args:
+            text: The text to segment into sentences
+
+        Returns:
+            List of SentenceSegment objects with text and character offsets
+        """
+        sentences = self.segmenter.segment(text)
+        segments: list[SentenceSegment] = []
+
+        current_offset = 0
+        for sentence in sentences:
+            stripped = sentence.strip()
+            if not stripped:
+                continue
+
+            # Find where this sentence starts in the original text
+            # pySBD preserves the original text, so we can search for it
+            start_offset = text.find(sentence, current_offset)
+
+            if start_offset == -1:
+                # Fallback: try finding the stripped version
+                start_offset = text.find(stripped, current_offset)
+                if start_offset == -1:
+                    # Last resort: use current position
+                    logger.warning(
+                        f"Could not find sentence in text, using current offset: "
+                        f"'{stripped[:50]}...'"
+                    )
+                    start_offset = current_offset
+                    end_offset = start_offset + len(stripped)
+                else:
+                    # Found stripped version, use its length
+                    end_offset = start_offset + len(stripped)
+            else:
+                # Found original sentence with whitespace
+                end_offset = start_offset + len(sentence)
+
+            segments.append(
+                SentenceSegment(
+                    text=stripped,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                )
+            )
+
+            current_offset = end_offset
+
+        return segments
 
     def _validate_parameters(self, voice: str, speed: float) -> None:
         """Validate input parameters for audio generation."""
