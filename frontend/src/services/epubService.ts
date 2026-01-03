@@ -161,11 +161,27 @@ export const epubService = {
 
   createEPUBHighlight: async (
     epubId: number,
-    highlightData: Omit<EPUBHighlight, 'id' | 'created_at' | 'epub_id'>
+    highlightData: {
+      nav_id: string;
+      chapter_id?: string;
+      start_xpath: string;
+      start_offset: number;
+      end_xpath: string;
+      end_offset: number;
+      highlight_text: string;
+      color: string;
+    }
   ): Promise<EPUBHighlight> => {
     const response = await api.post(`/epub-highlights/create`, {
-      ...highlightData,
       epub_id: epubId,
+      nav_id: highlightData.nav_id,
+      chapter_id: highlightData.chapter_id,
+      start_xpath: highlightData.start_xpath,
+      start_offset: highlightData.start_offset,
+      end_xpath: highlightData.end_xpath,
+      end_offset: highlightData.end_offset,
+      highlight_text: highlightData.highlight_text,
+      color: highlightData.color,
     });
     return response.data;
   },

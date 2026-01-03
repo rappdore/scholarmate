@@ -24,7 +24,7 @@ interface EPUBNote {
   id: number;
   epub_filename: string;
   nav_id: string;
-  chapter_id: string;
+  chapter_id?: string;
   chapter_title: string;
   title: string;
   chat_content: string;

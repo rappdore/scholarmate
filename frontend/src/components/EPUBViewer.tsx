@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   epubService,
   type EPUBProgress,
@@ -16,6 +16,11 @@ import {
   type EPUBHighlight,
   type HighlightColor,
 } from '../utils/epubHighlights';
+import { ttsService } from '../services/ttsService';
+import {
+  highlightSentence,
+  clearAllHighlights as clearTTSHighlights,
+} from '../utils/ttsHighlight';
 
 interface EPUBViewerProps {
   epubId?: number;
@@ -96,16 +101,21 @@ export default function EPUBViewer({
   });
   const [selectedText, setSelectedText] = useState('');
   const [pendingSelection, setPendingSelection] = useState<{
-    xpath: string;
+    startXPath: string;
     startOffset: number;
+    endXPath: string;
     endOffset: number;
-    selectedText: string;
+    text: string;
     navId: string;
     chapterId: string;
   } | null>(null);
 
   // Ref for the HTML container that holds the injected EPUB content
   const htmlRef = useRef<HTMLDivElement>(null);
+
+  // TTS state
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
+  const ttsCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!epubId) return;
@@ -793,7 +803,7 @@ export default function EPUBViewer({
       if (selection) {
         console.log('✅ Valid selection found, showing menu');
         // Show highlight menu
-        setSelectedText(selection.selectedText);
+        setSelectedText(selection.text);
         setPendingSelection(selection);
         setHighlightMenuPosition({ x: event.clientX, y: event.clientY });
         setShowHighlightMenu(true);
@@ -816,10 +826,11 @@ export default function EPUBViewer({
       const newHighlight = await epubService.createEPUBHighlight(epubId, {
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
-        xpath: pendingSelection.xpath,
+        start_xpath: pendingSelection.startXPath,
         start_offset: pendingSelection.startOffset,
+        end_xpath: pendingSelection.endXPath,
         end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.selectedText,
+        highlight_text: pendingSelection.text,
         color,
       });
 
@@ -836,16 +847,25 @@ export default function EPUBViewer({
 
       // For now, create a local highlight even if API fails
       const localHighlight: EPUBHighlight = {
-        id: Date.now().toString(),
+        id: Date.now(),
         epub_id: epubId,
         nav_id: pendingSelection.navId,
         chapter_id: pendingSelection.chapterId,
-        xpath: pendingSelection.xpath,
+        start_xpath: pendingSelection.startXPath,
         start_offset: pendingSelection.startOffset,
+        end_xpath: pendingSelection.endXPath,
         end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.selectedText,
+        highlight_text: pendingSelection.text,
         color,
         created_at: new Date().toISOString(),
+        // EPUBTextRange fields for compatibility
+        startXPath: pendingSelection.startXPath,
+        startOffset: pendingSelection.startOffset,
+        endXPath: pendingSelection.endXPath,
+        endOffset: pendingSelection.endOffset,
+        navId: pendingSelection.navId,
+        chapterId: pendingSelection.chapterId,
+        text: pendingSelection.text,
       };
 
       console.log('📝 Creating local highlight for testing:', localHighlight);
@@ -896,6 +916,124 @@ export default function EPUBViewer({
       }
     };
   }, [currentContent, currentNavId]);
+
+  // TTS service setup
+  useEffect(() => {
+    ttsService.setHandlers({
+      onStateChange: state => {
+        setIsTTSPlaying(state === 'playing');
+        if (state === 'idle') {
+          // Cleanup any remaining highlights
+          if (ttsCleanupRef.current) {
+            ttsCleanupRef.current();
+            ttsCleanupRef.current = null;
+          }
+          if (htmlRef.current) {
+            clearTTSHighlights(htmlRef.current);
+          }
+        }
+      },
+      onSentenceStart: (_index, text) => {
+        // Remove previous highlight
+        if (ttsCleanupRef.current) {
+          ttsCleanupRef.current();
+        }
+
+        // Add new highlight
+        if (htmlRef.current) {
+          ttsCleanupRef.current = highlightSentence(htmlRef.current, text);
+        }
+      },
+      onSentenceEnd: () => {
+        // Highlight will be replaced by next sentence_start
+      },
+      onDone: () => {
+        setIsTTSPlaying(false);
+        if (ttsCleanupRef.current) {
+          ttsCleanupRef.current();
+          ttsCleanupRef.current = null;
+        }
+      },
+      onError: msg => {
+        console.error('TTS Error:', msg);
+        setIsTTSPlaying(false);
+      },
+    });
+
+    return () => {
+      ttsService.stop();
+    };
+  }, []);
+
+  // TTS handlers
+  const handleReadAloud = useCallback((text: string) => {
+    ttsService.start(text);
+  }, []);
+
+  // Helper function to calculate precise character offset from selection
+  const getSelectionCharacterOffset = useCallback((): number | null => {
+    if (!htmlRef.current) return null;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container = htmlRef.current;
+
+    // Ensure selection is within the EPUB container
+    if (!container.contains(range.startContainer)) {
+      return null;
+    }
+
+    // Walk through all text nodes to calculate cumulative offset
+    let currentOffset = 0;
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text)) {
+      if (node === range.startContainer) {
+        // Found our start node, add the start offset within this text node
+        return currentOffset + range.startOffset;
+      }
+      // Add the full length of this text node to our running total
+      currentOffset += node.textContent?.length || 0;
+    }
+
+    return null;
+  }, []);
+
+  const handleContinueReading = useCallback(() => {
+    if (!htmlRef.current) return;
+
+    const fullText = htmlRef.current.textContent || '';
+
+    // Calculate precise character offset using the current selection
+    const startOffset = getSelectionCharacterOffset();
+
+    if (startOffset === null) {
+      // Fallback: if we can't determine offset, try using pending selection
+      if (pendingSelection) {
+        ttsService.start(pendingSelection.text);
+      }
+      return;
+    }
+
+    // Get text from the precise selection point to the end of the chapter
+    const textFromSelection = fullText.slice(startOffset);
+
+    // Start TTS with the remaining text
+    ttsService.start(textFromSelection);
+  }, [getSelectionCharacterOffset, pendingSelection]);
+
+  const handleStopTTS = useCallback(() => {
+    ttsService.stop();
+  }, []);
 
   if (loading) {
     return (
@@ -970,6 +1108,24 @@ export default function EPUBViewer({
                 </span>
               )}
             </div>
+            {/* TTS Stop Button */}
+            {isTTSPlaying && (
+              <button
+                onClick={handleStopTTS}
+                className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                title="Stop Reading"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+                Stop
+              </button>
+            )}
             {/* Settings Button */}
             <button
               onClick={() => setShowSettings(!showSettings)}
@@ -1151,6 +1307,8 @@ export default function EPUBViewer({
             selectedText={selectedText}
             onHighlight={handleCreateHighlight}
             onClose={handleCloseHighlightMenu}
+            onReadAloud={handleReadAloud}
+            onContinueReading={handleContinueReading}
           />
         )}
       </div>

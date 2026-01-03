@@ -6,6 +6,8 @@ interface EPUBHighlightMenuProps {
   onHighlight: (color: HighlightColor) => void;
   onClose: () => void;
   selectedText: string;
+  onReadAloud?: (text: string) => void;
+  onContinueReading?: () => void;
 }
 
 const HIGHLIGHT_COLORS: Array<{
@@ -25,6 +27,8 @@ export default function EPUBHighlightMenu({
   onHighlight,
   onClose,
   selectedText,
+  onReadAloud,
+  onContinueReading,
 }: EPUBHighlightMenuProps) {
   // Calculate position to keep menu within viewport
   const [adjustedPosition, setAdjustedPosition] = React.useState(position);
@@ -130,6 +134,57 @@ export default function EPUBHighlightMenu({
       >
         ✕
       </button>
+
+      {/* Read Aloud button - reads only selected text */}
+      {onReadAloud && (
+        <button
+          className="tts-read-aloud-btn"
+          title="Read Selection"
+          onClick={() => {
+            onReadAloud(selectedText);
+            onClose();
+          }}
+          aria-label="Read selected text aloud"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+          </svg>
+        </button>
+      )}
+
+      {/* Continue Reading button - reads from selection to end of chapter */}
+      {onContinueReading && (
+        <button
+          className="tts-continue-reading-btn"
+          title="Continue Reading from Here"
+          onClick={() => {
+            onContinueReading();
+            onClose();
+          }}
+          aria-label="Continue reading from selection to end of chapter"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

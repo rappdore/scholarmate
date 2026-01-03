@@ -33,6 +33,7 @@ SUPPORTED_VOICES = {
 }
 
 # Configuration constants
+DEFAULT_SPEED = 1.5
 MAX_SPEED = 3.0
 MIN_SPEED = 0.1
 
@@ -161,7 +162,7 @@ class TTSService:
         return list(self._generate_audio_chunks(text, voice, speed))
 
     def generate_audio(
-        self, text: str, voice: str = "af_heart", speed: float = 1.0
+        self, text: str, voice: str = "af_heart", speed: float = DEFAULT_SPEED
     ) -> Generator[bytes, None, None]:
         """Generate audio chunks for text.
 
@@ -187,7 +188,7 @@ class TTSService:
         yield from self._generate_audio_chunks(text, voice, speed)
 
     async def generate_audio_async(
-        self, text: str, voice: str = "af_heart", speed: float = 1.0
+        self, text: str, voice: str = "af_heart", speed: float = DEFAULT_SPEED
     ) -> AsyncGenerator[bytes, None]:
         """Async wrapper for audio generation.
 

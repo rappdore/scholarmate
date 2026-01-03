@@ -117,12 +117,10 @@ export default function HighlightsPanel({
       return true;
     })
     .sort((a, b) => {
-      const aTime = new Date(
-        'createdAt' in a ? a.createdAt : a.created_at
-      ).getTime();
-      const bTime = new Date(
-        'createdAt' in b ? b.createdAt : b.created_at
-      ).getTime();
+      const aDate = 'createdAt' in a ? a.createdAt : a.created_at;
+      const bDate = 'createdAt' in b ? b.createdAt : b.created_at;
+      const aTime = aDate ? new Date(aDate).getTime() : 0;
+      const bTime = bDate ? new Date(bDate).getTime() : 0;
 
       switch (sortBy) {
         case 'newest':
@@ -484,22 +482,31 @@ export default function HighlightsPanel({
                   {sortBy === 'newest' ? 'Newest First' : 'Oldest First'})
                 </h4>
                 <div className="space-y-2">
-                  {filteredHighlights.map(highlight => (
-                    <HighlightItem
-                      key={highlight.id}
-                      highlight={highlight}
-                      isSelected={selectedHighlightId === highlight.id}
-                      isCurrent={highlight.pageNumber === currentPage}
-                      onSelect={() => handleHighlightClick(highlight)}
-                      onDelete={() => handleDeleteHighlight(highlight.id)}
-                      onColorChange={color =>
-                        handleColorChange(highlight.id, color)
-                      }
-                      onJumpToPage={() => onPageJump?.(highlight.pageNumber)}
-                      formatDate={formatDate}
-                      getColorName={getColorName}
-                    />
-                  ))}
+                  {filteredHighlights.map(highlight => {
+                    const highlightId = highlight.id?.toString() ?? '';
+                    const pageNumber =
+                      'pageNumber' in highlight ? highlight.pageNumber : null;
+                    return (
+                      <HighlightItem
+                        key={highlightId}
+                        highlight={highlight}
+                        isSelected={selectedHighlightId === highlightId}
+                        isCurrent={pageNumber === currentPage}
+                        onSelect={() => handleHighlightClick(highlight)}
+                        onDelete={() => handleDeleteHighlight(highlightId)}
+                        onColorChange={color =>
+                          handleColorChange(highlightId, color)
+                        }
+                        onJumpToPage={
+                          pageNumber !== null
+                            ? () => onPageJump?.(pageNumber)
+                            : undefined
+                        }
+                        formatDate={formatDate}
+                        getColorName={getColorName}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -579,7 +586,7 @@ function HighlightItem({
         <div
           className="w-3 h-3 rounded-full mt-1 flex-shrink-0 border border-gray-600"
           style={{ backgroundColor: highlight.color }}
-          title={getColorName(highlight.color)}
+          title={getColorName(highlight.color as HighlightColor)}
         />
 
         <div className="flex-1 min-w-0">
@@ -592,7 +599,7 @@ function HighlightItem({
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span>
               {!isCurrent && pageNumber && `Page ${pageNumber} • `}
-              {formatDate(createdAt.toString())}
+              {createdAt && formatDate(createdAt.toString())}
             </span>
 
             <div className="flex items-center gap-1">
