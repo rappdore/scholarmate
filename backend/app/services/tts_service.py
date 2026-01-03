@@ -124,10 +124,13 @@ class TTSService:
                         f"'{stripped[:50]}...'"
                     )
                     start_offset = current_offset
-
-            # Calculate end offset based on the original sentence length
-            # (not stripped) to maintain accurate positions
-            end_offset = start_offset + len(sentence)
+                    end_offset = start_offset + len(stripped)
+                else:
+                    # Found stripped version, use its length
+                    end_offset = start_offset + len(stripped)
+            else:
+                # Found original sentence with whitespace
+                end_offset = start_offset + len(sentence)
 
             segments.append(
                 SentenceSegment(
