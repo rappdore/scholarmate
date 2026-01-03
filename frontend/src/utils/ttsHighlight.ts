@@ -20,6 +20,48 @@ function normalizeText(text: string): string {
 }
 
 /**
+ * Convert a normalized index within a node's text back to the original string offset.
+ * Iterates through the original string, building the normalized version character by character,
+ * until we reach the target normalized index.
+ */
+function normalizedIndexToOriginal(
+  original: string,
+  normalizedIndex: number
+): number {
+  let normalizedPos = 0;
+  let inWhitespace = false;
+  let foundStart = false;
+
+  for (let i = 0; i < original.length; i++) {
+    const char = original[i];
+    const isSpace = /\s/.test(char);
+
+    if (isSpace) {
+      // In normalized form, consecutive whitespace becomes a single space
+      if (!inWhitespace && foundStart) {
+        normalizedPos++;
+        if (normalizedPos >= normalizedIndex) {
+          return i + 1; // Position after this whitespace
+        }
+      }
+      inWhitespace = true;
+    } else {
+      // Non-whitespace character
+      if (!foundStart) {
+        foundStart = true; // Skip leading whitespace (trim)
+      }
+      if (normalizedPos >= normalizedIndex) {
+        return i;
+      }
+      normalizedPos++;
+      inWhitespace = false;
+    }
+  }
+
+  return original.length;
+}
+
+/**
  * Find sentence in DOM and return as EPUBTextRange
  * Uses text matching to locate, then captures precise XPath boundaries
  */
@@ -36,53 +78,89 @@ export function findSentenceRange(
     null
   );
 
-  let accumulatedText = '';
-  const textNodes: { node: Text; startPos: number }[] = [];
+  // Build text nodes with normalized positions
+  let normalizedAccumulatedPos = 0;
+  const textNodes: {
+    node: Text;
+    originalText: string;
+    normalizedText: string;
+    normalizedStartPos: number;
+  }[] = [];
 
   let node: Text | null;
   while ((node = walker.nextNode() as Text | null)) {
-    if (node.textContent?.trim()) {
-      textNodes.push({ node, startPos: accumulatedText.length });
-      accumulatedText += node.textContent;
+    const originalText = node.textContent || '';
+    if (originalText.trim()) {
+      const normalizedText = normalizeText(originalText);
+      textNodes.push({
+        node,
+        originalText,
+        normalizedText,
+        normalizedStartPos: normalizedAccumulatedPos,
+      });
+      // Add 1 for space between nodes (mimics how normalizeText joins with spaces)
+      normalizedAccumulatedPos += normalizedText.length + 1;
     }
   }
 
-  const normalizedAccumulated = normalizeText(accumulatedText);
+  // Build full normalized text for matching
+  const normalizedAccumulated = textNodes.map(n => n.normalizedText).join(' ');
   const matchIndex = normalizedAccumulated.indexOf(normalizedTarget);
 
   if (matchIndex === -1) {
     return null;
   }
 
-  // Find which text nodes contain the start and end
+  // Find which text nodes contain the start and end (in normalized space)
   const matchEnd = matchIndex + normalizedTarget.length;
   let startNode: Text | null = null;
-  let startOffset = 0;
+  let startOffsetNormalized = 0;
+  let startNodeInfo: (typeof textNodes)[0] | null = null;
   let endNode: Text | null = null;
-  let endOffset = 0;
+  let endOffsetNormalized = 0;
+  let endNodeInfo: (typeof textNodes)[0] | null = null;
 
-  for (let i = 0; i < textNodes.length; i++) {
-    const { node: textNode, startPos } = textNodes[i];
-    const nodeText = normalizeText(textNode.textContent || '');
-    const nodeEnd = startPos + nodeText.length;
+  for (const nodeInfo of textNodes) {
+    const nodeStart = nodeInfo.normalizedStartPos;
+    const nodeEnd = nodeStart + nodeInfo.normalizedText.length;
 
     // Find start node
-    if (!startNode && startPos <= matchIndex && matchIndex < nodeEnd) {
-      startNode = textNode;
-      startOffset = matchIndex - startPos;
+    if (!startNode && nodeStart <= matchIndex && matchIndex < nodeEnd) {
+      startNode = nodeInfo.node;
+      startOffsetNormalized = matchIndex - nodeStart;
+      startNodeInfo = nodeInfo;
     }
 
     // Find end node
-    if (startNode && startPos < matchEnd && matchEnd <= nodeEnd) {
-      endNode = textNode;
-      endOffset = matchEnd - startPos;
+    if (startNode && nodeStart <= matchEnd && matchEnd <= nodeEnd) {
+      endNode = nodeInfo.node;
+      endOffsetNormalized = matchEnd - nodeStart;
+      endNodeInfo = nodeInfo;
+      break;
+    }
+
+    // Handle case where match ends exactly at node boundary (in the space between nodes)
+    if (startNode && matchEnd === nodeEnd + 1) {
+      endNode = nodeInfo.node;
+      endOffsetNormalized = nodeInfo.normalizedText.length;
+      endNodeInfo = nodeInfo;
       break;
     }
   }
 
-  if (!startNode || !endNode) {
+  if (!startNode || !endNode || !startNodeInfo || !endNodeInfo) {
     return null;
   }
+
+  // Convert normalized offsets back to original string offsets
+  const startOffset = normalizedIndexToOriginal(
+    startNodeInfo.originalText,
+    startOffsetNormalized
+  );
+  const endOffset = normalizedIndexToOriginal(
+    endNodeInfo.originalText,
+    endOffsetNormalized
+  );
 
   // Return as EPUBTextRange (same structure used by highlights)
   return {
