@@ -124,12 +124,17 @@
 /* Links */
 .epub-content-container a {
   color: #8b5cf6 !important;
-  text-decoration: underline;
+  text-decoration: none;
   transition: color 0.2s;
 }
 
 .epub-content-container a:hover {
   color: #a78bfa !important;
+}
+
+/* External links get underline */
+.epub-content-container a[href^='http'] {
+  text-decoration: underline;
 }
 
 /* Tables */

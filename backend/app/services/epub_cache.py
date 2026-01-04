@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -131,16 +132,30 @@ class EPUBCache:
 
                         # Update database with new thumbnail path
                         try:
+                            # Parse existing metadata_json if present
+                            metadata = None
+                            if db_record.get("metadata_json"):
+                                try:
+                                    metadata = json.loads(db_record["metadata_json"])
+                                except json.JSONDecodeError:
+                                    logger.warning(
+                                        f"Failed to parse metadata_json for {filename}"
+                                    )
+
                             self._db_service.create_or_update(
                                 filename=filename,
                                 chapters=db_record.get("chapters", 0),
                                 title=db_record.get("title"),
                                 author=db_record.get("author"),
+                                subject=db_record.get("subject"),
+                                publisher=db_record.get("publisher"),
+                                language=db_record.get("language"),
                                 file_size=db_record.get("file_size"),
                                 file_path=db_record.get("file_path"),
                                 thumbnail_path=thumbnail_path_str,
                                 created_date=db_record.get("created_date"),
                                 modified_date=db_record.get("modified_date"),
+                                metadata=metadata,
                             )
                         except Exception as db_error:
                             logger.warning(
@@ -184,6 +199,11 @@ class EPUBCache:
 
                     author = self._extract_metadata_values(book, "DC", "creator")
 
+                    # Extract extended metadata while we have the book open
+                    subject = self._extract_metadata_values(book, "DC", "subject")
+                    publisher = self._extract_metadata_values(book, "DC", "publisher")
+                    language = self._extract_metadata_values(book, "DC", "language")
+
                     # Count chapters (spine items that are documents)
                     chapter_count = len(
                         [
@@ -204,8 +224,8 @@ class EPUBCache:
                         )
                         thumbnail_path_str = ""
 
-                    # Store basic metadata in cache
-                    epub_info = EPUBBasicMetadata(
+                    # Store extended metadata in cache
+                    epub_info = EPUBExtendedMetadata(
                         filename=file_path.name,
                         type="epub",
                         title=str(title),
@@ -215,6 +235,9 @@ class EPUBCache:
                         modified_date=datetime.fromtimestamp(stat.st_mtime).isoformat(),
                         created_date=datetime.fromtimestamp(stat.st_ctime).isoformat(),
                         thumbnail_path=thumbnail_path_str,
+                        subject=subject,
+                        publisher=publisher,
+                        language=language,
                         error=None,
                     )
 
@@ -226,12 +249,16 @@ class EPUBCache:
                             filename=file_path.name,
                             title=epub_info.title,
                             author=epub_info.author,
+                            subject=epub_info.subject,
+                            publisher=epub_info.publisher,
+                            language=epub_info.language,
                             chapters=chapter_count,
                             file_size=stat.st_size,
                             file_path=str(file_path),
                             thumbnail_path=thumbnail_path_str,
                             created_date=epub_info.created_date,
                             modified_date=epub_info.modified_date,
+                            metadata=epub_info.model_dump(),
                         )
                     except Exception as db_error:
                         logger.warning(
@@ -349,6 +376,7 @@ class EPUBCache:
                     thumbnail_path=extended_info.thumbnail_path,
                     created_date=extended_info.created_date,
                     modified_date=extended_info.modified_date,
+                    metadata=extended_info.model_dump(),
                 )
             except Exception as db_error:
                 logger.warning(

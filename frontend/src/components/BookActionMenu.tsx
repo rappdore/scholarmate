@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import type { BookStatus, PDF } from '../types/pdf';
+import type { BookStatus } from '../types/pdf';
+import type { Document } from '../types/document';
+import { isPDFDocument } from '../types/document';
 
 interface BookActionMenuProps {
-  pdf: PDF;
+  pdf: Document;
   onStatusChange: (status: BookStatus) => void;
   onDelete: () => void;
   isVisible: boolean;
@@ -34,6 +36,15 @@ const BookActionMenu: React.FC<BookActionMenuProps> = ({
       setShowDeleteConfirm(true);
       // Auto-cancel after 3 seconds
       setTimeout(() => setShowDeleteConfirm(false), 3000);
+    }
+  };
+
+  // Generate the correct statistics URL based on document type
+  const getStatisticsUrl = () => {
+    if (isPDFDocument(pdf)) {
+      return `/statistics/${pdf.id}`;
+    } else {
+      return `/statistics/epub/${pdf.id}`;
     }
   };
 
@@ -91,7 +102,7 @@ const BookActionMenu: React.FC<BookActionMenuProps> = ({
       {/* Statistics Option */}
       <div className="px-2 py-1">
         <button
-          onClick={() => window.open(`/statistics/${pdf.id}`, '_blank')}
+          onClick={() => window.open(getStatisticsUrl(), '_blank')}
           className="w-full text-left px-2 py-1 rounded text-sm flex items-center space-x-2 transition-colors hover:bg-slate-700/50 text-slate-200 hover:text-slate-100"
         >
           <span>📊</span>

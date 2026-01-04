@@ -13,6 +13,7 @@ from .epub import (
     EPUBStyleProcessor,
 )
 from .epub.epub_url_helper import EPUBURLHelper
+from .epub.epub_word_count_service import EPUBWordCountService
 from .epub_cache import EPUBCache
 
 
@@ -39,6 +40,7 @@ class EPUBService:
         self.content_processor = EPUBContentProcessor(self.base_url)
         self.image_service = EPUBImageService("thumbnails")
         self.style_processor = EPUBStyleProcessor()
+        self.word_count_service = EPUBWordCountService()
 
         # Initialize cache with database backing (must be after other services are initialized)
         self.cache = EPUBCache(self.epub_dir, self.thumbnails_dir, self, db_path)
@@ -178,3 +180,32 @@ class EPUBService:
         Get metadata about the EPUB cache
         """
         return self.cache.get_cache_info()
+
+    def extract_word_counts(
+        self, filename: str, nav_metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Extract word counts for all sections in an EPUB and update nav_metadata.
+
+        Args:
+            filename: The EPUB filename
+            nav_metadata: The navigation metadata containing all_sections
+
+        Returns:
+            Updated nav_metadata with word_count fields added
+        """
+        file_path = self.get_epub_path(filename)
+        book = epub.read_epub(str(file_path))
+        return self.word_count_service.extract_word_counts(book, nav_metadata)
+
+    def needs_word_count(self, nav_metadata: dict[str, Any] | None) -> bool:
+        """
+        Check if word counts need to be extracted for the given nav_metadata.
+
+        Args:
+            nav_metadata: The navigation metadata to check
+
+        Returns:
+            True if word counts need to be extracted
+        """
+        return self.word_count_service.needs_word_count(nav_metadata)

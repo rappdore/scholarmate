@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import Library from './pages/Library';
 import Reader from './pages/Reader';
 import Statistics from './pages/Statistics';
+import EpubStatistics from './pages/EpubStatistics';
 import Header from './components/Header';
 
 function App() {
@@ -15,6 +16,10 @@ function App() {
           <Route path="/" element={<Library />} />
           <Route path="/read/:type/:documentId" element={<Reader />} />
           <Route path="/statistics/:documentId" element={<Statistics />} />
+          <Route
+            path="/statistics/epub/:documentId"
+            element={<EpubStatistics />}
+          />
         </Routes>
       </div>
     </div>

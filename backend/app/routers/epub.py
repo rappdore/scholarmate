@@ -252,14 +252,43 @@ async def save_epub_progress_by_id(
 @router.get("/{epub_id:int}/progress")
 async def get_epub_progress_by_id(epub_id: int) -> Dict[str, Any]:
     """
-    Get reading progress for an EPUB by ID
+    Get reading progress for an EPUB by ID.
+    Also extracts word counts for nav_metadata if not already present.
     """
     try:
         epub_doc = get_epub_doc_or_404(epub_id)
+        filename = epub_doc["filename"]
 
-        progress = db_service.get_epub_progress(epub_doc["filename"])
+        progress = db_service.get_epub_progress(filename)
 
         if progress:
+            # Check if word counts need to be extracted
+            nav_metadata = progress.get("nav_metadata")
+            if nav_metadata and epub_service.needs_word_count(nav_metadata):
+                try:
+                    # Extract word counts and update nav_metadata
+                    updated_nav_metadata = epub_service.extract_word_counts(
+                        filename, nav_metadata
+                    )
+                    # Save updated nav_metadata back to database
+                    db_service.save_epub_progress(
+                        epub_filename=filename,
+                        current_nav_id=progress.get("current_nav_id", "start"),
+                        chapter_id=progress.get("chapter_id"),
+                        chapter_title=progress.get("chapter_title"),
+                        scroll_position=progress.get("scroll_position", 0),
+                        total_sections=progress.get("total_sections"),
+                        progress_percentage=progress.get("progress_percentage", 0.0),
+                        nav_metadata=updated_nav_metadata,
+                    )
+                    progress["nav_metadata"] = updated_nav_metadata
+                    logger.info(f"Extracted word counts for EPUB {epub_id}")
+                except Exception as e:
+                    # Log but don't fail - word counts are optional
+                    logger.warning(
+                        f"Failed to extract word counts for EPUB {epub_id}: {e}"
+                    )
+
             # Add ID to response
             progress["id"] = epub_id
             return progress
@@ -267,7 +296,7 @@ async def get_epub_progress_by_id(epub_id: int) -> Dict[str, Any]:
             # Return default progress if none found
             return {
                 "id": epub_id,
-                "epub_filename": epub_doc["filename"],
+                "epub_filename": filename,
                 "current_nav_id": "start",
                 "chapter_id": None,
                 "chapter_title": None,

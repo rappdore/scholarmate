@@ -156,25 +156,51 @@ class EPUBProgressService(BaseDatabaseService):
             if existing:
                 # Update existing record, preserving status fields unless auto-updating
                 # Phase 2b: Also update epub_id if it's not set
-                query = """
-                    UPDATE epub_reading_progress
-                    SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
-                        scroll_position = ?, total_sections = ?, progress_percentage = ?,
-                        nav_metadata = ?, last_updated = ?, epub_id = ?
-                    WHERE epub_filename = ?
-                """
-                params = (
-                    current_nav_id,
-                    chapter_id,
-                    chapter_title,
-                    scroll_position,
-                    total_sections,
-                    progress_percentage,
-                    nav_metadata_json,
-                    self.get_current_timestamp(),
-                    epub_id,
-                    epub_filename,
-                )
+                # IMPORTANT: Preserve existing nav_metadata if it exists (contains word counts)
+                # Only update nav_metadata if the existing record doesn't have it
+                existing_nav_metadata = existing.get("nav_metadata")
+                should_update_nav_metadata = existing_nav_metadata is None
+
+                if should_update_nav_metadata:
+                    query = """
+                        UPDATE epub_reading_progress
+                        SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
+                            scroll_position = ?, total_sections = ?, progress_percentage = ?,
+                            nav_metadata = ?, last_updated = ?, epub_id = ?
+                        WHERE epub_filename = ?
+                    """
+                    params = (
+                        current_nav_id,
+                        chapter_id,
+                        chapter_title,
+                        scroll_position,
+                        total_sections,
+                        progress_percentage,
+                        nav_metadata_json,
+                        self.get_current_timestamp(),
+                        epub_id,
+                        epub_filename,
+                    )
+                else:
+                    # Don't touch nav_metadata - preserve existing word counts
+                    query = """
+                        UPDATE epub_reading_progress
+                        SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
+                            scroll_position = ?, total_sections = ?, progress_percentage = ?,
+                            last_updated = ?, epub_id = ?
+                        WHERE epub_filename = ?
+                    """
+                    params = (
+                        current_nav_id,
+                        chapter_id,
+                        chapter_title,
+                        scroll_position,
+                        total_sections,
+                        progress_percentage,
+                        self.get_current_timestamp(),
+                        epub_id,
+                        epub_filename,
+                    )
                 result = self.execute_update_delete(query, params)
 
                 # Auto-update status based on progress if not manually set
