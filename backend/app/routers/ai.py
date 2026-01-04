@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services.dual_chat_service import dual_chat_service
+from ..services.epub.epub_chat_context_service import EPUBChatContextService
 from ..services.epub_documents_service import EPUBDocumentsService
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import ollama_service
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 # Initialize services
 pdf_service = PDFService()
 epub_service = EPUBService()
+epub_chat_context_service = EPUBChatContextService(epub_service.content_processor)
 pdf_documents_service = PDFDocumentsService()
 epub_documents_service = EPUBDocumentsService()
 
@@ -35,6 +37,7 @@ class AnalyzeEpubSectionRequest(BaseModel):
     epub_id: int | None = None  # NEW: ID-based reference
     filename: str | None = None  # Legacy: filename-based reference
     nav_id: str
+    scroll_position: float = 0.0  # Reading position within section (0.0-1.0)
     context: str | None = ""
 
 
@@ -53,6 +56,7 @@ class EpubChatRequest(BaseModel):
     epub_id: int | None = None  # NEW: ID-based reference
     filename: str | None = None  # Legacy: filename-based reference
     nav_id: str
+    scroll_position: float = 0.0  # Reading position within section (0.0-1.0)
     chat_history: list[dict[str, str]] | None = None
     request_id: str | None = None
     is_new_chat: bool | None = False
@@ -159,9 +163,17 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> dict[str, 
                 status_code=400, detail="Either epub_id or filename must be provided"
             )
 
-        section_text = epub_service.extract_section_text(filename, request.nav_id)
+        # Extract context using the context service (considers scroll position)
+        book = epub_service.get_epub_book(filename)
+        epub_context = epub_chat_context_service.get_chat_context(
+            book=book,
+            filename=filename,
+            nav_id=request.nav_id,
+            scroll_position=request.scroll_position,
+            is_new_chat=True,  # Analysis always gets full context
+        )
 
-        if not section_text.strip():
+        if not epub_context.current_section_text.strip():
             return {
                 "filename": filename,
                 "nav_id": request.nav_id,
@@ -170,7 +182,7 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> dict[str, 
             }
 
         analysis = await ollama_service.analyze_epub_section(
-            text=section_text,
+            epub_context=epub_context,
             filename=filename,
             nav_id=request.nav_id,
             context=request.context,
@@ -181,7 +193,7 @@ async def analyze_epub_section(request: AnalyzeEpubSectionRequest) -> dict[str, 
             "nav_id": request.nav_id,
             "analysis": analysis,
             "text_extracted": True,
-            "text_length": len(section_text),
+            "text_length": len(epub_context.current_section_text),
         }
 
     except HTTPException:
@@ -223,9 +235,17 @@ async def analyze_epub_section_stream(
                 status_code=400, detail="Either epub_id or filename must be provided"
             )
 
-        section_text = epub_service.extract_section_text(filename, request.nav_id)
+        # Extract context using the context service (considers scroll position)
+        book = epub_service.get_epub_book(filename)
+        epub_context = epub_chat_context_service.get_chat_context(
+            book=book,
+            filename=filename,
+            nav_id=request.nav_id,
+            scroll_position=request.scroll_position,
+            is_new_chat=True,  # Analysis always gets full context
+        )
 
-        if not section_text.strip():
+        if not epub_context.current_section_text.strip():
 
             async def generate_empty_response():
                 yield f"data: {json.dumps({'type': 'response', 'content': 'This section appears to be empty or contains no extractable text.', 'metadata': {{}}, 'text_extracted': False})}\n\n"
@@ -243,7 +263,7 @@ async def analyze_epub_section_stream(
         async def generate_analysis():
             try:
                 async for structured_data in ollama_service.analyze_epub_section_stream(
-                    text=section_text,
+                    epub_context=epub_context,
                     filename=filename,
                     nav_id=request.nav_id,
                     context=request.context,
@@ -495,23 +515,31 @@ async def chat_with_ai_epub(request: EpubChatRequest) -> StreamingResponse:
             f"[AI Router] Registered EPUB chat request {request_id} for {filename}"
         )
 
-        # Extract text from current section for context
-        section_text = epub_service.extract_section_text(filename, request.nav_id)
+        # Extract context using the new context service
+        # This considers scroll position and includes surrounding sections for new chats
+        book = epub_service.get_epub_book(filename)
+        epub_context = epub_chat_context_service.get_chat_context(
+            book=book,
+            filename=filename,
+            nav_id=request.nav_id,
+            scroll_position=request.scroll_position,
+            is_new_chat=request.is_new_chat or False,
+        )
 
         async def generate_response():
             try:
                 # Send the request ID first
                 yield f"data: {json.dumps({'request_id': request_id})}\n\n"
 
-                # CHANGED: ollama_service now yields structured StreamChunk dictionaries
+                # Pass structured context to ollama_service
                 async for structured_data in ollama_service.chat_epub_stream(
                     message=request.message,
                     filename=filename,
                     nav_id=request.nav_id,
-                    epub_text=section_text,
+                    epub_context=epub_context,
                     chat_history=request.chat_history,
                     request_id=request_id,
-                    is_new_chat=request.is_new_chat,
+                    is_new_chat=request.is_new_chat or False,
                 ):
                     # Check if request was cancelled
                     if request_tracking_service.is_cancelled(request_id):

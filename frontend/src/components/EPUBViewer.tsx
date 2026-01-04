@@ -39,6 +39,7 @@ interface EPUBViewerProps {
   filename?: string;
   onNavIdChange?: (navId: string) => void;
   onChapterInfoChange?: (chapterId: string, chapterTitle: string) => void;
+  onScrollProgressChange?: (scrollProgress: number) => void;
 }
 
 interface ContentData {
@@ -77,6 +78,7 @@ export default function EPUBViewer({
   filename,
   onNavIdChange,
   onChapterInfoChange,
+  onScrollProgressChange,
 }: EPUBViewerProps) {
   const [navigation, setNavigation] = useState<EPUBNavigationResponse | null>(
     null
@@ -168,6 +170,11 @@ export default function EPUBViewer({
     if (maxScroll <= 0) return 1;
     return Math.min(1, Math.max(0, scrollPosition / maxScroll));
   }, [scrollPosition, scrollHeight, clientHeight]);
+
+  // Notify parent of scroll progress changes (for chat context)
+  useEffect(() => {
+    onScrollProgressChange?.(scrollProgressRatio);
+  }, [scrollProgressRatio, onScrollProgressChange]);
 
   // Get book status for tracking
   const bookStatus = (savedProgress?.status || 'new') as

@@ -18,6 +18,7 @@ interface AIPanelProps {
   documentType?: 'pdf' | 'epub';
   currentPage: number; // For PDF
   currentNavId?: string; // For EPUB
+  scrollProgress?: number; // For EPUB: 0.0-1.0 position within current section
 }
 
 export default function AIPanel({
@@ -27,6 +28,7 @@ export default function AIPanel({
   documentType,
   currentPage,
   currentNavId,
+  scrollProgress,
 }: AIPanelProps) {
   // Structured content state (same pattern as ChatInterface)
   const [responseContent, setResponseContent] = useState<string>('');
@@ -88,7 +90,11 @@ export default function AIPanel({
 
       const analysisStream =
         documentType === 'epub' && currentNavId && epubId
-          ? aiService.streamAnalyzeEpubSection(epubId, currentNavId)
+          ? aiService.streamAnalyzeEpubSection(
+              epubId,
+              currentNavId,
+              scrollProgress ?? 0
+            )
           : aiService.streamAnalyzePage(pdfId!, currentPage);
 
       for await (const chunk of analysisStream) {

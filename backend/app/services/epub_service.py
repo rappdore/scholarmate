@@ -135,6 +135,19 @@ class EPUBService:
             book, nav_id, filename, epub_id
         )
 
+    def get_epub_book(self, filename: str) -> epub.EpubBook:
+        """
+        Load and return an EPUB book object.
+
+        Args:
+            filename: The EPUB filename
+
+        Returns:
+            The loaded EpubBook object
+        """
+        file_path = self.get_epub_path(filename)
+        return epub.read_epub(str(file_path))
+
     def extract_section_text(self, filename: str, nav_id: str) -> str:
         """
         Extracts plain text content for a specific navigation section.

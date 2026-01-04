@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 
 from app.models.llm_types import LLMConfiguration
 from app.models.stream_types import StreamChunk
+from app.services.epub.epub_chat_context_service import EPUBChatContext
 from app.services.stream_parser import ThinkingStreamParser
 
 # Configure logger
@@ -145,18 +146,29 @@ Provide a helpful analysis that will aid in understanding this content."""
             raise Exception(f"Failed to analyze page: {str(e)}")
 
     async def analyze_epub_section(
-        self, text: str, filename: str, nav_id: str, context: str = ""
+        self,
+        epub_context: EPUBChatContext,
+        filename: str,
+        nav_id: str,
+        context: str = "",
     ) -> str:
         """
-        Analyze an EPUB section using AI
+        Analyze an EPUB section using AI.
+
+        Args:
+            epub_context: Structured context from EPUBChatContextService
+            filename: EPUB filename
+            nav_id: Navigation section ID
+            context: Additional user-provided context
         """
         logger.info(
             f"[LLM] analyze_epub_section - Using model: {self.model}, base_url: {self.base_url}"
         )
 
-        system_prompt = """
+        # Use the formatted context from the context service
+        formatted_context = epub_context.format_for_llm()
 
-        You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
+        system_prompt = """You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
 
 When analyzing a section, you should:
 1. Summarize the key points and main ideas
@@ -168,12 +180,13 @@ When analyzing a section, you should:
 
 Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
 
-        user_prompt = f"""Please analyze the section with ID '{nav_id}' of the document "{filename}".
+        user_prompt = f"""Please analyze the current section of the document "{filename}".
+
+Current section: {epub_context.current_section_title or nav_id}
 
 {f"Additional context: {context}" if context else ""}
 
-Section content:
-{text}
+{formatted_context}
 
 Provide a helpful analysis that will aid in understanding this content."""
 
@@ -351,13 +364,22 @@ Keep responses conversational but informative. When explaining a concept, emphas
         message: str,
         filename: str,
         nav_id: str,
-        epub_text: str,
+        epub_context: EPUBChatContext,
         chat_history: list | None = None,
         request_id: str | None = None,
         is_new_chat: bool = False,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Stream chat responses about the EPUB content with structured thinking/response separation.
+
+        Args:
+            message: The user's message
+            filename: EPUB filename
+            nav_id: Current navigation section ID
+            epub_context: Structured context from EPUBChatContextService
+            chat_history: Previous chat messages
+            request_id: Optional request ID for cancellation tracking
+            is_new_chat: Whether this is the first message in a conversation
 
         Returns:
             AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
@@ -378,13 +400,16 @@ Keep responses conversational but informative. When explaining a concept, emphas
         if filename not in self._reasoning_sessions:
             self._reasoning_sessions[filename] = []
 
-        system_prompt = f"""
-        You are an intelligent study assistant helping a user understand an EPUB document.
+        # Use the structured context from EPUBChatContextService
+        formatted_context = epub_context.format_for_llm()
+
+        system_prompt = f"""You are an intelligent study assistant helping a user understand an EPUB document.
 
 Current context:
 - Document: {filename}
-- Current section: {nav_id}
-- Section content: {epub_text[:2000]}{"..." if len(epub_text) > 2000 else ""}
+- Current section: {epub_context.current_section_title or nav_id}
+
+{formatted_context}
 
 You should:
 1. Answer questions directly related to the EPUB content
@@ -595,10 +620,20 @@ Provide a helpful analysis that will aid in understanding this content."""
             )
 
     async def analyze_epub_section_stream(
-        self, text: str, filename: str, nav_id: str, context: str = ""
+        self,
+        epub_context: EPUBChatContext,
+        filename: str,
+        nav_id: str,
+        context: str = "",
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Analyze an EPUB section using AI with streaming response and structured thinking/response.
+
+        Args:
+            epub_context: Structured context from EPUBChatContextService
+            filename: EPUB filename
+            nav_id: Navigation section ID
+            context: Additional user-provided context
 
         Returns:
             AsyncGenerator yielding StreamChunk TypedDicts with separated thinking/response content
@@ -607,9 +642,10 @@ Provide a helpful analysis that will aid in understanding this content."""
             f"[LLM] analyze_epub_section_stream - Using model: {self.model}, base_url: {self.base_url}"
         )
 
-        system_prompt = """
+        # Use the formatted context from the context service
+        formatted_context = epub_context.format_for_llm()
 
-        You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
+        system_prompt = """You are an intelligent study assistant. Your role is to help users understand EPUB documents by providing clear, insightful analysis of the content.
 
 When analyzing a section, you should:
 1. Summarize the key points and main ideas
@@ -621,12 +657,13 @@ When analyzing a section, you should:
 
 Keep your analysis concise but thorough, and focus on enhancing understanding rather than just repeating the content."""
 
-        user_prompt = f"""Please analyze the section with ID '{nav_id}' of the document "{filename}".
+        user_prompt = f"""Please analyze the current section of the document "{filename}".
+
+Current section: {epub_context.current_section_title or nav_id}
 
 {f"Additional context: {context}" if context else ""}
 
-Section content:
-{text}
+{formatted_context}
 
 Provide a helpful analysis that will aid in understanding this content."""
 
