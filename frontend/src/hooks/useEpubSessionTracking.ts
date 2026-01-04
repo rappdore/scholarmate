@@ -171,7 +171,7 @@ export function useEpubSessionTracking({
       });
 
       const blob = new Blob([data], { type: 'application/json' });
-      const url = `${API_BASE_URL}/api/epub/reading-statistics/session/update`;
+      const url = `${API_BASE_URL}/epub/reading-statistics/session/update`;
 
       if (navigator.sendBeacon) {
         navigator.sendBeacon(url, blob);
