@@ -21,6 +21,7 @@ from .chat_notes_service import ChatNotesService
 from .epub_chat_notes_service import EPUBChatNotesService
 from .epub_highlights_service import EPUBHighlightService
 from .epub_progress_service import EPUBProgressService
+from .epub_reading_statistics_service import EPUBReadingStatisticsService
 from .highlights_service import HighlightsService
 from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
@@ -73,6 +74,7 @@ class DatabaseService:
         self.highlights = HighlightsService(db_path)
         self.epub_highlights = EPUBHighlightService(db_path)
         self.reading_statistics = ReadingStatisticsService(db_path)
+        self.epub_reading_statistics = EPUBReadingStatisticsService(db_path)
 
     def _ensure_data_dir(self):
         """

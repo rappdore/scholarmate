@@ -235,4 +235,42 @@ export const epubService = {
     const response = await api.post('/epub/refresh-cache');
     return response.data;
   },
+
+  // ========================================
+  // EPUB READING STATISTICS METHODS
+  // ========================================
+
+  updateReadingSession: async (
+    sessionId: string,
+    epubId: number,
+    wordsRead: number,
+    timeSpentSeconds: number
+  ): Promise<{ message: string; session_id: string }> => {
+    const response = await api.put('/epub/reading-statistics/session/update', {
+      session_id: sessionId,
+      epub_id: epubId,
+      words_read: wordsRead,
+      time_spent_seconds: timeSpentSeconds,
+    });
+    return response.data;
+  },
+
+  getReadingSessions: async (
+    epubId: number
+  ): Promise<{
+    epub_id: number;
+    total_sessions: number;
+    sessions: Array<{
+      session_id: string;
+      session_start: string;
+      last_updated: string;
+      words_read: number;
+      time_spent_seconds: number;
+    }>;
+  }> => {
+    const response = await api.get(
+      `/epub/reading-statistics/sessions/${epubId}`
+    );
+    return response.data;
+  },
 };

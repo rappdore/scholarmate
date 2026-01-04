@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react';
 import {
   epubService,
   type EPUBProgress,
@@ -25,6 +31,8 @@ import {
   type TextPositionMap,
   buildTextPositionMap,
 } from '../utils/textPositionMap';
+import { useEpubSessionTracking } from '../hooks/useEpubSessionTracking';
+import type { NavSection } from '../types/epubStatistics';
 
 interface EPUBViewerProps {
   epubId?: number;
@@ -81,9 +89,18 @@ export default function EPUBViewer({
   const [error, setError] = useState<string | null>(null);
   const [chapterOptions, setChapterOptions] = useState<ChapterOption[]>([]);
   const [epubStyles, setEpubStyles] = useState<EPUBStyles | null>(null);
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [fontSize, setFontSize] = useState<FontSize>('medium');
-  const [lineHeight, setLineHeight] = useState<LineHeight>('normal');
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = sessionStorage.getItem('epub-reader-theme');
+    return (saved as Theme) || 'dark';
+  });
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    const saved = sessionStorage.getItem('epub-reader-font-size');
+    return (saved as FontSize) || 'medium';
+  });
+  const [lineHeight, setLineHeight] = useState<LineHeight>(() => {
+    const saved = sessionStorage.getItem('epub-reader-line-height');
+    return (saved as LineHeight) || 'normal';
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
@@ -125,6 +142,49 @@ export default function EPUBViewer({
   // Backend offsets are relative to the text sent, so we add this to get absolute positions
   const ttsBaseOffsetRef = useRef<number>(0);
 
+  // Track scroll height for progress calculation
+  const [scrollHeight, setScrollHeight] = useState(0);
+  const [clientHeight, setClientHeight] = useState(0);
+
+  // Extract nav sections with word counts for session tracking
+  const navSections = useMemo<NavSection[] | undefined>(() => {
+    const allSections = savedProgress?.nav_metadata?.all_sections;
+    if (!allSections || !Array.isArray(allSections)) return undefined;
+
+    return allSections.map(section => ({
+      id: section.id,
+      title: section.title || '',
+      href: section.href || '',
+      word_count: section.word_count || 0,
+    }));
+  }, [savedProgress?.nav_metadata]);
+
+  // Calculate scroll progress (0.0 - 1.0) within current section
+  const scrollProgressRatio = useMemo(() => {
+    if (!scrollHeight || !clientHeight || scrollHeight <= clientHeight) {
+      return 0;
+    }
+    const maxScroll = scrollHeight - clientHeight;
+    if (maxScroll <= 0) return 1;
+    return Math.min(1, Math.max(0, scrollPosition / maxScroll));
+  }, [scrollPosition, scrollHeight, clientHeight]);
+
+  // Get book status for tracking
+  const bookStatus = (savedProgress?.status || 'new') as
+    | 'new'
+    | 'reading'
+    | 'finished';
+
+  // Session tracking hook
+  const { trackingEnabled, setTrackingEnabled, wordsRead } =
+    useEpubSessionTracking({
+      epubId,
+      navSections,
+      currentNavId,
+      scrollProgress: scrollProgressRatio,
+      bookStatus,
+    });
+
   useEffect(() => {
     if (!epubId) return;
     loadNavigation();
@@ -132,6 +192,19 @@ export default function EPUBViewer({
     loadProgress();
     setInitialLoadDone(false); // Reset initial load flag for new EPUB
   }, [epubId]);
+
+  // Persist reader settings to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('epub-reader-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    sessionStorage.setItem('epub-reader-font-size', fontSize);
+  }, [fontSize]);
+
+  useEffect(() => {
+    sessionStorage.setItem('epub-reader-line-height', lineHeight);
+  }, [lineHeight]);
 
   // Load highlights when content changes
   useEffect(() => {
@@ -215,9 +288,12 @@ export default function EPUBViewer({
 
       await epubService.saveEPUBProgress(epubId, progressData);
       // Also update the local state to ensure UI is consistent
+      // IMPORTANT: Preserve the existing nav_metadata from backend (has word counts)
+      // Don't overwrite it with the locally-built navMetadata (no word counts)
       setSavedProgress(prev => ({
         ...(prev ?? ({} as EPUBProgress)),
         ...progressData,
+        nav_metadata: prev?.nav_metadata ?? progressData.nav_metadata,
         last_updated: new Date().toISOString(),
       }));
       setJustSaved(true);
@@ -244,6 +320,8 @@ export default function EPUBViewer({
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const target = event.target as HTMLDivElement;
     setScrollPosition(target.scrollTop);
+    setScrollHeight(target.scrollHeight);
+    setClientHeight(target.clientHeight);
   };
 
   // Helper function to get current chapter info
@@ -268,20 +346,20 @@ export default function EPUBViewer({
   const getAllSectionIds = (
     flatNav?: EPUBFlatNavigationItem[],
     navItems?: EPUBNavigationItem[]
-  ): Array<{ id: string; title: string }> => {
+  ): Array<{ id: string; title: string; href?: string }> => {
     if (flatNav && flatNav.length > 0) {
       return flatNav
         .filter(isReadableFlatItem)
-        .map(item => ({ id: item.id, title: item.title }));
+        .map(item => ({ id: item.id, title: item.title, href: item.href }));
     }
 
     if (!navItems) return [];
 
-    const sections: Array<{ id: string; title: string }> = [];
+    const sections: Array<{ id: string; title: string; href?: string }> = [];
 
     const extractSections = (items: EPUBNavigationItem[]) => {
       for (const item of items) {
-        sections.push({ id: item.id, title: item.title });
+        sections.push({ id: item.id, title: item.title, href: item.href });
         if (item.children.length > 0) {
           extractSections(item.children);
         }
@@ -388,7 +466,7 @@ export default function EPUBViewer({
     navData: EPUBNavigationResponse | null
   ):
     | {
-        all_sections: Array<{ id: string; title: string }>;
+        all_sections: Array<{ id: string; title: string; href?: string }>;
         chapters: Array<{
           id: string;
           title: string;
@@ -536,6 +614,13 @@ export default function EPUBViewer({
           : null;
 
     if (navIdToLoad) {
+      // Enable scroll restoration only if we have a saved position for this nav_id
+      if (
+        savedProgress?.current_nav_id === navIdToLoad &&
+        savedProgress?.scroll_position > 0
+      ) {
+        shouldRestoreScrollRef.current = true;
+      }
       loadContent(navIdToLoad, true); // Pass true to indicate this is initial load
       setInitialLoadDone(true); // Mark initial load as complete
     }
@@ -547,9 +632,17 @@ export default function EPUBViewer({
     initialLoadDone,
   ]); // Restored savedProgress
 
-  // Restore scroll position after content loads
+  // Track whether we should restore scroll (only on initial load)
+  const shouldRestoreScrollRef = useRef(false);
+
+  // Restore scroll position after content loads (only on initial load)
   useEffect(() => {
-    if (currentContent && savedProgress && contentContainerRef.current) {
+    if (
+      currentContent &&
+      savedProgress &&
+      contentContainerRef.current &&
+      shouldRestoreScrollRef.current
+    ) {
       // Small delay to ensure content is rendered
       setTimeout(() => {
         if (contentContainerRef.current && savedProgress.scroll_position > 0) {
@@ -561,6 +654,8 @@ export default function EPUBViewer({
           );
         }
       }, 100);
+      // Only restore once
+      shouldRestoreScrollRef.current = false;
     }
   }, [currentContent, savedProgress]);
 
@@ -1149,6 +1244,41 @@ export default function EPUBViewer({
                 </span>
               )}
             </div>
+            {/* Tracking Toggle Button */}
+            <button
+              onClick={() => setTrackingEnabled(!trackingEnabled)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm ${
+                trackingEnabled
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+              }`}
+              title={
+                trackingEnabled
+                  ? 'Tracking reading progress'
+                  : 'Not tracking (browsing mode)'
+              }
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                {trackingEnabled ? (
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                ) : (
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="8"
+                    strokeWidth="2"
+                    stroke="currentColor"
+                    fill="none"
+                  />
+                )}
+              </svg>
+              {trackingEnabled ? 'Tracking' : 'Paused'}
+            </button>
             {/* TTS Stop Button */}
             {isTTSPlaying && (
               <button
