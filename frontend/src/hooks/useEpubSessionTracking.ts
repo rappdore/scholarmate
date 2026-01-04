@@ -68,6 +68,7 @@ export function useEpubSessionTracking({
   // Refs to avoid stale closures in cleanup effect
   const trackingEnabledRef = useRef(trackingEnabled);
   const epubIdRef = useRef(epubId);
+  const navSectionsRef = useRef(navSections);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -77,6 +78,10 @@ export function useEpubSessionTracking({
   useEffect(() => {
     epubIdRef.current = epubId;
   }, [epubId]);
+
+  useEffect(() => {
+    navSectionsRef.current = navSections;
+  }, [navSections]);
 
   // Update tracking enabled when book status changes
   useEffect(() => {
@@ -147,7 +152,9 @@ export function useEpubSessionTracking({
   }, [currentNavId, sendUpdate]);
 
   // Trigger: Unmount (cleanup)
-  // Uses refs to read current values, avoiding stale closure issues
+  // Uses refs to read current values, avoiding stale closure issues.
+  // Only sessionId in deps - it's stable (created once via useState initializer).
+  // All other values read from refs to avoid effect re-running on prop changes.
   useEffect(() => {
     return () => {
       // Send final update on unmount
@@ -156,7 +163,17 @@ export function useEpubSessionTracking({
       // Read from refs to get current values, not stale closure values
       if (!trackingEnabledRef.current || !epubIdRef.current) return;
 
-      const wordsRead = calculateWordsRead();
+      // Calculate words read directly from refs (not via calculateWordsRead callback)
+      const sections = navSectionsRef.current;
+      let wordsRead = 0;
+      if (sections && sections.length > 0) {
+        for (const section of sections) {
+          const progress = sectionProgressRef.current.get(section.id) || 0;
+          const wordCount = section.word_count || 0;
+          wordsRead += Math.floor(wordCount * progress);
+        }
+      }
+
       const timeSpentSeconds =
         (Date.now() - sessionStartTimeRef.current) / 1000;
 
@@ -188,7 +205,8 @@ export function useEpubSessionTracking({
         });
       }
     };
-  }, [sessionId, calculateWordsRead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Trigger: Visibility change (user switches tabs/minimizes)
   useEffect(() => {
