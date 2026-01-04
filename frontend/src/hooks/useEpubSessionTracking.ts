@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { epubService } from '../services/epubService';
+import { API_BASE_URL } from '../services/config';
 import type { NavSection } from '../types/epubStatistics';
 
 // Generate UUID using crypto API (available in modern browsers)
@@ -63,6 +64,19 @@ export function useEpubSessionTracking({
 
   // Flag to track if we've sent at least one update
   const hasUpdatedRef = useRef<boolean>(false);
+
+  // Refs to avoid stale closures in cleanup effect
+  const trackingEnabledRef = useRef(trackingEnabled);
+  const epubIdRef = useRef(epubId);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    trackingEnabledRef.current = trackingEnabled;
+  }, [trackingEnabled]);
+
+  useEffect(() => {
+    epubIdRef.current = epubId;
+  }, [epubId]);
 
   // Update tracking enabled when book status changes
   useEffect(() => {
@@ -133,12 +147,14 @@ export function useEpubSessionTracking({
   }, [currentNavId, sendUpdate]);
 
   // Trigger: Unmount (cleanup)
+  // Uses refs to read current values, avoiding stale closure issues
   useEffect(() => {
     return () => {
       // Send final update on unmount
       // We need to call the update synchronously since async won't complete on unmount
       // Use a synchronous approach via beacon API if available, otherwise best-effort
-      if (!trackingEnabled || !epubId) return;
+      // Read from refs to get current values, not stale closure values
+      if (!trackingEnabledRef.current || !epubIdRef.current) return;
 
       const wordsRead = calculateWordsRead();
       const timeSpentSeconds =
@@ -149,13 +165,13 @@ export function useEpubSessionTracking({
       // Use navigator.sendBeacon for reliable delivery on page unload
       const data = JSON.stringify({
         session_id: sessionId,
-        epub_id: epubId,
+        epub_id: epubIdRef.current,
         words_read: wordsRead,
         time_spent_seconds: timeSpentSeconds,
       });
 
       const blob = new Blob([data], { type: 'application/json' });
-      const url = '/api/epub/reading-statistics/session/update';
+      const url = `${API_BASE_URL}/api/epub/reading-statistics/session/update`;
 
       if (navigator.sendBeacon) {
         navigator.sendBeacon(url, blob);
@@ -172,7 +188,7 @@ export function useEpubSessionTracking({
         });
       }
     };
-  }, [sessionId, epubId, trackingEnabled, calculateWordsRead]);
+  }, [sessionId, calculateWordsRead]);
 
   // Trigger: Visibility change (user switches tabs/minimizes)
   useEffect(() => {

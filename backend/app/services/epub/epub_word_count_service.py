@@ -210,13 +210,6 @@ class EPUBWordCountService:
                 name = item.get_name()
                 content = item.get_content()
                 content_map[name] = content
-
-                # Also store without directory path for flexible matching
-                if "/" in name:
-                    basename = name.rsplit("/", 1)[-1]
-                    if basename not in content_map:
-                        content_map[basename] = content
-
             except Exception as e:
                 logger.warning(f"Failed to get content for item: {e}")
 
@@ -235,15 +228,13 @@ class EPUBWordCountService:
         """
         content = content_map.get(href)
 
-        # Try matching with/without path
-        if content is None and "/" in href:
-            basename = href.rsplit("/", 1)[-1]
-            content = content_map.get(basename)
-
         if content is None:
-            # Try partial matching
+            # Try partial matching, but require path boundary anchor
+            # to avoid spurious matches like "chapter1.html" matching "ter1.html"
             for key in content_map:
-                if key.endswith(href) or href.endswith(key):
+                if self._is_path_suffix_match(key, href) or self._is_path_suffix_match(
+                    href, key
+                ):
                     content = content_map[key]
                     break
 
@@ -278,6 +269,32 @@ class EPUBWordCountService:
         except Exception as e:
             logger.warning(f"Failed to count words: {e}")
             return 0
+
+    def _is_path_suffix_match(self, full_path: str, suffix: str) -> bool:
+        """
+        Check if suffix is a valid path suffix of full_path.
+
+        A valid suffix match requires the match to be anchored at a path boundary,
+        meaning the character before the suffix must be '/' or the strings must
+        be exactly equal. This prevents spurious matches like "chapter1.html"
+        matching "ter1.html".
+
+        Args:
+            full_path: The full path to check against
+            suffix: The suffix to look for
+
+        Returns:
+            True if suffix is a valid path suffix of full_path
+        """
+        if full_path == suffix:
+            return True
+
+        if not full_path.endswith(suffix):
+            return False
+
+        # Check that the character before the suffix is a path separator
+        prefix_len = len(full_path) - len(suffix)
+        return full_path[prefix_len - 1] == "/"
 
     def _is_document_item(self, item) -> bool:
         """Check if an item is a document item (HTML/XHTML content)."""
