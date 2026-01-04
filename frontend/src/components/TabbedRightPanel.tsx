@@ -13,6 +13,7 @@ interface TabbedRightPanelProps {
   documentType: DocumentType | null;
   currentPage: number;
   currentNavId?: string;
+  scrollProgress?: number; // For EPUBs: 0.0-1.0 position within current section
   currentChapterId?: string; // For EPUB chapter identification
   currentChapterTitle?: string; // For EPUB chapter display
   onPageJump?: (pageNumber: number) => void;
@@ -27,6 +28,7 @@ export default function TabbedRightPanel({
   documentType,
   currentPage,
   currentNavId,
+  scrollProgress,
   currentChapterId,
   currentChapterTitle,
   onPageJump,
@@ -77,6 +79,7 @@ export default function TabbedRightPanel({
             documentType={documentType ?? undefined}
             currentPage={currentPage}
             currentNavId={currentNavId}
+            scrollProgress={scrollProgress}
           />
         </div>
         <div className={`h-full ${activeTab === 'chat' ? '' : 'hidden'}`}>
@@ -86,6 +89,7 @@ export default function TabbedRightPanel({
             filename={filename}
             currentPage={currentPage}
             currentNavId={currentNavId}
+            scrollProgress={scrollProgress}
             currentChapterId={currentChapterId}
             currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}

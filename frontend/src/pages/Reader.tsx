@@ -35,6 +35,7 @@ export default function Reader() {
   const [currentChapterTitle, setCurrentChapterTitle] = useState<
     string | undefined
   >(undefined);
+  const [scrollProgress, setScrollProgress] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [documentInfo, setDocumentInfo] = useState<DocumentInfo | null>(null);
@@ -254,6 +255,7 @@ export default function Reader() {
             filename={documentInfo.filename}
             onNavIdChange={handleNavIdChange}
             onChapterInfoChange={handleChapterInfoChange}
+            onScrollProgressChange={setScrollProgress}
           />
         );
       default:
@@ -280,6 +282,7 @@ export default function Reader() {
             documentType={documentInfo?.type || null}
             currentPage={currentPage}
             currentNavId={currentNavId}
+            scrollProgress={scrollProgress}
             currentChapterId={currentChapterId}
             currentChapterTitle={currentChapterTitle}
             onPageJump={handlePageChange}

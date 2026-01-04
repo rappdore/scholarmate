@@ -365,6 +365,7 @@ export const aiService = {
   streamAnalyzeEpubSection: async function* (
     epubId: number,
     navId: string,
+    scrollPosition: number,
     context?: string
   ): AsyncGenerator<
     {
@@ -394,6 +395,7 @@ export const aiService = {
           body: JSON.stringify({
             epub_id: epubId,
             nav_id: navId,
+            scroll_position: scrollPosition,
             context: context || '',
           }),
         }
@@ -605,6 +607,7 @@ export const chatService = {
     message: string,
     epubId: number,
     navId: string,
+    scrollPosition: number,
     chatHistory?: Array<{ role: string; content: string }>,
     abortSignal?: AbortSignal,
     isNewChat?: boolean
@@ -636,6 +639,7 @@ export const chatService = {
           message,
           epub_id: epubId,
           nav_id: navId,
+          scroll_position: scrollPosition,
           chat_history: chatHistory,
           is_new_chat: isNewChat || false,
         }),

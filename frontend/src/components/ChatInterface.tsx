@@ -79,6 +79,7 @@ interface ChatInterfaceProps {
   filename?: string;
   currentPage?: number; // For PDFs
   currentNavId?: string; // For EPUBs
+  scrollProgress?: number; // For EPUBs: 0.0-1.0 position within current section
   currentChapterId?: string; // For EPUB chapter identification
   currentChapterTitle?: string; // For EPUB chapter display
   documentType: 'pdf' | 'epub';
@@ -90,6 +91,7 @@ export default function ChatInterface({
   filename,
   currentPage,
   currentNavId,
+  scrollProgress,
   currentChapterId,
   currentChapterTitle,
   documentType,
@@ -324,6 +326,7 @@ export default function ChatInterface({
               currentInput,
               epubId!,
               currentNavId!, // We know currentNavId is defined for EPUBs
+              scrollProgress ?? 0, // Pass scroll position for context extraction
               chatHistory,
               controller.signal,
               isNewChat
