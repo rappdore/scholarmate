@@ -23,6 +23,39 @@ import pytest
 from app.services.epub_documents_service import EPUBDocumentsService
 
 
+def create_mock_epub_info(
+    title: str = "Test",
+    author: str = "Author",
+    chapters: int = 1,
+    subject: str | None = None,
+    publisher: str | None = None,
+    language: str | None = None,
+    created_date: str | None = None,
+    modified_date: str | None = None,
+) -> Mock:
+    """Create a mock EPUBExtendedMetadata object for testing."""
+    mock = Mock()
+    mock.title = title
+    mock.author = author
+    mock.chapters = chapters
+    mock.subject = subject
+    mock.publisher = publisher
+    mock.language = language
+    mock.created_date = created_date
+    mock.modified_date = modified_date
+    mock.model_dump.return_value = {
+        "title": title,
+        "author": author,
+        "chapters": chapters,
+        "subject": subject,
+        "publisher": publisher,
+        "language": language,
+        "created_date": created_date,
+        "modified_date": modified_date,
+    }
+    return mock
+
+
 @pytest.fixture
 def temp_db():
     """Create a temporary database for testing"""
@@ -324,12 +357,18 @@ class TestReadOperations:
         """Test that list_all returns documents ordered by last_accessed (most recent first)"""
         import time
 
-        # Create documents with delays to ensure different timestamps
-        service.create_or_update(filename="old.epub", chapters=1)
-        time.sleep(0.05)
-        service.create_or_update(filename="middle.epub", chapters=1)
-        time.sleep(0.05)
-        service.create_or_update(filename="new.epub", chapters=1)
+        # Create all documents (they may have the same timestamp with sub-second precision)
+        old_id = service.create_or_update(filename="old.epub", chapters=1)
+        middle_id = service.create_or_update(filename="middle.epub", chapters=1)
+        new_id = service.create_or_update(filename="new.epub", chapters=1)
+
+        # Use update_last_accessed with >1 second delays to ensure distinct timestamps
+        # (SQLite CURRENT_TIMESTAMP has second precision)
+        service.update_last_accessed(old_id)
+        time.sleep(1.1)
+        service.update_last_accessed(middle_id)
+        time.sleep(1.1)
+        service.update_last_accessed(new_id)
 
         docs = service.list_all()
 
@@ -424,27 +463,27 @@ class TestFilesystemSync:
         epub1.touch()
         epub2.touch()
 
-        # Mock the EPUBService to return metadata
+        # Mock the EPUBService to return metadata (as mock objects with attributes)
         mock_epub_service.cache.get_epub_info.side_effect = [
-            {
-                "title": "Book 1",
-                "author": "Author 1",
-                "chapters": 5,
-                "created_date": "2024-01-01",
-                "modified_date": "2024-01-02",
-            },
-            {
-                "title": "Book 2",
-                "author": "Author 2",
-                "chapters": 3,
-                "created_date": "2024-01-03",
-                "modified_date": "2024-01-04",
-            },
+            create_mock_epub_info(
+                title="Book 1",
+                author="Author 1",
+                chapters=5,
+                created_date="2024-01-01",
+                modified_date="2024-01-02",
+            ),
+            create_mock_epub_info(
+                title="Book 2",
+                author="Author 2",
+                chapters=3,
+                created_date="2024-01-03",
+                modified_date="2024-01-04",
+            ),
         ]
         mock_epub_service.cache.get_thumbnail_path.return_value = None
 
         with patch(
-            "app.services.epub_documents_service.EPUBService",
+            "app.services.epub_service.EPUBService",
             return_value=mock_epub_service,
         ):
             stats = service.sync_from_filesystem(temp_epub_dir)
@@ -467,17 +506,17 @@ class TestFilesystemSync:
         epub_file = Path(temp_epub_dir) / "still_here.epub"
         epub_file.touch()
 
-        mock_epub_service.cache.get_epub_info.return_value = {
-            "title": "Still Here",
-            "author": "Author",
-            "chapters": 1,
-            "created_date": "2024-01-01",
-            "modified_date": "2024-01-01",
-        }
+        mock_epub_service.cache.get_epub_info.return_value = create_mock_epub_info(
+            title="Still Here",
+            author="Author",
+            chapters=1,
+            created_date="2024-01-01",
+            modified_date="2024-01-01",
+        )
         mock_epub_service.cache.get_thumbnail_path.return_value = None
 
         with patch(
-            "app.services.epub_documents_service.EPUBService",
+            "app.services.epub_service.EPUBService",
             return_value=mock_epub_service,
         ):
             stats = service.sync_from_filesystem(temp_epub_dir)
@@ -500,17 +539,17 @@ class TestFilesystemSync:
         epub_file.touch()
 
         # Mock returns updated metadata
-        mock_epub_service.cache.get_epub_info.return_value = {
-            "title": "New Title",
-            "author": "New Author",
-            "chapters": 10,
-            "created_date": "2024-01-01",
-            "modified_date": "2024-01-05",
-        }
+        mock_epub_service.cache.get_epub_info.return_value = create_mock_epub_info(
+            title="New Title",
+            author="New Author",
+            chapters=10,
+            created_date="2024-01-01",
+            modified_date="2024-01-05",
+        )
         mock_epub_service.cache.get_thumbnail_path.return_value = None
 
         with patch(
-            "app.services.epub_documents_service.EPUBService",
+            "app.services.epub_service.EPUBService",
             return_value=mock_epub_service,
         ):
             stats = service.sync_from_filesystem(temp_epub_dir)
@@ -534,21 +573,24 @@ class TestFilesystemSync:
         epub1.touch()
         epub2.touch()
 
-        # First call succeeds, second fails
-        mock_epub_service.cache.get_epub_info.side_effect = [
-            {
-                "title": "Good",
-                "author": "Author",
-                "chapters": 1,
-                "created_date": "2024-01-01",
-                "modified_date": "2024-01-01",
-            },
-            Exception("Failed to read EPUB"),
-        ]
+        # Use a function to return different results based on filename
+        def get_epub_info_side_effect(filename):
+            if filename == "good.epub":
+                return create_mock_epub_info(
+                    title="Good",
+                    author="Author",
+                    chapters=1,
+                    created_date="2024-01-01",
+                    modified_date="2024-01-01",
+                )
+            else:
+                raise Exception("Failed to read EPUB")
+
+        mock_epub_service.cache.get_epub_info.side_effect = get_epub_info_side_effect
         mock_epub_service.cache.get_thumbnail_path.return_value = None
 
         with patch(
-            "app.services.epub_documents_service.EPUBService",
+            "app.services.epub_service.EPUBService",
             return_value=mock_epub_service,
         ):
             stats = service.sync_from_filesystem(temp_epub_dir)
@@ -564,7 +606,7 @@ class TestFilesystemSync:
         service.create_or_update(filename="book2.epub", chapters=1)
 
         with patch(
-            "app.services.epub_documents_service.EPUBService",
+            "app.services.epub_service.EPUBService",
             return_value=mock_epub_service,
         ):
             stats = service.sync_from_filesystem(temp_epub_dir)

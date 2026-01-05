@@ -16,6 +16,7 @@ interface HighlightsPanelProps {
   selectedHighlightId?: string;
   onHighlightSelect?: (highlight: Highlight) => void;
   onPageJump?: (pageNumber: number) => void;
+  onEPUBHighlightSelect?: (highlight: EPUBHighlight) => void;
 }
 
 export default function HighlightsPanel({
@@ -28,6 +29,7 @@ export default function HighlightsPanel({
   selectedHighlightId,
   onHighlightSelect,
   onPageJump,
+  onEPUBHighlightSelect,
 }: HighlightsPanelProps) {
   const [searchText, setSearchText] = useState('');
   const [colorFilter, setColorFilter] = useState<HighlightColor | 'all'>('all');
@@ -165,13 +167,16 @@ export default function HighlightsPanel({
   // Handle highlight selection
   const handleHighlightClick = (highlight: Highlight | EPUBHighlight) => {
     if ('pageNumber' in highlight) {
+      // PDF highlight
       onHighlightSelect?.(highlight);
       // Jump to page if not current page
       if (highlight.pageNumber !== currentPage) {
         onPageJump?.(highlight.pageNumber);
       }
+    } else {
+      // EPUB highlight - navigate to the highlight's location
+      onEPUBHighlightSelect?.(highlight);
     }
-    // For EPUB highlights, we don't have page jumping
   };
 
   // Handle highlight deletion

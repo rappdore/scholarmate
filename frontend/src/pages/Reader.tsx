@@ -11,6 +11,7 @@ import type {
   PDFDocumentInfo,
   EPUBDocumentInfo,
 } from '../types/document';
+import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface DocumentInfo {
   id: number;
@@ -41,6 +42,9 @@ export default function Reader() {
   const [documentInfo, setDocumentInfo] = useState<DocumentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [targetHighlight, setTargetHighlight] = useState<EPUBHighlight | null>(
+    null
+  );
 
   // Load document info based on type from URL
   useEffect(() => {
@@ -198,6 +202,10 @@ export default function Reader() {
     }
   };
 
+  const handleEPUBHighlightSelect = (highlight: EPUBHighlight) => {
+    setTargetHighlight(highlight);
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -256,6 +264,7 @@ export default function Reader() {
             onNavIdChange={handleNavIdChange}
             onChapterInfoChange={handleChapterInfoChange}
             onScrollProgressChange={setScrollProgress}
+            targetHighlight={targetHighlight}
           />
         );
       default:
@@ -286,6 +295,7 @@ export default function Reader() {
             currentChapterId={currentChapterId}
             currentChapterTitle={currentChapterTitle}
             onPageJump={handlePageChange}
+            onEPUBHighlightSelect={handleEPUBHighlightSelect}
           />
         }
       />

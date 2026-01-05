@@ -31,3 +31,19 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=5000]
       - id: check-merge-conflict
+
+  # Run tests before commit
+  - repo: local
+    hooks:
+      - id: frontend-tests
+        name: frontend tests
+        entry: bash -c 'cd frontend && npm run test'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+      - id: backend-tests
+        name: backend tests
+        entry: bash -c 'cd backend && uv run pytest'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false

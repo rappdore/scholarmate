@@ -5,6 +5,7 @@ import DualChatInterface from './DualChatInterface';
 import NotesPanel from './NotesPanel';
 import HighlightsPanel from './HighlightsPanel';
 import type { DocumentType } from '../types/document';
+import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface TabbedRightPanelProps {
   pdfId?: number;
@@ -17,6 +18,7 @@ interface TabbedRightPanelProps {
   currentChapterId?: string; // For EPUB chapter identification
   currentChapterTitle?: string; // For EPUB chapter display
   onPageJump?: (pageNumber: number) => void;
+  onEPUBHighlightSelect?: (highlight: EPUBHighlight) => void;
 }
 
 type TabType = 'ai' | 'chat' | 'dual-chat' | 'notes' | 'highlights';
@@ -32,6 +34,7 @@ export default function TabbedRightPanel({
   currentChapterId,
   currentChapterTitle,
   onPageJump,
+  onEPUBHighlightSelect,
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
 
@@ -127,6 +130,7 @@ export default function TabbedRightPanel({
             currentPage={currentPage}
             currentNavId={currentNavId}
             onPageJump={onPageJump}
+            onEPUBHighlightSelect={onEPUBHighlightSelect}
           />
         </div>
       </div>

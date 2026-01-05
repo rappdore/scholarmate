@@ -500,9 +500,10 @@ async def list_epubs(
                 }
 
             # Prepare highlights information
+            # Note: all_highlights is keyed by epub_id (int), not filename
             highlights_info = None
-            if filename and filename in all_highlights:
-                highlights_data = all_highlights[filename]
+            if epub_id and epub_id in all_highlights:
+                highlights_data = all_highlights[epub_id]
                 highlights_info = {
                     "highlights_count": highlights_data["highlights_count"],
                 }

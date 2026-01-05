@@ -68,7 +68,8 @@ class EPUBCache:
         try:
             metadata_list = book.get_metadata(namespace, field)
             if not metadata_list:
-                return ""
+                # Return "Unknown" for creator field when no metadata found
+                return "Unknown" if field == "creator" else ""
 
             # Extract values from tuples and filter out empty ones
             values = []

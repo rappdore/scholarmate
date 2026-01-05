@@ -40,6 +40,7 @@ interface EPUBViewerProps {
   onNavIdChange?: (navId: string) => void;
   onChapterInfoChange?: (chapterId: string, chapterTitle: string) => void;
   onScrollProgressChange?: (scrollProgress: number) => void;
+  targetHighlight?: EPUBHighlight | null;
 }
 
 interface ContentData {
@@ -79,6 +80,7 @@ export default function EPUBViewer({
   onNavIdChange,
   onChapterInfoChange,
   onScrollProgressChange,
+  targetHighlight,
 }: EPUBViewerProps) {
   const [navigation, setNavigation] = useState<EPUBNavigationResponse | null>(
     null
@@ -665,6 +667,70 @@ export default function EPUBViewer({
       shouldRestoreScrollRef.current = false;
     }
   }, [currentContent, savedProgress]);
+
+  // Track pending highlight to scroll to after navigation
+  const pendingHighlightRef = useRef<EPUBHighlight | null>(null);
+
+  // Handle targetHighlight prop - navigate to and scroll to the highlight
+  useEffect(() => {
+    if (!targetHighlight || !epubId) return;
+
+    const navigateToHighlight = async () => {
+      const targetNavId = targetHighlight.nav_id;
+
+      // If we're already on the correct nav_id, just scroll to the highlight
+      if (currentNavId === targetNavId) {
+        scrollToHighlightElement(targetHighlight);
+      } else {
+        // Store the highlight to scroll to after content loads
+        pendingHighlightRef.current = targetHighlight;
+        // Navigate to the section containing the highlight
+        await loadContent(targetNavId);
+      }
+    };
+
+    navigateToHighlight();
+  }, [targetHighlight, epubId]);
+
+  // Scroll to pending highlight after content loads
+  useEffect(() => {
+    if (
+      pendingHighlightRef.current &&
+      currentContent &&
+      currentContent.nav_id === pendingHighlightRef.current.nav_id
+    ) {
+      // Wait for highlights to be applied to the DOM
+      setTimeout(() => {
+        if (pendingHighlightRef.current) {
+          scrollToHighlightElement(pendingHighlightRef.current);
+          pendingHighlightRef.current = null;
+        }
+      }, 150); // Wait for applyHighlightsToContent to complete
+    }
+  }, [currentContent, highlights]);
+
+  // Scroll to a highlight element in the content
+  const scrollToHighlightElement = (highlight: EPUBHighlight) => {
+    if (!contentContainerRef.current) return;
+
+    // Find the highlight span by data-highlight-id
+    const highlightElement = contentContainerRef.current.querySelector(
+      `[data-highlight-id="${highlight.id}"]`
+    );
+
+    if (highlightElement) {
+      // Scroll the highlight into view with some padding at the top
+      highlightElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Add a brief flash effect to draw attention
+      highlightElement.classList.add('epub-highlight-flash');
+      setTimeout(() => {
+        highlightElement.classList.remove('epub-highlight-flash');
+      }, 2000);
+    } else {
+      console.warn('Could not find highlight element:', highlight.id);
+    }
+  };
 
   const isReadableFlatItem = (item: EPUBFlatNavigationItem): boolean => {
     return (

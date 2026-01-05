@@ -556,6 +556,34 @@
 }
 
 /* ============================================ */
+/* HIGHLIGHT FLASH ANIMATION                  */
+/* For drawing attention when navigating to   */
+/* a highlight from the highlights panel      */
+/* ============================================ */
+
+@keyframes highlight-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.8);
+  }
+  25% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.4);
+  }
+  75% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+.epub-highlight-flash {
+  animation: highlight-flash 1s ease-out 2;
+}
+
+/* ============================================ */
 /* TTS READING HIGHLIGHT STYLES               */
 /* ============================================ */
 
