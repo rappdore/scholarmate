@@ -23,7 +23,6 @@ from .epub_highlights_service import EPUBHighlightService
 from .epub_progress_service import EPUBProgressService
 from .epub_reading_statistics_service import EPUBReadingStatisticsService
 from .highlights_service import HighlightsService
-from .migration_service import MigrationService
 from .reading_progress_service import ReadingProgressService
 from .reading_statistics_service import ReadingStatisticsService
 
@@ -63,9 +62,6 @@ class DatabaseService:
         self._ensure_data_dir()
         self._init_database()
 
-        # Run any pending migrations
-        self._run_migrations()
-
         # Initialize specialized services
         self.reading_progress = ReadingProgressService(db_path)
         self.epub_progress = EPUBProgressService(db_path)
@@ -86,23 +82,6 @@ class DatabaseService:
         data_dir = os.path.dirname(self.db_path)
         if data_dir and not os.path.exists(data_dir):
             os.makedirs(data_dir)
-
-    def _run_migrations(self):
-        """
-        Run any pending database migrations.
-
-        This method applies schema changes through migration files
-        to keep the database structure up to date.
-        """
-        try:
-            migration_service = MigrationService(self.db_path)
-            success = migration_service.apply_migrations()
-            if success:
-                logger.info("Database migrations completed successfully")
-            else:
-                logger.error("Some database migrations failed")
-        except Exception as e:
-            logger.error(f"Error running migrations: {e}")
 
     def _init_database(self):
         """

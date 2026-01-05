@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -43,25 +43,74 @@ export default function AIPanel({
     'unknown'
   );
 
+  // Track last analyzed scroll position for EPUB auto-analyze on scroll
+  const lastAnalyzedScrollProgressRef = useRef<number>(0);
+
+  // Threshold for triggering auto-analyze on scroll (~20% of section ≈ 2k chars in typical section)
+  const SCROLL_THRESHOLD = 0.2;
+
   // Check AI connection on mount
   useEffect(() => {
     checkAIConnection();
   }, []);
 
-  // Clear content when page/section changes
+  // Clear content and reset scroll tracking when page/section changes
   useEffect(() => {
     setResponseContent('');
     setThinkingContent('');
     setHasThinking(false);
     setIsThinkingComplete(false);
+    // Reset scroll tracking when section changes
+    lastAnalyzedScrollProgressRef.current = 0;
   }, [pdfId, epubId, currentPage, currentNavId, documentType]);
 
-  // Auto-analyze when page changes (if enabled)
+  // Auto-analyze for PDF (on page change) and EPUB (on section change)
   useEffect(() => {
-    if (autoAnalyze && (pdfId || epubId) && (currentPage || currentNavId)) {
+    if (!autoAnalyze) return;
+
+    // PDF: analyze on page change
+    if (documentType === 'pdf' && pdfId && currentPage) {
       analyzeDocument();
+      return;
+    }
+
+    // EPUB: analyze on section change (initial analysis for new section)
+    if (documentType === 'epub' && epubId && currentNavId) {
+      analyzeDocument();
+      lastAnalyzedScrollProgressRef.current = scrollProgress ?? 0;
     }
   }, [pdfId, epubId, currentPage, currentNavId, autoAnalyze, documentType]);
+
+  // EPUB-specific: Auto-analyze on significant scroll progress (forward only)
+  useEffect(() => {
+    // Only for EPUB with auto-analyze enabled
+    if (!autoAnalyze || documentType !== 'epub' || !epubId || !currentNavId) {
+      return;
+    }
+
+    // Don't trigger if analysis is already in progress
+    if (loading || streaming) {
+      return;
+    }
+
+    const currentProgress = scrollProgress ?? 0;
+    const lastProgress = lastAnalyzedScrollProgressRef.current;
+    const scrollDelta = currentProgress - lastProgress;
+
+    // Only trigger on forward scroll that exceeds threshold
+    if (scrollDelta >= SCROLL_THRESHOLD) {
+      analyzeDocument();
+      lastAnalyzedScrollProgressRef.current = currentProgress;
+    }
+  }, [
+    scrollProgress,
+    autoAnalyze,
+    documentType,
+    epubId,
+    currentNavId,
+    loading,
+    streaming,
+  ]);
 
   const checkAIConnection = async () => {
     try {

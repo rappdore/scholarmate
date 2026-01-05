@@ -311,7 +311,9 @@ class TestEPUBDocumentsDataOperations:
 
         assert result is not None
         assert result[1] == "minimal.epub"
-        assert result[3] == 3  # chapters
+        assert (
+            result[4] == 3
+        )  # chapters (index 4: id, filename, title, author, chapters)
 
     def test_update_record(self, db_service):
         """Test updating an existing record"""

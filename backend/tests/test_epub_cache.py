@@ -333,10 +333,10 @@ class TestExtendedMetadataLoading:
             # Get epub info (should trigger extended metadata loading)
             info = cache.get_epub_info("extended.epub")
 
-        # Extended metadata should be loaded
-        assert "subject" in info or info.get("subject") is not None
-        assert "publisher" in info or info.get("publisher") is not None
-        assert "language" in info or info.get("language") is not None
+        # Extended metadata should be loaded (info is now a Pydantic model)
+        assert info.subject is not None
+        assert info.publisher is not None
+        assert info.language is not None
 
     def test_extended_metadata_persisted_to_db(
         self, temp_dirs, temp_db, mock_epub_service, mock_epub_book
@@ -610,7 +610,7 @@ class TestCacheOperations:
             info = cache.get_epub_info("specific.epub")
 
         assert info is not None
-        assert info["filename"] == "specific.epub"
+        assert info.filename == "specific.epub"
 
     def test_get_cache_info(self, temp_dirs, temp_db, mock_epub_service):
         """Test getting cache metadata"""
