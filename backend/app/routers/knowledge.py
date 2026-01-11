@@ -637,6 +637,10 @@ async def create_relationship(request: RelationshipCreate) -> Relationship:
         raise HTTPException(status_code=500, detail="Failed to create relationship")
 
     relationship = knowledge_db.get_relationship_by_id(relationship_id)
+    if not relationship:
+        raise HTTPException(
+            status_code=500, detail="Relationship created but could not be retrieved"
+        )
     return Relationship(**relationship)
 
 
@@ -669,6 +673,10 @@ async def update_relationship(
         raise HTTPException(status_code=500, detail="Failed to update relationship")
 
     updated = knowledge_db.get_relationship_by_id(relationship_id)
+    if not updated:
+        raise HTTPException(
+            status_code=500, detail="Relationship updated but could not be retrieved"
+        )
     return Relationship(**updated)
 
 

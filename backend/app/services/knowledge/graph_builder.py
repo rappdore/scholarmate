@@ -462,7 +462,6 @@ class GraphBuilder:
         Importance is calculated based on:
         - Number of relationships (more connections = higher importance)
         - Types of relationships (being a source of 'explains' = higher importance)
-        - Connection to other high-importance concepts
 
         Args:
             book_id: ID of the book
@@ -489,7 +488,6 @@ class GraphBuilder:
                 "outgoing_count": 0,
                 "incoming_count": 0,
                 "explains_source": 0,  # Being a source of 'explains' is valuable
-                "high_importance_neighbors": 0,
             }
 
         # Count relationships
