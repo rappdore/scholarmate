@@ -247,7 +247,7 @@ export default function EPUBViewer({
     }, 50);
   }, [currentContent]);
 
-  // Re-apply highlights whenever the section highlights change (e.g. after creating a new one)
+  // Re-apply highlights whenever the section highlights change (e.g. after creating a new one or color update)
   useEffect(() => {
     if (!currentContent || sectionHighlights.length === 0) return;
 
@@ -255,7 +255,7 @@ export default function EPUBViewer({
     setTimeout(() => {
       applyHighlightsToContent();
     }, 20);
-  }, [sectionHighlights.length]);
+  }, [sectionHighlights]);
 
   // Load saved progress and restore position
   const loadProgress = async () => {
