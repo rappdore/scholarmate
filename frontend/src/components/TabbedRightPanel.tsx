@@ -128,7 +128,6 @@ export default function TabbedRightPanel({
             filename={filename}
             documentType={documentType}
             currentPage={currentPage}
-            currentNavId={currentNavId}
             onPageJump={onPageJump}
             onEPUBHighlightSelect={onEPUBHighlightSelect}
           />

@@ -33,6 +33,7 @@ import {
 } from '../utils/textPositionMap';
 import { useEpubSessionTracking } from '../hooks/useEpubSessionTracking';
 import type { NavSection } from '../types/epubStatistics';
+import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
 
 interface EPUBViewerProps {
   epubId?: number;
@@ -117,8 +118,19 @@ export default function EPUBViewer({
   const contentContainerRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
 
-  // Highlighting state
-  const [highlights, setHighlights] = useState<EPUBHighlight[]>([]);
+  // Highlighting state - use shared context
+  const {
+    createHighlight: createContextHighlight,
+    setCurrentEpubId,
+    getHighlightsForSection,
+  } = useEPUBHighlightsContext();
+
+  // Get highlights for current section only (for rendering in the viewer)
+  const sectionHighlights = useMemo(() => {
+    if (!currentNavId) return [];
+    return getHighlightsForSection(currentNavId);
+  }, [currentNavId, getHighlightsForSection]);
+
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [highlightMenuPosition, setHighlightMenuPosition] = useState({
     x: 0,
@@ -215,11 +227,10 @@ export default function EPUBViewer({
     sessionStorage.setItem('epub-reader-line-height', lineHeight);
   }, [lineHeight]);
 
-  // Load highlights when content changes
+  // Set current EPUB ID in context when it changes (this triggers highlight loading)
   useEffect(() => {
-    if (!epubId || !currentNavId) return;
-    loadSectionHighlights();
-  }, [epubId, currentNavId]);
+    setCurrentEpubId(epubId ?? null);
+  }, [epubId, setCurrentEpubId]);
 
   // Inject chapter HTML into the DOM and then apply highlights
   useEffect(() => {
@@ -236,15 +247,15 @@ export default function EPUBViewer({
     }, 50);
   }, [currentContent]);
 
-  // Re-apply highlights whenever the number of highlights changes (e.g. after creating a new one)
+  // Re-apply highlights whenever the section highlights change (e.g. after creating a new one)
   useEffect(() => {
-    if (!currentContent || highlights.length === 0) return;
+    if (!currentContent || sectionHighlights.length === 0) return;
 
     // Re-apply on next tick so the DOM has settled after state updates
     setTimeout(() => {
       applyHighlightsToContent();
     }, 20);
-  }, [highlights.length]);
+  }, [sectionHighlights.length]);
 
   // Load saved progress and restore position
   const loadProgress = async () => {
@@ -707,7 +718,7 @@ export default function EPUBViewer({
         }
       }, 150); // Wait for applyHighlightsToContent to complete
     }
-  }, [currentContent, highlights]);
+  }, [currentContent, sectionHighlights]);
 
   // Scroll to a highlight element in the content
   const scrollToHighlightElement = (highlight: EPUBHighlight) => {
@@ -916,29 +927,17 @@ export default function EPUBViewer({
   // HIGHLIGHT FUNCTIONALITY
   // ========================================
 
-  const loadSectionHighlights = async () => {
-    if (!epubId || !currentNavId) return;
-
-    try {
-      const sectionHighlights = await epubService.getSectionHighlights(
-        epubId,
-        currentNavId
-      );
-      setHighlights(sectionHighlights);
-    } catch (error) {
-      console.error('Error loading section highlights:', error);
-      setHighlights([]);
-    }
-  };
-
   const applyHighlightsToContent = () => {
-    console.log('🎨 Applying highlights to content, count:', highlights.length);
+    console.log(
+      '🎨 Applying highlights to content, count:',
+      sectionHighlights.length
+    );
 
     // Clear existing highlights first
     clearAllHighlights();
 
     // Apply each highlight
-    highlights.forEach((highlight, index) => {
+    sectionHighlights.forEach((highlight, index) => {
       console.log(
         `🖍️ Applying highlight ${index + 1}:`,
         highlight.highlight_text
@@ -993,60 +992,32 @@ export default function EPUBViewer({
     console.log('🎨 Creating highlight with color:', color);
     console.log('📋 Pending selection:', pendingSelection);
 
-    if (!epubId || !pendingSelection) {
-      console.log('❌ Missing epubId or pending selection');
+    if (!pendingSelection) {
+      console.log('❌ Missing pending selection');
       return;
     }
 
-    try {
-      const newHighlight = await epubService.createEPUBHighlight(epubId, {
-        nav_id: pendingSelection.navId,
-        chapter_id: pendingSelection.chapterId,
-        start_xpath: pendingSelection.startXPath,
-        start_offset: pendingSelection.startOffset,
-        end_xpath: pendingSelection.endXPath,
-        end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.text,
-        color,
-      });
+    // Use context's createHighlight - it handles API call and state update
+    const newHighlight = await createContextHighlight({
+      nav_id: pendingSelection.navId,
+      chapter_id: pendingSelection.chapterId,
+      start_xpath: pendingSelection.startXPath,
+      start_offset: pendingSelection.startOffset,
+      end_xpath: pendingSelection.endXPath,
+      end_offset: pendingSelection.endOffset,
+      highlight_text: pendingSelection.text,
+      color,
+    });
 
-      console.log('✅ Highlight created:', newHighlight);
-
-      // Add to local state - this will trigger the useEffect to reapply all highlights
-      setHighlights(prev => [...prev, newHighlight]);
-
-      // Clear selection
-      window.getSelection()?.removeAllRanges();
-      setPendingSelection(null);
-    } catch (error) {
-      console.error('❌ Error creating highlight:', error);
-
-      // For now, create a local highlight even if API fails
-      const localHighlight: EPUBHighlight = {
-        id: Date.now(),
-        epub_id: epubId,
-        nav_id: pendingSelection.navId,
-        chapter_id: pendingSelection.chapterId,
-        start_xpath: pendingSelection.startXPath,
-        start_offset: pendingSelection.startOffset,
-        end_xpath: pendingSelection.endXPath,
-        end_offset: pendingSelection.endOffset,
-        highlight_text: pendingSelection.text,
-        color,
-        created_at: new Date().toISOString(),
-        // EPUBTextRange fields for compatibility
-        startXPath: pendingSelection.startXPath,
-        startOffset: pendingSelection.startOffset,
-        endXPath: pendingSelection.endXPath,
-        endOffset: pendingSelection.endOffset,
-        navId: pendingSelection.navId,
-        chapterId: pendingSelection.chapterId,
-        text: pendingSelection.text,
-      };
-
-      console.log('📝 Creating local highlight for testing:', localHighlight);
-      setHighlights(prev => [...prev, localHighlight]);
+    if (newHighlight) {
+      console.log('✅ Highlight created via context:', newHighlight);
+    } else {
+      console.error('❌ Failed to create highlight');
     }
+
+    // Clear selection
+    window.getSelection()?.removeAllRanges();
+    setPendingSelection(null);
   };
 
   const handleCloseHighlightMenu = () => {
