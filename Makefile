@@ -29,4 +29,4 @@ test_frontend:
 	cd frontend && npm run test
 
 test_all:
-	make test_backend & make test_frontend
+	make test_backend && make test_frontend
