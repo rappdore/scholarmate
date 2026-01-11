@@ -50,6 +50,8 @@ class KnowledgeDatabase:
     def _init_database(self) -> None:
         """Initialize the database with required tables and indexes."""
         with sqlite3.connect(self.db_path) as conn:
+            # Enable foreign key constraints
+            conn.execute("PRAGMA foreign_keys = ON")
             # Create concepts table (nodes in the knowledge graph)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS concepts (
@@ -150,8 +152,11 @@ class KnowledgeDatabase:
             logger.info(f"Knowledge database initialized at {self.db_path}")
 
     def get_connection(self) -> sqlite3.Connection:
-        """Get a database connection."""
-        return sqlite3.connect(self.db_path)
+        """Get a database connection with foreign keys enabled."""
+        conn = sqlite3.connect(self.db_path)
+        # Enable foreign key constraints (required for CASCADE deletes to work)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
     # ========================================
     # CONCEPT CRUD OPERATIONS
@@ -359,15 +364,19 @@ class KnowledgeDatabase:
         """
         Create a relationship between two concepts.
 
+        If a relationship with the same source, target, and type already exists,
+        the weight is accumulated (added) to represent stronger connections from
+        multiple mentions.
+
         Args:
             source_concept_id: ID of the source concept
             target_concept_id: ID of the target concept
             relationship_type: Type of relationship (explains, contrasts, etc.)
             description: Explanation of the relationship
-            weight: Strength of the connection (0.0-1.0)
+            weight: Strength to add to the connection (accumulates on duplicates)
 
         Returns:
-            ID of the created relationship, or None if creation failed
+            ID of the created/existing relationship, or None if creation failed
         """
         try:
             with self.get_connection() as conn:

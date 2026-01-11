@@ -10,6 +10,8 @@ It provides:
 
 import logging
 import os
+import threading
+from pathlib import Path
 from typing import Any
 
 import chromadb
@@ -17,6 +19,9 @@ from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
+
+# Lock for thread-safe singleton initialization
+_singleton_lock = threading.Lock()
 
 # Default embedding model - good balance of quality and speed
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
@@ -32,7 +37,7 @@ class EmbeddingService:
 
     def __init__(
         self,
-        persist_directory: str = "data/chroma_data",
+        persist_directory: str | None = None,
         collection_name: str = "concept_embeddings",
         model_name: str = DEFAULT_MODEL,
     ):
@@ -40,17 +45,23 @@ class EmbeddingService:
         Initialize the embedding service.
 
         Args:
-            persist_directory: Directory for ChromaDB persistence
+            persist_directory: Directory for ChromaDB persistence.
+                              If None, uses default path relative to backend root.
             collection_name: Name of the ChromaDB collection
             model_name: Sentence transformer model to use for embeddings
         """
+        # Use absolute path computed from project root
+        if persist_directory is None:
+            # Default to data/chroma_data relative to backend directory
+            backend_dir = Path(__file__).parent.parent.parent.parent
+            persist_directory = str(backend_dir / "data" / "chroma_data")
+
         self.persist_directory = persist_directory
         self.collection_name = collection_name
         self.model_name = model_name
 
-        # Ensure directory exists
-        if persist_directory and not os.path.exists(persist_directory):
-            os.makedirs(persist_directory)
+        # Ensure directory exists (atomic operation, handles race condition)
+        os.makedirs(persist_directory, exist_ok=True)
 
         # Initialize ChromaDB client with persistence
         self._client = chromadb.PersistentClient(
@@ -64,8 +75,9 @@ class EmbeddingService:
             metadata={"hnsw:space": "cosine"},  # Use cosine similarity
         )
 
-        # Lazy-load the embedding model
+        # Lazy-load the embedding model (thread-safe)
         self._model: SentenceTransformer | None = None
+        self._model_lock = threading.Lock()
 
         logger.info(
             f"EmbeddingService initialized with model={model_name}, "
@@ -74,11 +86,16 @@ class EmbeddingService:
 
     @property
     def model(self) -> SentenceTransformer:
-        """Lazy-load the sentence transformer model."""
+        """Lazy-load the sentence transformer model with thread-safe double-checked locking."""
         if self._model is None:
-            logger.info(f"Loading sentence transformer model: {self.model_name}")
-            self._model = SentenceTransformer(self.model_name)
-            logger.info("Model loaded successfully")
+            with self._model_lock:
+                # Double-check after acquiring lock
+                if self._model is None:
+                    logger.info(
+                        f"Loading sentence transformer model: {self.model_name}"
+                    )
+                    self._model = SentenceTransformer(self.model_name)
+                    logger.info("Model loaded successfully")
         return self._model
 
     def generate_embedding(self, text: str) -> list[float]:
@@ -378,13 +395,16 @@ class EmbeddingService:
             return 0
 
 
-# Global instance (lazy initialization)
+# Global instance (lazy initialization with thread-safe double-checked locking)
 _embedding_service: EmbeddingService | None = None
 
 
 def get_embedding_service() -> EmbeddingService:
-    """Get the global embedding service instance."""
+    """Get the global embedding service instance (thread-safe)."""
     global _embedding_service
     if _embedding_service is None:
-        _embedding_service = EmbeddingService()
+        with _singleton_lock:
+            # Double-check after acquiring lock
+            if _embedding_service is None:
+                _embedding_service = EmbeddingService()
     return _embedding_service

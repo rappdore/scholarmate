@@ -396,12 +396,13 @@ class GraphBuilder:
                     """
                 )
 
+                # Delete source concept within same transaction
+                # Note: CASCADE will handle flashcards, but we already moved relationships above
+                conn.execute("DELETE FROM concepts WHERE id = ?", (source_id,))
+
                 conn.commit()
 
-            # Delete source concept (cascade will handle flashcards)
-            self.db.delete_concept(source_id)
-
-            # Delete source embedding
+            # Delete source embedding (outside transaction - ChromaDB is separate)
             self.embedding_service.delete_concept_embedding(source_id)
 
             logger.info(f"Merged concept {source_id} into {target_id}")

@@ -211,8 +211,17 @@ class ConceptExtractor:
                 temperature=0.3,  # Lower temperature for more consistent extraction
             )
 
-            content = response.choices[0].message.content.strip()
-            concepts = self._parse_concepts_json(content)
+            # Guard against empty choices
+            if not response.choices:
+                logger.warning("LLM returned empty choices for concept extraction")
+                return []
+
+            content = response.choices[0].message.content
+            if not content:
+                logger.warning("LLM returned empty content for concept extraction")
+                return []
+
+            concepts = self._parse_concepts_json(content.strip())
             logger.info(f"Extracted {len(concepts)} concepts from text")
             return concepts
 
@@ -262,8 +271,17 @@ class ConceptExtractor:
                 temperature=0.3,
             )
 
-            content = response.choices[0].message.content.strip()
-            relationships = self._parse_relationships_json(content, concepts)
+            # Guard against empty choices
+            if not response.choices:
+                logger.warning("LLM returned empty choices for relationship extraction")
+                return []
+
+            content = response.choices[0].message.content
+            if not content:
+                logger.warning("LLM returned empty content for relationship extraction")
+                return []
+
+            relationships = self._parse_relationships_json(content.strip(), concepts)
             logger.info(f"Extracted {len(relationships)} relationships")
             return relationships
 
