@@ -249,7 +249,13 @@ export default function EPUBViewer({
 
   // Re-apply highlights whenever the section highlights change (e.g. after creating a new one or color update)
   useEffect(() => {
-    if (!currentContent || sectionHighlights.length === 0) return;
+    if (!currentContent) return;
+
+    // Allow effect to run even with 0 highlights to clear stale DOM highlights
+    if (sectionHighlights.length === 0) {
+      clearAllHighlights();
+      return;
+    }
 
     // Re-apply on next tick so the DOM has settled after state updates
     setTimeout(() => {
