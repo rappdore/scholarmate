@@ -639,7 +639,28 @@ class KnowledgeDatabase:
         relationship_id: int | None = None,
         source_text: str | None = None,
     ) -> int | None:
-        """Create a new flashcard."""
+        """Create a new flashcard.
+
+        Args:
+            card_type: Type of flashcard (e.g., 'qa', 'cloze', 'connection')
+            front: Front text of the flashcard
+            back: Back text of the flashcard
+            concept_id: ID of the associated concept (mutually exclusive with relationship_id)
+            relationship_id: ID of the associated relationship (mutually exclusive with concept_id)
+            source_text: Optional source text for the flashcard
+
+        Returns:
+            The ID of the created flashcard, or None if creation failed.
+
+        Raises:
+            ValueError: If neither or both concept_id and relationship_id are provided.
+        """
+        # Validate that exactly one of concept_id or relationship_id is provided
+        if (concept_id is None) == (relationship_id is None):
+            raise ValueError(
+                "Exactly one of concept_id or relationship_id must be provided"
+            )
+
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute(

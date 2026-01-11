@@ -415,6 +415,53 @@ class TestFlashcards:
         types = {card["card_type"] for card in due}
         assert types == {"qa", "connection"}
 
+    def test_create_flashcard_requires_exactly_one_reference(
+        self, temp_db: KnowledgeDatabase
+    ):
+        """Test that flashcard creation requires exactly one of concept_id or relationship_id."""
+        # Create a concept and relationship for valid references
+        c1 = temp_db.create_concept(book_id=1, book_type="epub", name="Test Concept")
+        c2 = temp_db.create_concept(book_id=1, book_type="epub", name="Test Concept 2")
+        rel_id = temp_db.create_relationship(c1, c2, "relates_to")
+
+        # Neither provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.create_flashcard(
+                card_type="qa",
+                front="Question",
+                back="Answer",
+                concept_id=None,
+                relationship_id=None,
+            )
+
+        # Both provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.create_flashcard(
+                card_type="qa",
+                front="Question",
+                back="Answer",
+                concept_id=c1,
+                relationship_id=rel_id,
+            )
+
+        # Only concept_id - should succeed
+        card_id = temp_db.create_flashcard(
+            card_type="qa",
+            front="Question",
+            back="Answer",
+            concept_id=c1,
+        )
+        assert card_id is not None
+
+        # Only relationship_id - should succeed
+        card_id = temp_db.create_flashcard(
+            card_type="connection",
+            front="Connection Question",
+            back="Connection Answer",
+            relationship_id=rel_id,
+        )
+        assert card_id is not None
+
 
 class TestStats:
     """Tests for database statistics."""
