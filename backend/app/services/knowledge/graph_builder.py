@@ -8,6 +8,7 @@ This module orchestrates the knowledge graph construction:
 """
 
 import logging
+import threading
 from typing import Any
 
 from app.models.knowledge_models import (
@@ -453,13 +454,17 @@ class GraphBuilder:
         )
 
 
-# Factory function
+# Factory function with thread-safe singleton
 _graph_builder: GraphBuilder | None = None
+_singleton_lock = threading.Lock()
 
 
 def get_graph_builder() -> GraphBuilder:
-    """Get the global graph builder instance."""
+    """Get the global graph builder instance (thread-safe)."""
     global _graph_builder
     if _graph_builder is None:
-        _graph_builder = GraphBuilder()
+        with _singleton_lock:
+            # Double-check after acquiring lock
+            if _graph_builder is None:
+                _graph_builder = GraphBuilder()
     return _graph_builder

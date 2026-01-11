@@ -305,6 +305,117 @@ class TestDeleteBookKnowledge:
         assert len(temp_db.get_extraction_progress(1, "epub")) == 0
 
 
+class TestFlashcards:
+    """Tests for flashcard operations."""
+
+    def test_create_and_get_concept_flashcard(self, temp_db: KnowledgeDatabase):
+        """Test creating and retrieving a concept-based flashcard."""
+        concept_id = temp_db.create_concept(
+            book_id=1, book_type="epub", name="Test Concept"
+        )
+
+        card_id = temp_db.create_flashcard(
+            card_type="qa",
+            front="What is a test?",
+            back="A verification method",
+            concept_id=concept_id,
+        )
+
+        assert card_id is not None
+
+        # Get due flashcards (should include the one we just created)
+        due = temp_db.get_flashcards_due(limit=10)
+        assert len(due) == 1
+        assert due[0]["front"] == "What is a test?"
+        assert due[0]["book_id"] == 1
+        assert due[0]["concept_name"] == "Test Concept"
+
+    def test_get_flashcards_due_filters_by_book(self, temp_db: KnowledgeDatabase):
+        """Test that book_id filter works for concept-based flashcards."""
+        c1 = temp_db.create_concept(book_id=1, book_type="epub", name="Book1 Concept")
+        c2 = temp_db.create_concept(book_id=2, book_type="epub", name="Book2 Concept")
+
+        temp_db.create_flashcard(card_type="qa", front="Q1", back="A1", concept_id=c1)
+        temp_db.create_flashcard(card_type="qa", front="Q2", back="A2", concept_id=c2)
+
+        # Get all
+        all_due = temp_db.get_flashcards_due()
+        assert len(all_due) == 2
+
+        # Filter by book 1
+        book1_due = temp_db.get_flashcards_due(book_id=1)
+        assert len(book1_due) == 1
+        assert book1_due[0]["front"] == "Q1"
+
+        # Filter by book 2
+        book2_due = temp_db.get_flashcards_due(book_id=2)
+        assert len(book2_due) == 1
+        assert book2_due[0]["front"] == "Q2"
+
+    def test_get_flashcards_due_relationship_based(self, temp_db: KnowledgeDatabase):
+        """Test that relationship-based flashcards are properly retrieved.
+
+        This tests the fix for the bug where flashcards with concept_id=NULL
+        but relationship_id set were being filtered out when querying by book_id.
+        """
+        # Create two concepts and a relationship
+        c1 = temp_db.create_concept(book_id=1, book_type="epub", name="Source")
+        c2 = temp_db.create_concept(book_id=1, book_type="epub", name="Target")
+        rel_id = temp_db.create_relationship(
+            source_concept_id=c1,
+            target_concept_id=c2,
+            relationship_type="explains",
+        )
+
+        # Create a connection-type flashcard linked to relationship, not concept
+        card_id = temp_db.create_flashcard(
+            card_type="connection",
+            front="How does Source relate to Target?",
+            back="Source explains Target",
+            concept_id=None,  # No concept - this is the edge case
+            relationship_id=rel_id,
+        )
+
+        assert card_id is not None
+
+        # Get all due - should include relationship-based card
+        all_due = temp_db.get_flashcards_due()
+        assert len(all_due) == 1
+        assert all_due[0]["card_type"] == "connection"
+        assert all_due[0]["book_id"] == 1  # Derived from relationship's source concept
+
+        # Filter by book_id - should still include the relationship-based card
+        book1_due = temp_db.get_flashcards_due(book_id=1)
+        assert len(book1_due) == 1
+        assert book1_due[0]["front"] == "How does Source relate to Target?"
+
+    def test_get_flashcards_due_mixed_types(self, temp_db: KnowledgeDatabase):
+        """Test retrieving both concept and relationship based flashcards."""
+        # Create concepts and relationship
+        c1 = temp_db.create_concept(book_id=1, book_type="epub", name="Concept A")
+        c2 = temp_db.create_concept(book_id=1, book_type="epub", name="Concept B")
+        rel_id = temp_db.create_relationship(c1, c2, "requires")
+
+        # Concept-based flashcard
+        temp_db.create_flashcard(
+            card_type="qa", front="What is A?", back="Definition of A", concept_id=c1
+        )
+
+        # Relationship-based flashcard
+        temp_db.create_flashcard(
+            card_type="connection",
+            front="A -> B?",
+            back="A requires B",
+            relationship_id=rel_id,
+        )
+
+        # Get all due
+        due = temp_db.get_flashcards_due(book_id=1)
+        assert len(due) == 2
+        types = {card["card_type"] for card in due}
+        assert types == {"qa", "connection"}
+
+
 class TestStats:
     """Tests for database statistics."""
 

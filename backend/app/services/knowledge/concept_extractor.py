@@ -10,6 +10,7 @@ It implements a two-pass extraction approach:
 import json
 import logging
 import re
+import threading
 
 from openai import AsyncOpenAI
 
@@ -412,7 +413,10 @@ class ConceptExtractor:
                         )
                         continue
 
-                    # Validate relationship type
+                    # Normalize and validate relationship type
+                    # Handle common LLM variations: "Explains" -> "explains",
+                    # "builds_on" -> "builds-on"
+                    rel_type = rel_type.lower().replace("_", "-")
                     valid_types = [
                         "explains",
                         "contrasts",
@@ -422,6 +426,10 @@ class ConceptExtractor:
                         "causes",
                     ]
                     if rel_type not in valid_types:
+                        logger.debug(
+                            f"Unknown relationship type '{rel_type}', "
+                            "falling back to 'related-to'"
+                        )
                         rel_type = "related-to"
 
                     relationship = ExtractedRelationship(
@@ -457,13 +465,17 @@ class ConceptExtractor:
         return content
 
 
-# Factory function for lazy initialization
+# Factory function with thread-safe singleton
 _concept_extractor: ConceptExtractor | None = None
+_singleton_lock = threading.Lock()
 
 
 def get_concept_extractor() -> ConceptExtractor:
-    """Get the global concept extractor instance."""
+    """Get the global concept extractor instance (thread-safe)."""
     global _concept_extractor
     if _concept_extractor is None:
-        _concept_extractor = ConceptExtractor()
+        with _singleton_lock:
+            # Double-check after acquiring lock
+            if _concept_extractor is None:
+                _concept_extractor = ConceptExtractor()
     return _concept_extractor

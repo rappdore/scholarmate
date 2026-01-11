@@ -156,6 +156,64 @@ class TestJsonParsing:
         assert relationships[0].source == "A"
         assert relationships[0].target == "B"
 
+    def test_parse_relationships_normalizes_type_case(
+        self, extractor: ConceptExtractor
+    ):
+        """Test that relationship types are normalized to lowercase."""
+        json_response = """[
+            {"source": "A", "target": "B", "type": "Explains", "description": "desc"},
+            {"source": "A", "target": "B", "type": "CONTRASTS", "description": "desc"}
+        ]"""
+
+        concepts = [
+            ExtractedConcept(name="A", definition="D", importance=3, source_quote="q"),
+            ExtractedConcept(name="B", definition="D", importance=3, source_quote="q"),
+        ]
+
+        relationships = extractor._parse_relationships_json(json_response, concepts)
+
+        assert len(relationships) == 2
+        assert relationships[0].type == "explains"
+        assert relationships[1].type == "contrasts"
+
+    def test_parse_relationships_normalizes_underscores_to_hyphens(
+        self, extractor: ConceptExtractor
+    ):
+        """Test that underscores in relationship types are converted to hyphens."""
+        json_response = """[
+            {"source": "A", "target": "B", "type": "builds_on", "description": "desc"}
+        ]"""
+
+        concepts = [
+            ExtractedConcept(name="A", definition="D", importance=3, source_quote="q"),
+            ExtractedConcept(name="B", definition="D", importance=3, source_quote="q"),
+        ]
+
+        relationships = extractor._parse_relationships_json(json_response, concepts)
+
+        assert len(relationships) == 1
+        assert relationships[0].type == "builds-on"
+
+    def test_parse_relationships_falls_back_to_related_to(
+        self, extractor: ConceptExtractor
+    ):
+        """Test that invalid relationship types fall back to 'related-to'."""
+        json_response = """[
+            {"source": "A", "target": "B", "type": "unknown_type", "description": "desc"},
+            {"source": "A", "target": "B", "type": "connects", "description": "desc"}
+        ]"""
+
+        concepts = [
+            ExtractedConcept(name="A", definition="D", importance=3, source_quote="q"),
+            ExtractedConcept(name="B", definition="D", importance=3, source_quote="q"),
+        ]
+
+        relationships = extractor._parse_relationships_json(json_response, concepts)
+
+        assert len(relationships) == 2
+        assert relationships[0].type == "related-to"
+        assert relationships[1].type == "related-to"
+
 
 class TestExtraction:
     """Tests for the extraction process with mocked LLM."""

@@ -667,19 +667,35 @@ class KnowledgeDatabase:
     def get_flashcards_due(
         self, book_id: int | None = None, limit: int = 20
     ) -> list[dict[str, Any]]:
-        """Get flashcards that are due for review."""
+        """Get flashcards that are due for review.
+
+        Handles both concept-based flashcards (qa, cloze) and relationship-based
+        flashcards (connection). For relationship-based cards, book_id is derived
+        from the relationship's source concept.
+        """
         try:
             with self.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 now = datetime.now().isoformat()
 
+                # Join to concepts directly (for qa/cloze cards) and through
+                # relationships (for connection cards) to properly determine book_id
+                base_query = """
+                    SELECT f.*,
+                           COALESCE(c.book_id, rc.book_id) as book_id,
+                           COALESCE(c.name, rc.name) as concept_name
+                    FROM flashcards f
+                    LEFT JOIN concepts c ON f.concept_id = c.id
+                    LEFT JOIN relationships r ON f.relationship_id = r.id
+                    LEFT JOIN concepts rc ON r.source_concept_id = rc.id
+                    WHERE f.next_review <= ?
+                """
+
                 if book_id is not None:
                     cursor = conn.execute(
-                        """
-                        SELECT f.*, c.book_id, c.name as concept_name
-                        FROM flashcards f
-                        LEFT JOIN concepts c ON f.concept_id = c.id
-                        WHERE f.next_review <= ? AND c.book_id = ?
+                        base_query
+                        + """
+                        AND COALESCE(c.book_id, rc.book_id) = ?
                         ORDER BY f.next_review ASC
                         LIMIT ?
                         """,
@@ -687,11 +703,8 @@ class KnowledgeDatabase:
                     )
                 else:
                     cursor = conn.execute(
-                        """
-                        SELECT f.*, c.book_id, c.name as concept_name
-                        FROM flashcards f
-                        LEFT JOIN concepts c ON f.concept_id = c.id
-                        WHERE f.next_review <= ?
+                        base_query
+                        + """
                         ORDER BY f.next_review ASC
                         LIMIT ?
                         """,
