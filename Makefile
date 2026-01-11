@@ -21,3 +21,12 @@ format_frontend:
 
 typecheck_backend:
 	git diff --name-only --diff-filter=ACM HEAD | grep '^backend/.*\.py$$' | sed 's|^backend/||' | xargs -r sh -c 'cd backend && uv run mypy "$$@"' sh || true
+
+test_backend:
+	cd backend && uv run pytest
+
+test_frontend:
+	cd frontend && npm run test
+
+test_all:
+	make test_backend && make test_frontend

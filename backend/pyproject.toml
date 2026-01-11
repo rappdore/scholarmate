@@ -23,6 +23,8 @@ dependencies = [
     "requests>=2.32.5",
     "websockets>=15.0.1",
     "pip>=25.3",
+    "chromadb>=1.4.0",
+    "sentence-transformers>=5.2.0",
 ]
 
 # we added pip because the kokoro code downloads and

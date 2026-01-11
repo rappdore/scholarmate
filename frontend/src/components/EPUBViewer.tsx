@@ -95,7 +95,7 @@ export default function EPUBViewer({
   const [epubStyles, setEpubStyles] = useState<EPUBStyles | null>(null);
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = sessionStorage.getItem('epub-reader-theme');
-    return (saved as Theme) || 'dark';
+    return (saved as Theme) || 'sepia';
   });
   const [fontSize, setFontSize] = useState<FontSize>(() => {
     const saved = sessionStorage.getItem('epub-reader-font-size');
@@ -132,7 +132,7 @@ export default function EPUBViewer({
     endOffset: number;
     text: string;
     navId: string;
-    chapterId: string;
+    chapterId?: string;
   } | null>(null);
 
   // Ref for the HTML container that holds the injected EPUB content
