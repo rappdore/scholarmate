@@ -96,6 +96,14 @@ class Relationship(RelationshipBase):
     target_definition: str | None = None
 
 
+class RelationshipUpdate(BaseModel):
+    """Request model for updating a relationship"""
+
+    relationship_type: RELATIONSHIP_TYPES | None = None
+    description: str | None = None
+    weight: float | None = Field(default=None, ge=0.0, le=10.0)
+
+
 # ========================================
 # FLASHCARD MODELS
 # ========================================
@@ -173,6 +181,29 @@ class ExtractionResponse(BaseModel):
     relationships_found: int
     section_id: str
     already_extracted: bool = False
+
+
+class BookExtractionRequest(BaseModel):
+    """Request model for batch extraction of an entire book"""
+
+    book_id: int
+    book_type: Literal["epub", "pdf"]
+    force: bool = False
+    # Optional: specify subset of sections
+    nav_ids: list[str] | None = None  # For EPUBs
+    page_start: int | None = None  # For PDFs
+    page_end: int | None = None  # For PDFs
+
+
+class BookExtractionResponse(BaseModel):
+    """Response model after batch extraction completes"""
+
+    total_sections: int
+    sections_extracted: int
+    sections_skipped: int  # Already extracted
+    concepts_extracted: int
+    relationships_found: int
+    errors: list[str] = Field(default_factory=list)
 
 
 class ExtractionProgress(BaseModel):

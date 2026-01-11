@@ -4,11 +4,14 @@ Knowledge Graph API Router
 Endpoints for concept extraction, knowledge graph queries, and graph management.
 """
 
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.knowledge_models import (
+    BookExtractionRequest,
+    BookExtractionResponse,
     Concept,
     ConceptCreate,
     ConceptUpdate,
@@ -16,17 +19,26 @@ from app.models.knowledge_models import (
     ExtractionResponse,
     GraphData,
     KnowledgeStats,
+    Relationship,
+    RelationshipCreate,
+    RelationshipUpdate,
 )
 from app.services.epub_documents_service import EPUBDocumentsService
+from app.services.epub_service import EPUBService
 from app.services.knowledge.graph_builder import get_graph_builder
 from app.services.knowledge.knowledge_database import knowledge_db
 from app.services.pdf_documents_service import PDFDocumentsService
+from app.services.pdf_service import PDFService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 # Initialize services
 epub_documents_service = EPUBDocumentsService()
 pdf_documents_service = PDFDocumentsService()
+epub_service = EPUBService()
+pdf_service = PDFService()
 
 
 def _get_book_info(book_id: int, book_type: str) -> tuple[str, str]:
@@ -40,22 +52,24 @@ def _get_book_info(book_id: int, book_type: str) -> tuple[str, str]:
         HTTPException if book not found
     """
     if book_type == "epub":
-        doc = epub_documents_service.get_by_id(book_id)
-        if not doc:
+        epub_doc = epub_documents_service.get_by_id(book_id)
+        if not epub_doc:
             raise HTTPException(
                 status_code=404, detail=f"EPUB with id {book_id} not found"
             )
-        return doc.get("filename", ""), doc.get("title", doc.get("filename", ""))
+        return epub_doc.get("filename", ""), epub_doc.get(
+            "title", epub_doc.get("filename", "")
+        )
     else:
-        doc = pdf_documents_service.get_by_id(book_id)
-        if not doc:
+        pdf_doc = pdf_documents_service.get_by_id(book_id)
+        if not pdf_doc:
             raise HTTPException(
                 status_code=404, detail=f"PDF with id {book_id} not found"
             )
-        return doc.filename, doc.title or doc.filename
+        return pdf_doc.filename, pdf_doc.title or pdf_doc.filename
 
 
-async def _get_section_content(
+def _get_section_content(
     book_id: int,
     book_type: str,
     nav_id: str | None,
@@ -73,25 +87,23 @@ async def _get_section_content(
                 status_code=400,
                 detail="nav_id is required for EPUB extraction",
             )
-        # Import here to avoid circular imports
-        from app.services.epub_service import epub_service
 
         doc = epub_documents_service.get_by_id(book_id)
         if not doc:
             raise HTTPException(status_code=404, detail="EPUB not found")
 
         filename = doc.get("filename", "")
-        content = epub_service.get_section_text(filename, nav_id)
+        content = epub_service.extract_section_text(filename, nav_id)
         if not content:
             raise HTTPException(
                 status_code=404,
                 detail=f"Section {nav_id} not found or has no content",
             )
 
-        # Get section title
-        nav_info = epub_service.get_navigation(filename)
+        # Get section title from navigation tree
+        nav_info = epub_service.get_navigation_tree(filename)
         section_title = nav_id
-        for item in nav_info.get("items", []):
+        for item in nav_info.get("flat_navigation", []):
             if item.get("id") == nav_id:
                 section_title = item.get("title", nav_id)
                 break
@@ -103,14 +115,12 @@ async def _get_section_content(
                 status_code=400,
                 detail="page_num is required for PDF extraction",
             )
-        from app.services.pdf_service import pdf_service
 
-        doc = pdf_documents_service.get_by_id(book_id)
-        if not doc:
+        pdf_doc = pdf_documents_service.get_by_id(book_id)
+        if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        filename = doc.filename
-        content = pdf_service.extract_page_text(filename, page_num)
+        content = pdf_service.extract_page_text(pdf_doc.filename, page_num)
         if not content:
             raise HTTPException(
                 status_code=404,
@@ -136,7 +146,7 @@ async def extract_concepts(request: ExtractionRequest) -> ExtractionResponse:
         filename, book_title = _get_book_info(request.book_id, request.book_type)
 
         # Get section content
-        content, section_title = await _get_section_content(
+        content, section_title = _get_section_content(
             book_id=request.book_id,
             book_type=request.book_type,
             nav_id=request.nav_id,
@@ -420,4 +430,307 @@ async def delete_book_knowledge(
         "success": True,
         "book_id": book_id,
         "embeddings_deleted": deleted_embeddings,
+    }
+
+
+# ========================================
+# BATCH EXTRACTION
+# ========================================
+
+
+@router.post("/extract-book", response_model=BookExtractionResponse)
+async def extract_book_concepts(
+    request: BookExtractionRequest,
+) -> BookExtractionResponse:
+    """
+    Trigger concept extraction for all sections of a book.
+
+    For EPUBs, extracts from all chapters in the navigation tree.
+    For PDFs, extracts from all pages (or specified page range).
+
+    This is a long-running operation. Use the extraction-progress endpoint
+    to check which sections have been extracted.
+    """
+    try:
+        # Get book info
+        filename, book_title = _get_book_info(request.book_id, request.book_type)
+        graph_builder = get_graph_builder()
+
+        total_sections = 0
+        sections_extracted = 0
+        sections_skipped = 0
+        concepts_extracted = 0
+        relationships_found = 0
+        errors: list[str] = []
+
+        if request.book_type == "epub":
+            # Get all sections from navigation tree
+            nav_info = epub_service.get_navigation_tree(filename)
+            flat_nav = nav_info.get("flat_navigation", [])
+
+            # Filter by nav_ids if specified
+            if request.nav_ids:
+                flat_nav = [n for n in flat_nav if n.get("id") in request.nav_ids]
+
+            total_sections = len(flat_nav)
+
+            for nav_item in flat_nav:
+                nav_id = nav_item.get("id")
+                section_title = nav_item.get("title", nav_id)
+
+                try:
+                    # Get section content
+                    content = epub_service.extract_section_text(filename, nav_id)
+                    if not content or not content.strip():
+                        logger.debug(f"Skipping empty section: {nav_id}")
+                        sections_skipped += 1
+                        continue
+
+                    # Run extraction
+                    result = await graph_builder.extract_and_store(
+                        content=content,
+                        book_id=request.book_id,
+                        book_type=request.book_type,
+                        book_title=book_title,
+                        section_title=section_title,
+                        nav_id=nav_id,
+                        force=request.force,
+                    )
+
+                    if result.get("already_extracted"):
+                        sections_skipped += 1
+                    else:
+                        sections_extracted += 1
+                        concepts_extracted += result.get("concepts_extracted", 0)
+                        relationships_found += result.get("relationships_found", 0)
+
+                except Exception as e:
+                    error_msg = f"Section {nav_id}: {str(e)}"
+                    logger.error(f"Error extracting section: {error_msg}")
+                    errors.append(error_msg)
+
+        else:  # PDF
+            doc = pdf_documents_service.get_by_id(request.book_id)
+            if not doc:
+                raise HTTPException(status_code=404, detail="PDF not found")
+
+            # Get page count
+            page_count = pdf_service.get_page_count(doc.filename)
+
+            # Determine page range
+            start_page = request.page_start or 1
+            end_page = request.page_end or page_count
+            end_page = min(end_page, page_count)
+
+            total_sections = end_page - start_page + 1
+
+            for page_num in range(start_page, end_page + 1):
+                try:
+                    content = pdf_service.extract_page_text(doc.filename, page_num)
+                    if not content or not content.strip():
+                        logger.debug(f"Skipping empty page: {page_num}")
+                        sections_skipped += 1
+                        continue
+
+                    result = await graph_builder.extract_and_store(
+                        content=content,
+                        book_id=request.book_id,
+                        book_type=request.book_type,
+                        book_title=book_title,
+                        section_title=f"Page {page_num}",
+                        page_num=page_num,
+                        force=request.force,
+                    )
+
+                    if result.get("already_extracted"):
+                        sections_skipped += 1
+                    else:
+                        sections_extracted += 1
+                        concepts_extracted += result.get("concepts_extracted", 0)
+                        relationships_found += result.get("relationships_found", 0)
+
+                except Exception as e:
+                    error_msg = f"Page {page_num}: {str(e)}"
+                    logger.error(f"Error extracting page: {error_msg}")
+                    errors.append(error_msg)
+
+        return BookExtractionResponse(
+            total_sections=total_sections,
+            sections_extracted=sections_extracted,
+            sections_skipped=sections_skipped,
+            concepts_extracted=concepts_extracted,
+            relationships_found=relationships_found,
+            errors=errors,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Batch extraction failed: {str(e)}"
+        )
+
+
+# ========================================
+# TEXT SEARCH
+# ========================================
+
+
+@router.get("/search")
+async def search_concepts(
+    q: str = Query(..., min_length=1, description="Search query"),
+    book_id: int | None = Query(None, description="Filter by book ID"),
+    book_type: Literal["epub", "pdf"] | None = Query(
+        None, description="Filter by book type"
+    ),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+) -> list[Concept]:
+    """
+    Search concepts by keyword.
+
+    Searches both concept names and definitions.
+    Results are ordered by relevance (exact name match > partial name > definition).
+    """
+    try:
+        results = knowledge_db.search_concepts(
+            query=q,
+            book_id=book_id,
+            book_type=book_type,
+            limit=limit,
+        )
+        return [Concept(**r) for r in results]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+# ========================================
+# RELATIONSHIP CRUD
+# ========================================
+
+
+@router.post("/relationship", response_model=Relationship)
+async def create_relationship(request: RelationshipCreate) -> Relationship:
+    """Create a new relationship between concepts."""
+    # Verify both concepts exist
+    source = knowledge_db.get_concept_by_id(request.source_concept_id)
+    target = knowledge_db.get_concept_by_id(request.target_concept_id)
+
+    if not source:
+        raise HTTPException(status_code=404, detail="Source concept not found")
+    if not target:
+        raise HTTPException(status_code=404, detail="Target concept not found")
+
+    if request.source_concept_id == request.target_concept_id:
+        raise HTTPException(
+            status_code=400, detail="Cannot create relationship to self"
+        )
+
+    relationship_id = knowledge_db.create_relationship(
+        source_concept_id=request.source_concept_id,
+        target_concept_id=request.target_concept_id,
+        relationship_type=request.relationship_type,
+        description=request.description,
+        weight=request.weight,
+    )
+
+    if not relationship_id:
+        raise HTTPException(status_code=500, detail="Failed to create relationship")
+
+    relationship = knowledge_db.get_relationship_by_id(relationship_id)
+    if not relationship:
+        raise HTTPException(
+            status_code=500, detail="Relationship created but could not be retrieved"
+        )
+    return Relationship(**relationship)
+
+
+@router.get("/relationship/{relationship_id}", response_model=Relationship)
+async def get_relationship(relationship_id: int) -> Relationship:
+    """Get a specific relationship by ID."""
+    relationship = knowledge_db.get_relationship_by_id(relationship_id)
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    return Relationship(**relationship)
+
+
+@router.patch("/relationship/{relationship_id}", response_model=Relationship)
+async def update_relationship(
+    relationship_id: int, request: RelationshipUpdate
+) -> Relationship:
+    """Update a relationship's type, description, or weight."""
+    relationship = knowledge_db.get_relationship_by_id(relationship_id)
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+
+    success = knowledge_db.update_relationship(
+        relationship_id=relationship_id,
+        relationship_type=request.relationship_type,
+        description=request.description,
+        weight=request.weight,
+    )
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update relationship")
+
+    updated = knowledge_db.get_relationship_by_id(relationship_id)
+    if not updated:
+        raise HTTPException(
+            status_code=500, detail="Relationship updated but could not be retrieved"
+        )
+    return Relationship(**updated)
+
+
+@router.delete("/relationship/{relationship_id}")
+async def delete_relationship(relationship_id: int) -> dict:
+    """Delete a relationship."""
+    relationship = knowledge_db.get_relationship_by_id(relationship_id)
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+
+    success = knowledge_db.delete_relationship(relationship_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete relationship")
+
+    return {"success": True, "deleted_id": relationship_id}
+
+
+@router.get("/relationships/{concept_id}", response_model=list[Relationship])
+async def get_concept_relationships(concept_id: int) -> list[Relationship]:
+    """Get all relationships for a concept (as source or target)."""
+    concept = knowledge_db.get_concept_by_id(concept_id)
+    if not concept:
+        raise HTTPException(status_code=404, detail="Concept not found")
+
+    relationships = knowledge_db.get_relationships_for_concept(concept_id)
+    return [Relationship(**r) for r in relationships]
+
+
+# ========================================
+# IMPORTANCE MANAGEMENT
+# ========================================
+
+
+@router.post("/recalculate-importance/{book_id}")
+async def recalculate_importance(
+    book_id: int,
+    book_type: Literal["epub", "pdf"] = Query(..., description="Type of book"),
+) -> dict:
+    """
+    Recalculate importance for all concepts in a book based on graph structure.
+
+    Importance is calculated based on:
+    - Number of relationships (more connections = higher importance)
+    - Types of relationships (being a source of 'explains' = higher importance)
+    - Connection to other high-importance concepts
+    """
+    _get_book_info(book_id, book_type)
+
+    graph_builder = get_graph_builder()
+    updated = graph_builder.recalculate_book_importance(book_id, book_type)
+
+    return {
+        "success": True,
+        "book_id": book_id,
+        "concepts_updated": len(updated),
+        "new_importance_values": updated,
     }

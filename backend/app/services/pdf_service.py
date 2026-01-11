@@ -51,6 +51,21 @@ class PDFService:
 
         return file_path
 
+    def get_page_count(self, filename: str) -> int:
+        """
+        Get the total number of pages in the PDF.
+        """
+        file_path = self.get_pdf_path(filename)
+
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                return len(pdf.pages)
+        except Exception:
+            # Fallback to PyPDF2
+            with open(file_path, "rb") as file:
+                reader = PdfReader(file)
+                return len(reader.pages)
+
     def extract_page_text(self, filename: str, page_num: int) -> str:
         """
         Extract text from a specific page of the PDF
