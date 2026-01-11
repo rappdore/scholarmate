@@ -366,7 +366,8 @@ class KnowledgeDatabase:
 
         If a relationship with the same source, target, and type already exists,
         the weight is accumulated (added) to represent stronger connections from
-        multiple mentions.
+        multiple mentions. This operation is atomic using SQLite's ON CONFLICT
+        clause to prevent race conditions.
 
         Args:
             source_concept_id: ID of the source concept
@@ -380,11 +381,16 @@ class KnowledgeDatabase:
         """
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute(
+                conn.row_factory = sqlite3.Row
+                # Use ON CONFLICT to atomically insert or update weight
+                # This prevents race conditions between concurrent writers
+                conn.execute(
                     """
                     INSERT INTO relationships
                     (source_concept_id, target_concept_id, relationship_type, description, weight)
                     VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source_concept_id, target_concept_id, relationship_type)
+                    DO UPDATE SET weight = weight + excluded.weight
                     """,
                     (
                         source_concept_id,
@@ -395,39 +401,8 @@ class KnowledgeDatabase:
                     ),
                 )
                 conn.commit()
-                return cursor.lastrowid
-        except sqlite3.IntegrityError:
-            # Relationship already exists - update weight instead
-            return self._update_relationship_weight(
-                source_concept_id, target_concept_id, relationship_type, weight
-            )
-        except Exception as e:
-            logger.error(f"Error creating relationship: {e}")
-            return None
 
-    def _update_relationship_weight(
-        self,
-        source_concept_id: int,
-        target_concept_id: int,
-        relationship_type: str,
-        weight: float,
-    ) -> int | None:
-        """Update weight of existing relationship, return its ID."""
-        try:
-            with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
-                # Increase weight for existing relationship
-                conn.execute(
-                    """
-                    UPDATE relationships
-                    SET weight = weight + ?
-                    WHERE source_concept_id = ? AND target_concept_id = ? AND relationship_type = ?
-                    """,
-                    (weight, source_concept_id, target_concept_id, relationship_type),
-                )
-                conn.commit()
-
-                # Get the ID
+                # Get the ID of the inserted/updated row
                 cursor = conn.execute(
                     """
                     SELECT id FROM relationships
@@ -438,7 +413,7 @@ class KnowledgeDatabase:
                 row = cursor.fetchone()
                 return row["id"] if row else None
         except Exception as e:
-            logger.error(f"Error updating relationship weight: {e}")
+            logger.error(f"Error creating relationship: {e}")
             return None
 
     def get_relationships_for_concept(
