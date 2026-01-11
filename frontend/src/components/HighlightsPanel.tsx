@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
+import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
 import type { Highlight } from '../types/highlights';
 import { HighlightColor } from '../types/highlights';
 import type { DocumentType } from '../types/document';
-import { epubService } from '../services/epubService';
 import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface HighlightsPanelProps {
@@ -12,7 +12,6 @@ interface HighlightsPanelProps {
   filename?: string;
   documentType: DocumentType | null;
   currentPage: number;
-  currentNavId?: string;
   selectedHighlightId?: string;
   onHighlightSelect?: (highlight: Highlight) => void;
   onPageJump?: (pageNumber: number) => void;
@@ -25,7 +24,6 @@ export default function HighlightsPanel({
   filename,
   documentType,
   currentPage,
-  currentNavId,
   selectedHighlightId,
   onHighlightSelect,
   onPageJump,
@@ -38,11 +36,6 @@ export default function HighlightsPanel({
     new Set([currentPage])
   );
 
-  // EPUB-specific state
-  const [epubHighlights, setEpubHighlights] = useState<EPUBHighlight[]>([]);
-  const [epubLoading, setEpubLoading] = useState(false);
-  const [epubError, setEpubError] = useState<string | null>(null);
-
   // Use shared context for PDF highlights
   const {
     highlights: pdfHighlights,
@@ -53,6 +46,16 @@ export default function HighlightsPanel({
     setCurrentPdfId,
   } = useHighlightsContext();
 
+  // Use shared context for EPUB highlights
+  const {
+    highlights: epubHighlights,
+    isLoading: epubLoading,
+    error: epubError,
+    deleteHighlight: deleteEpubHighlight,
+    updateHighlightColor: updateEpubHighlightColor,
+    setCurrentEpubId,
+  } = useEPUBHighlightsContext();
+
   // Set current PDF ID when it changes (for PDFs)
   useEffect(() => {
     if (documentType === 'pdf') {
@@ -60,33 +63,12 @@ export default function HighlightsPanel({
     }
   }, [documentType, pdfId, setCurrentPdfId]);
 
-  // Load EPUB highlights when epubId or currentNavId changes
+  // Set current EPUB ID when it changes (for EPUBs)
   useEffect(() => {
-    const loadEpubHighlights = async () => {
-      if (documentType !== 'epub' || !epubId) {
-        setEpubHighlights([]);
-        return;
-      }
-
-      setEpubLoading(true);
-      setEpubError(null);
-
-      try {
-        // Load all highlights for the EPUB (not filtered by section)
-        const allHighlights = await epubService.getAllHighlights(epubId);
-        setEpubHighlights(allHighlights);
-      } catch (err) {
-        setEpubError(
-          err instanceof Error ? err.message : 'Failed to load EPUB highlights'
-        );
-        console.error('Error loading EPUB highlights:', err);
-      } finally {
-        setEpubLoading(false);
-      }
-    };
-
-    loadEpubHighlights();
-  }, [documentType, epubId, currentNavId]);
+    if (documentType === 'epub') {
+      setCurrentEpubId(epubId ?? null);
+    }
+  }, [documentType, epubId, setCurrentEpubId]);
 
   // Auto-expand current page section
   useEffect(() => {
@@ -187,16 +169,10 @@ export default function HighlightsPanel({
         console.log('PDF highlight deleted from panel:', highlightId);
       }
     } else {
-      // EPUB highlight deletion
-      try {
-        await epubService.deleteEPUBHighlight(String(highlightId));
-        // Remove from local state
-        setEpubHighlights(prev =>
-          prev.filter(h => h.id !== Number(highlightId))
-        );
+      // EPUB highlight deletion - use context
+      const success = await deleteEpubHighlight(Number(highlightId));
+      if (success) {
         console.log('EPUB highlight deleted from panel:', highlightId);
-      } catch (err) {
-        console.error('Error deleting EPUB highlight:', err);
       }
     }
   };
@@ -215,21 +191,13 @@ export default function HighlightsPanel({
         console.log('PDF highlight color updated:', highlightId, newColor);
       }
     } else {
-      // EPUB highlight color update
-      try {
-        await epubService.updateEPUBHighlightColor(
-          Number(highlightId),
-          newColor
-        );
-        // Update local state
-        setEpubHighlights(prev =>
-          prev.map(h =>
-            h.id === Number(highlightId) ? { ...h, color: newColor } : h
-          )
-        );
+      // EPUB highlight color update - use context
+      const success = await updateEpubHighlightColor(
+        Number(highlightId),
+        newColor
+      );
+      if (success) {
         console.log('EPUB highlight color updated:', highlightId, newColor);
-      } catch (err) {
-        console.error('Error updating EPUB highlight color:', err);
       }
     }
   };
