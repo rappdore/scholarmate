@@ -148,7 +148,8 @@ class EmbeddingService:
         embedding = self.generate_embedding(text)
 
         # Prepare metadata (ChromaDB requires string/int/float/bool values)
-        doc_metadata = metadata or {}
+        # Copy to avoid mutating caller-provided dict
+        doc_metadata = dict(metadata) if metadata else {}
         doc_metadata["name"] = name
         if definition:
             doc_metadata["definition"] = definition[:500]  # Truncate for storage

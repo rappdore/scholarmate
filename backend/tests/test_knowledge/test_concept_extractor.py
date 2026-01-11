@@ -59,6 +59,33 @@ class TestContentChunking:
         for chunk in chunks[:-1]:  # Except possibly the last one
             assert chunk.strip().endswith(".")
 
+    def test_chunk_invalid_chunk_size_zero(self, extractor: ConceptExtractor):
+        """Test that chunk_size <= 0 raises ValueError."""
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            extractor.chunk_content("some content", chunk_size=0)
+
+    def test_chunk_invalid_chunk_size_negative(self, extractor: ConceptExtractor):
+        """Test that negative chunk_size raises ValueError."""
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            extractor.chunk_content("some content", chunk_size=-10)
+
+    def test_chunk_invalid_overlap_negative(self, extractor: ConceptExtractor):
+        """Test that negative overlap raises ValueError."""
+        with pytest.raises(ValueError, match="overlap must satisfy"):
+            extractor.chunk_content("some content", chunk_size=100, overlap=-1)
+
+    def test_chunk_invalid_overlap_equals_chunk_size(self, extractor: ConceptExtractor):
+        """Test that overlap == chunk_size raises ValueError (would cause infinite loop)."""
+        with pytest.raises(ValueError, match="overlap must satisfy"):
+            extractor.chunk_content("some content", chunk_size=100, overlap=100)
+
+    def test_chunk_invalid_overlap_exceeds_chunk_size(
+        self, extractor: ConceptExtractor
+    ):
+        """Test that overlap > chunk_size raises ValueError."""
+        with pytest.raises(ValueError, match="overlap must satisfy"):
+            extractor.chunk_content("some content", chunk_size=100, overlap=150)
+
 
 class TestJsonParsing:
     """Tests for JSON parsing of LLM responses."""

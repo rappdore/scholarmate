@@ -44,8 +44,8 @@ class KnowledgeDatabase:
     def _ensure_data_dir(self) -> None:
         """Ensure the data directory exists for the database file."""
         data_dir = os.path.dirname(self.db_path)
-        if data_dir and not os.path.exists(data_dir):
-            os.makedirs(data_dir)
+        if data_dir:
+            os.makedirs(data_dir, exist_ok=True)
 
     def _init_database(self) -> None:
         """Initialize the database with required tables and indexes."""

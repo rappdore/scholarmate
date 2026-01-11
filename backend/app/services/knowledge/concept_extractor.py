@@ -146,7 +146,18 @@ class ConceptExtractor:
 
         Returns:
             List of text chunks
+
+        Raises:
+            ValueError: If chunk_size <= 0 or overlap >= chunk_size
         """
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if overlap < 0 or overlap >= chunk_size:
+            raise ValueError(
+                f"overlap must satisfy 0 <= overlap < chunk_size, "
+                f"got overlap={overlap}, chunk_size={chunk_size}"
+            )
+
         if len(content) <= chunk_size:
             return [content]
 

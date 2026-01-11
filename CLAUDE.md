@@ -9,6 +9,23 @@ The backend uses a sqlite database. The database is stored at .backend/data/read
 Backend uses uv for environment management. So use uv to run any python commands.
 
 
+
+- when asked to do something do not assume answers to questions that you do not know for sure. Use the AskUserQuestionTool aboute literally anything that you think will provide you more information on how to do the job better
+
+- Always use the code simplifier agent at the end of coding session if we have added significant amount of code.
+
+- Always make sure that we have testing coverage for any new lines of code added.
+
+- Always mimic the directory structure of tests as they are in the source. Check the existing structure to understand it. For example, do not just put the test of example.py that is in src/utility/example.py in tests/unit/example.py. It should be in tests/unit/utility/test_example.py
+
+- After any code change that is non-trivial run tests to see that nothing is failing
+
+- once all tests pass run the formatters and linters and mypy. Look at the precommit hooks to see all the things that need to run before commit
+
+- when making updates to a branch for code review comments, do not make a new branch. Update the same branch and add commits to it.
+
+
+
 ## Setup
 - Backend: `cd backend && uv sync`
 - Frontend: `cd frontend && npm install`
