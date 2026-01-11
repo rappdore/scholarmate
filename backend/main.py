@@ -13,6 +13,7 @@ from app.routers import (
     epub_notes,
     epub_reading_statistics,
     highlights,
+    knowledge,
     llm_config,
     notes,
     pdf,
@@ -89,6 +90,7 @@ app.include_router(reading_statistics.router)
 app.include_router(epub_reading_statistics.router)
 app.include_router(llm_config.router)
 app.include_router(tts.router)
+app.include_router(knowledge.router)
 
 if __name__ == "__main__":
     import uvicorn
