@@ -101,7 +101,7 @@ class KnowledgeDatabase:
                 )
             """)
 
-            # Create extraction progress tracking table
+            # Create extraction progress tracking table (section-level)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS extraction_progress (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +111,22 @@ class KnowledgeDatabase:
                     page_num INTEGER,
                     extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(book_id, book_type, nav_id, page_num)
+                )
+            """)
+
+            # Create chunk progress tracking table (for resumable extraction)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS chunk_progress (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_id INTEGER NOT NULL,
+                    book_type TEXT NOT NULL CHECK (book_type IN ('epub', 'pdf')),
+                    nav_id TEXT,
+                    page_num INTEGER,
+                    chunk_index INTEGER NOT NULL,
+                    total_chunks INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(book_id, book_type, nav_id, page_num, chunk_index)
                 )
             """)
 
@@ -146,6 +162,10 @@ class KnowledgeDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_extraction_book
                 ON extraction_progress(book_id, book_type)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chunk_progress_section
+                ON chunk_progress(book_id, book_type, nav_id, page_num)
             """)
 
             conn.commit()
@@ -795,6 +815,198 @@ class KnowledgeDatabase:
         except Exception as e:
             logger.error(f"Error getting extraction progress: {e}")
             return []
+
+    # ========================================
+    # CHUNK PROGRESS TRACKING (for resumable extraction)
+    # ========================================
+
+    def mark_chunk_extracted(
+        self,
+        book_id: int,
+        book_type: str,
+        chunk_index: int,
+        total_chunks: int,
+        content_hash: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> bool:
+        """Mark a chunk as having been extracted.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            chunk_index: Index of the chunk (0-based)
+            total_chunks: Total number of chunks in the section
+            content_hash: Hash of the content to detect changes
+            nav_id: Navigation ID for EPUB sections
+            page_num: Page number for PDFs
+
+        Returns:
+            True if the chunk was marked as extracted, False on error.
+        """
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO chunk_progress
+                    (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        book_id,
+                        book_type,
+                        nav_id,
+                        page_num,
+                        chunk_index,
+                        total_chunks,
+                        content_hash,
+                        datetime.now().isoformat(),
+                    ),
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error marking chunk extracted: {e}")
+            return False
+
+    def get_extracted_chunks(
+        self,
+        book_id: int,
+        book_type: str,
+        content_hash: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> set[int]:
+        """Get the set of chunk indices that have been extracted for a section.
+
+        Only returns chunks that match the current content_hash (to detect
+        when content has changed and extraction needs to restart).
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            content_hash: Hash of the current content
+            nav_id: Navigation ID for EPUB sections
+            page_num: Page number for PDFs
+
+        Returns:
+            Set of chunk indices that have been extracted.
+        """
+        try:
+            with self.get_connection() as conn:
+                if nav_id is not None:
+                    cursor = conn.execute(
+                        """
+                        SELECT chunk_index FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND nav_id = ? AND content_hash = ?
+                        """,
+                        (book_id, book_type, nav_id, content_hash),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """
+                        SELECT chunk_index FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND page_num = ? AND content_hash = ?
+                        """,
+                        (book_id, book_type, page_num, content_hash),
+                    )
+
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Error getting extracted chunks: {e}")
+            return set()
+
+    def get_chunk_progress_info(
+        self,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Get chunk progress info for a section.
+
+        Returns:
+            Dictionary with 'extracted_chunks', 'total_chunks', 'content_hash',
+            or None if no progress exists.
+        """
+        try:
+            with self.get_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                if nav_id is not None:
+                    cursor = conn.execute(
+                        """
+                        SELECT chunk_index, total_chunks, content_hash
+                        FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND nav_id = ?
+                        ORDER BY chunk_index
+                        """,
+                        (book_id, book_type, nav_id),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """
+                        SELECT chunk_index, total_chunks, content_hash
+                        FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND page_num = ?
+                        ORDER BY chunk_index
+                        """,
+                        (book_id, book_type, page_num),
+                    )
+
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+
+                return {
+                    "extracted_chunks": [row["chunk_index"] for row in rows],
+                    "total_chunks": rows[0]["total_chunks"],
+                    "content_hash": rows[0]["content_hash"],
+                }
+        except Exception as e:
+            logger.error(f"Error getting chunk progress info: {e}")
+            return None
+
+    def clear_chunk_progress(
+        self,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> bool:
+        """Clear chunk progress for a section (e.g., when content changes or force re-extract).
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID for EPUB sections
+            page_num: Page number for PDFs
+
+        Returns:
+            True if cleared successfully, False on error.
+        """
+        try:
+            with self.get_connection() as conn:
+                if nav_id is not None:
+                    conn.execute(
+                        """
+                        DELETE FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND nav_id = ?
+                        """,
+                        (book_id, book_type, nav_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        DELETE FROM chunk_progress
+                        WHERE book_id = ? AND book_type = ? AND page_num = ?
+                        """,
+                        (book_id, book_type, page_num),
+                    )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error clearing chunk progress: {e}")
+            return False
 
     # ========================================
     # FLASHCARD OPERATIONS (basic for Phase 1)

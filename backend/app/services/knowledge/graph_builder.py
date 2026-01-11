@@ -7,6 +7,7 @@ This module orchestrates the knowledge graph construction:
 - Tracks extraction progress
 """
 
+import hashlib
 import logging
 import threading
 from typing import Any
@@ -19,6 +20,7 @@ from app.models.knowledge_models import (
 
 from .concept_extractor import ConceptExtractor, get_concept_extractor
 from .embedding_service import EmbeddingService, get_embedding_service
+from .extraction_state import ExtractionRegistry, get_extraction_registry
 from .knowledge_database import KnowledgeDatabase, knowledge_db
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ class GraphBuilder:
         db: KnowledgeDatabase | None = None,
         embedding_service: EmbeddingService | None = None,
         concept_extractor: ConceptExtractor | None = None,
+        extraction_registry: ExtractionRegistry | None = None,
     ):
         """
         Initialize the graph builder.
@@ -49,10 +52,16 @@ class GraphBuilder:
             db: Knowledge database instance
             embedding_service: Embedding service instance
             concept_extractor: Concept extractor instance
+            extraction_registry: Extraction state registry instance
         """
         self.db = db or knowledge_db
         self.embedding_service = embedding_service or get_embedding_service()
         self.concept_extractor = concept_extractor or get_concept_extractor()
+        self.extraction_registry = extraction_registry or get_extraction_registry()
+
+    def _compute_content_hash(self, content: str) -> str:
+        """Compute a hash of content for change detection."""
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     async def extract_and_store(
         self,
@@ -66,7 +75,14 @@ class GraphBuilder:
         force: bool = False,
     ) -> dict[str, Any]:
         """
-        Full pipeline: extract concepts/relationships and store them.
+        Full pipeline: extract concepts/relationships and store them INCREMENTALLY.
+
+        Concepts are extracted and stored chunk by chunk, so partial progress
+        is preserved even if the process fails partway through. This is critical
+        for large sections that may take tens of minutes to process.
+
+        Supports RESUMABILITY: if extraction was interrupted, re-running will
+        skip already-extracted chunks and continue from where it left off.
 
         Args:
             content: Text content to extract from
@@ -81,52 +97,294 @@ class GraphBuilder:
         Returns:
             Dictionary with extraction results
         """
-        # Check if already extracted
-        if not force and self.db.is_section_extracted(
-            book_id, book_type, nav_id, page_num
-        ):
-            logger.info(
-                f"Section already extracted: book={book_id}, nav_id={nav_id}, page={page_num}"
+        section_id = nav_id or f"page_{page_num}"
+        content_hash = self._compute_content_hash(content)
+
+        logger.info(
+            f"Starting extract_and_store for book_id={book_id}, "
+            f"book_type={book_type}, section={section_id}, force={force}"
+        )
+        logger.info(f"Content length: {len(content)} characters, hash: {content_hash}")
+
+        # Check if already fully extracted
+        try:
+            if not force and self.db.is_section_extracted(
+                book_id, book_type, nav_id, page_num
+            ):
+                logger.info(
+                    f"Section already extracted: book={book_id}, section={section_id}"
+                )
+                return {
+                    "concepts_extracted": 0,
+                    "relationships_found": 0,
+                    "already_extracted": True,
+                }
+        except ValueError as e:
+            # Handle case where nav_id and page_num validation fails
+            logger.warning(
+                f"Validation error checking extraction status: {e}. Proceeding with extraction."
             )
-            return {
-                "concepts_extracted": 0,
-                "relationships_found": 0,
-                "already_extracted": True,
-            }
 
-        # Extract concepts and relationships
-        (
-            extracted_concepts,
-            extracted_relationships,
-        ) = await self.concept_extractor.extract_from_text(
-            text=content,
-            book_title=book_title,
-            section_title=section_title,
+        # Check for partial chunk progress (for resumability)
+        skip_chunks: set[int] = set()
+        known_concept_names: set[str] = set()
+
+        if force:
+            # Clear any existing chunk progress when forcing re-extraction
+            self.db.clear_chunk_progress(book_id, book_type, nav_id, page_num)
+            logger.info("Cleared chunk progress for forced re-extraction")
+        else:
+            # Check for existing chunk progress with matching content hash
+            skip_chunks = self.db.get_extracted_chunks(
+                book_id, book_type, content_hash, nav_id, page_num
+            )
+            if skip_chunks:
+                logger.info(
+                    f"RESUMING extraction: found {len(skip_chunks)} already-extracted chunks"
+                )
+                # Get existing concept names to avoid duplicates
+                existing_concepts = self.db.get_concepts_for_book(
+                    book_id, book_type, nav_id=nav_id, page_num=page_num
+                )
+                known_concept_names = {c["name"].lower() for c in existing_concepts}
+                logger.info(
+                    f"Loaded {len(known_concept_names)} existing concept names for deduplication"
+                )
+
+        # INCREMENTAL EXTRACTION: Extract and store concepts chunk by chunk
+        logger.info(
+            f"Starting INCREMENTAL concept extraction for section {section_id}..."
         )
 
-        # Store concepts with deduplication
-        stored_concepts = await self._store_concepts(
-            extracted_concepts=extracted_concepts,
-            book_id=book_id,
-            book_type=book_type,
-            nav_id=nav_id,
-            page_num=page_num,
+        all_extracted_concepts: list[ExtractedConcept] = []
+        stored_concepts: dict[str, int] = {}
+        chunks_processed = 0
+        chunks_skipped = 0
+        total_chunks = 0
+        was_cancelled = False
+
+        # Register this extraction for progress tracking and cancellation support
+        self.extraction_registry.register_extraction(book_id, book_type, section_id)
+
+        try:
+            async for (
+                chunk_idx,
+                total,
+                chunk_concepts,
+                was_skipped,
+            ) in self.concept_extractor.extract_concepts_incrementally(
+                text=content,
+                book_title=book_title,
+                section_title=section_title,
+                skip_chunks=skip_chunks,
+                known_concept_names=known_concept_names,
+            ):
+                total_chunks = total
+                chunks_processed = chunk_idx + 1
+
+                # Check for cancellation between chunks
+                if self.extraction_registry.is_cancellation_requested(
+                    book_id, book_type, section_id
+                ):
+                    logger.info(
+                        f"Extraction CANCELLED for section {section_id} "
+                        f"at chunk {chunks_processed}/{total_chunks}. "
+                        f"Stored {len(stored_concepts)} concepts before cancellation."
+                    )
+                    was_cancelled = True
+                    self.extraction_registry.mark_cancelled(
+                        book_id, book_type, section_id
+                    )
+                    break
+
+                if was_skipped:
+                    chunks_skipped += 1
+                    # Update progress even for skipped chunks
+                    self.extraction_registry.update_progress(
+                        book_id,
+                        book_type,
+                        section_id,
+                        chunks_processed,
+                        total_chunks,
+                        len(stored_concepts),
+                    )
+                    continue
+
+                if chunk_concepts:
+                    logger.info(
+                        f"Chunk {chunks_processed}/{total_chunks}: "
+                        f"Storing {len(chunk_concepts)} concepts immediately..."
+                    )
+
+                    # Store this chunk's concepts immediately
+                    chunk_stored = await self._store_concepts(
+                        extracted_concepts=chunk_concepts,
+                        book_id=book_id,
+                        book_type=book_type,
+                        nav_id=nav_id,
+                        page_num=page_num,
+                    )
+
+                    # Accumulate for relationship extraction later
+                    all_extracted_concepts.extend(chunk_concepts)
+                    stored_concepts.update(chunk_stored)
+
+                    logger.info(
+                        f"Chunk {chunks_processed}/{total_chunks}: "
+                        f"Stored {len(chunk_stored)} concepts. "
+                        f"Total so far: {len(stored_concepts)}"
+                    )
+
+                # Mark this chunk as extracted (for resumability)
+                self.db.mark_chunk_extracted(
+                    book_id=book_id,
+                    book_type=book_type,
+                    chunk_index=chunk_idx,
+                    total_chunks=total,
+                    content_hash=content_hash,
+                    nav_id=nav_id,
+                    page_num=page_num,
+                )
+
+                # Update progress in registry
+                self.extraction_registry.update_progress(
+                    book_id,
+                    book_type,
+                    section_id,
+                    chunks_processed,
+                    total_chunks,
+                    len(stored_concepts),
+                )
+
+                if not chunk_concepts:
+                    logger.info(
+                        f"Chunk {chunks_processed}/{total_chunks}: No concepts extracted"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error during incremental extraction at chunk {chunks_processed}/{total_chunks}: {e}",
+                exc_info=True,
+            )
+            # Mark as failed in registry
+            self.extraction_registry.mark_failed(book_id, book_type, section_id, str(e))
+            # Don't raise - we want to keep whatever concepts we've stored so far
+            logger.warning(
+                f"Incremental extraction failed after {chunks_processed} chunks. "
+                f"Stored {len(stored_concepts)} concepts before failure. "
+                f"Re-run to resume from chunk {chunks_processed}."
+            )
+
+        logger.info(
+            f"Concept extraction complete for section {section_id}: "
+            f"{chunks_processed}/{total_chunks} chunks processed, "
+            f"{chunks_skipped} skipped (resumed), "
+            f"{len(stored_concepts)} concepts stored this run, "
+            f"cancelled={was_cancelled}"
         )
 
-        # Store relationships
-        stored_relationships = self._store_relationships(
-            extracted_relationships=extracted_relationships,
-            stored_concepts=stored_concepts,
-        )
+        # Extract relationships (using all stored concepts)
+        # For resumed extractions, we need to get ALL concepts for the section
+        # Skip relationship extraction if cancelled
+        stored_relationships: list[int] = []
+        if chunks_processed == total_chunks and not was_cancelled:
+            # Get all concepts for this section (including from previous runs)
+            all_section_concepts = self.db.get_concepts_for_book(
+                book_id, book_type, nav_id=nav_id, page_num=page_num
+            )
 
-        # Mark section as extracted
-        self.db.mark_section_extracted(book_id, book_type, nav_id, page_num)
+            if len(all_section_concepts) >= 2:
+                logger.info(
+                    f"Starting relationship extraction for section {section_id} "
+                    f"with {len(all_section_concepts)} total concepts..."
+                )
+                try:
+                    # Convert DB concepts back to ExtractedConcept for relationship extraction
+                    concepts_for_rel = [
+                        ExtractedConcept(
+                            name=c["name"],
+                            definition=c.get("definition", ""),
+                            importance=c.get("importance", 3),
+                            source_quote=c.get("source_quote", ""),
+                        )
+                        for c in all_section_concepts
+                    ]
 
-        return {
+                    extracted_relationships = (
+                        await self.concept_extractor.extract_relationships_for_concepts(
+                            text=content,
+                            all_concepts=concepts_for_rel,
+                        )
+                    )
+                    logger.info(
+                        f"Extracted {len(extracted_relationships)} relationships for section {section_id}"
+                    )
+
+                    # Build stored_concepts map from all section concepts
+                    all_stored = {c["name"]: c["id"] for c in all_section_concepts}
+
+                    # Store relationships
+                    stored_relationships = self._store_relationships(
+                        extracted_relationships=extracted_relationships,
+                        stored_concepts=all_stored,
+                    )
+                    logger.info(
+                        f"Stored {len(stored_relationships)} relationships for section {section_id}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to extract/store relationships for section {section_id}: {e}",
+                        exc_info=True,
+                    )
+                    # Don't raise - concepts are more important
+            else:
+                logger.info(
+                    f"Skipping relationship extraction: only {len(all_section_concepts)} concepts"
+                )
+
+        # Mark section as extracted (only if we completed all chunks and not cancelled)
+        if chunks_processed == total_chunks and total_chunks > 0 and not was_cancelled:
+            try:
+                self.db.mark_section_extracted(book_id, book_type, nav_id, page_num)
+                # Clear chunk progress since section is now fully extracted
+                self.db.clear_chunk_progress(book_id, book_type, nav_id, page_num)
+                logger.info(f"Marked section {section_id} as fully extracted")
+                # Mark as completed in registry
+                self.extraction_registry.mark_completed(book_id, book_type, section_id)
+            except Exception as e:
+                logger.error(
+                    f"Failed to mark section {section_id} as extracted: {e}",
+                    exc_info=True,
+                )
+        elif was_cancelled:
+            logger.info(
+                f"NOT marking section {section_id} as extracted: "
+                f"extraction was cancelled at {chunks_processed}/{total_chunks} chunks. "
+                f"Re-run to resume."
+            )
+        else:
+            logger.warning(
+                f"NOT marking section {section_id} as extracted: "
+                f"only {chunks_processed}/{total_chunks} chunks completed. "
+                f"Re-run to resume."
+            )
+
+        # Unregister extraction after completion (keep for a bit for status queries)
+        # The registry will auto-cleanup old finished extractions
+        # Don't unregister immediately so frontend can query final status
+
+        result = {
             "concepts_extracted": len(stored_concepts),
             "relationships_found": len(stored_relationships),
             "already_extracted": False,
+            "chunks_processed": chunks_processed,
+            "chunks_skipped": chunks_skipped,
+            "total_chunks": total_chunks,
+            "resumed": chunks_skipped > 0,
+            "cancelled": was_cancelled,
         }
+        logger.info(f"extract_and_store complete for section {section_id}: {result}")
+        return result
 
     async def _store_concepts(
         self,
@@ -151,100 +409,164 @@ class GraphBuilder:
         """
         stored_concepts: dict[str, int] = {}
 
-        for extracted in extracted_concepts:
-            # Check for existing similar concept
-            existing = self.embedding_service.check_duplicate(
-                name=extracted.name,
-                definition=extracted.definition,
-                book_id=book_id,
-                book_type=book_type,
-                similarity_threshold=DUPLICATE_THRESHOLD,
+        # Tracking counters for debugging
+        stats = {
+            "total": len(extracted_concepts),
+            "duplicates_found": 0,
+            "new_created": 0,
+            "existing_by_name": 0,
+            "failed_to_store": 0,
+            "embedding_errors": 0,
+        }
+
+        logger.info(
+            f"Starting to store {stats['total']} extracted concepts for "
+            f"book_id={book_id}, book_type={book_type}, nav_id={nav_id}, page_num={page_num}"
+        )
+
+        for i, extracted in enumerate(extracted_concepts):
+            logger.debug(
+                f"Processing concept {i + 1}/{stats['total']}: '{extracted.name}'"
             )
 
-            if existing:
-                # Duplicate found - use existing concept
-                concept_id = existing["concept_id"]
-                logger.debug(
-                    f"Found duplicate concept: '{extracted.name}' matches '{existing['name']}' "
-                    f"(similarity: {existing['similarity']:.2f})"
-                )
-
-                # Update existing concept if new one has higher importance
-                db_concept = self.db.get_concept_by_id(concept_id)
-                if db_concept and extracted.importance > db_concept.get(
-                    "importance", 0
-                ):
-                    self.db.update_concept(
-                        concept_id=concept_id,
-                        importance=extracted.importance,
-                    )
-
-                stored_concepts[extracted.name] = concept_id
-            else:
-                # Check for somewhat similar concept (create relationship)
-                similar = self.embedding_service.find_similar(
-                    text=self.embedding_service.generate_concept_text(
-                        extracted.name, extracted.definition
-                    ),
-                    n_results=1,
-                    book_id=book_id,
-                    book_type=book_type,
-                    threshold=RELATED_THRESHOLD,
-                )
-
-                # Create new concept
-                concept_id = self.db.create_concept(
-                    book_id=book_id,
-                    book_type=book_type,
+            try:
+                # Check for existing similar concept
+                existing = self.embedding_service.check_duplicate(
                     name=extracted.name,
                     definition=extracted.definition,
-                    source_quote=extracted.source_quote,
-                    importance=extracted.importance,
-                    nav_id=nav_id,
-                    page_num=page_num,
+                    book_id=book_id,
+                    book_type=book_type,
+                    similarity_threshold=DUPLICATE_THRESHOLD,
                 )
 
-                if concept_id:
-                    # Store embedding
-                    self.embedding_service.store_concept_embedding(
-                        concept_id=concept_id,
-                        name=extracted.name,
-                        definition=extracted.definition,
-                        metadata={
-                            "book_id": book_id,
-                            "book_type": book_type,
-                            "importance": extracted.importance,
-                        },
+                if existing:
+                    # Duplicate found - use existing concept
+                    concept_id = existing["concept_id"]
+                    stats["duplicates_found"] += 1
+                    logger.debug(
+                        f"Found duplicate concept: '{extracted.name}' matches '{existing['name']}' "
+                        f"(similarity: {existing['similarity']:.2f})"
                     )
+
+                    # Update existing concept if new one has higher importance
+                    db_concept = self.db.get_concept_by_id(concept_id)
+                    if db_concept and extracted.importance > db_concept.get(
+                        "importance", 0
+                    ):
+                        self.db.update_concept(
+                            concept_id=concept_id,
+                            importance=extracted.importance,
+                        )
 
                     stored_concepts[extracted.name] = concept_id
-
-                    # Create "related-to" relationship with similar concept
-                    if similar and similar[0]["similarity"] >= RELATED_THRESHOLD:
-                        self.db.create_relationship(
-                            source_concept_id=concept_id,
-                            target_concept_id=similar[0]["concept_id"],
-                            relationship_type="related-to",
-                            description=f"Similar concepts (similarity: {similar[0]['similarity']:.2f})",
-                            weight=similar[0]["similarity"],
-                        )
-                        logger.debug(
-                            f"Created related-to relationship: '{extracted.name}' -> '{similar[0]['name']}'"
-                        )
-
-                    logger.debug(
-                        f"Stored new concept: '{extracted.name}' (id={concept_id})"
-                    )
                 else:
-                    # Concept might already exist with same name (exact match)
-                    existing_concept = self.db.get_concept_by_name(
-                        book_id, book_type, extracted.name
+                    # Check for somewhat similar concept (create relationship)
+                    similar = self.embedding_service.find_similar(
+                        text=self.embedding_service.generate_concept_text(
+                            extracted.name, extracted.definition
+                        ),
+                        n_results=1,
+                        book_id=book_id,
+                        book_type=book_type,
+                        threshold=RELATED_THRESHOLD,
                     )
-                    if existing_concept:
-                        stored_concepts[extracted.name] = existing_concept["id"]
+
+                    # Create new concept
+                    concept_id = self.db.create_concept(
+                        book_id=book_id,
+                        book_type=book_type,
+                        name=extracted.name,
+                        definition=extracted.definition,
+                        source_quote=extracted.source_quote,
+                        importance=extracted.importance,
+                        nav_id=nav_id,
+                        page_num=page_num,
+                    )
+
+                    if concept_id:
+                        stats["new_created"] += 1
                         logger.debug(
-                            f"Using existing concept (exact name match): '{extracted.name}'"
+                            f"Created new concept: '{extracted.name}' (id={concept_id})"
                         )
+
+                        # Store embedding - catch errors to avoid losing the concept
+                        try:
+                            self.embedding_service.store_concept_embedding(
+                                concept_id=concept_id,
+                                name=extracted.name,
+                                definition=extracted.definition,
+                                metadata={
+                                    "book_id": book_id,
+                                    "book_type": book_type,
+                                    "importance": extracted.importance,
+                                },
+                            )
+                        except Exception as embed_err:
+                            stats["embedding_errors"] += 1
+                            logger.error(
+                                f"Failed to store embedding for concept '{extracted.name}' "
+                                f"(id={concept_id}): {embed_err}. "
+                                "Concept was saved to DB but embedding search won't work."
+                            )
+
+                        stored_concepts[extracted.name] = concept_id
+
+                        # Create "related-to" relationship with similar concept
+                        if similar and similar[0]["similarity"] >= RELATED_THRESHOLD:
+                            self.db.create_relationship(
+                                source_concept_id=concept_id,
+                                target_concept_id=similar[0]["concept_id"],
+                                relationship_type="related-to",
+                                description=f"Similar concepts (similarity: {similar[0]['similarity']:.2f})",
+                                weight=similar[0]["similarity"],
+                            )
+                            logger.debug(
+                                f"Created related-to relationship: '{extracted.name}' -> '{similar[0]['name']}'"
+                            )
+                    else:
+                        # create_concept returned None - likely IntegrityError (duplicate name)
+                        # Try to find existing concept by exact name
+                        existing_concept = self.db.get_concept_by_name(
+                            book_id, book_type, extracted.name
+                        )
+                        if existing_concept:
+                            stats["existing_by_name"] += 1
+                            stored_concepts[extracted.name] = existing_concept["id"]
+                            logger.debug(
+                                f"Using existing concept (exact name match): '{extracted.name}' "
+                                f"(id={existing_concept['id']})"
+                            )
+                        else:
+                            # Concept was not created and not found - this is a data loss!
+                            stats["failed_to_store"] += 1
+                            logger.error(
+                                f"FAILED to store concept '{extracted.name}': "
+                                f"create_concept returned None and no existing concept found. "
+                                f"This concept is LOST. Definition: {extracted.definition[:100]}..."
+                            )
+
+            except Exception as e:
+                stats["failed_to_store"] += 1
+                logger.error(
+                    f"Exception while processing concept '{extracted.name}': {e}",
+                    exc_info=True,
+                )
+
+        # Log summary
+        logger.info(
+            f"Concept storage complete for book_id={book_id}, nav_id={nav_id}: "
+            f"total={stats['total']}, new_created={stats['new_created']}, "
+            f"duplicates_found={stats['duplicates_found']}, "
+            f"existing_by_name={stats['existing_by_name']}, "
+            f"failed={stats['failed_to_store']}, "
+            f"embedding_errors={stats['embedding_errors']}, "
+            f"stored_count={len(stored_concepts)}"
+        )
+
+        if stats["failed_to_store"] > 0:
+            logger.warning(
+                f"WARNING: {stats['failed_to_store']} concepts were lost during storage!"
+            )
 
         return stored_concepts
 

@@ -25,6 +25,7 @@ from app.models.knowledge_models import (
 )
 from app.services.epub_documents_service import EPUBDocumentsService
 from app.services.epub_service import EPUBService
+from app.services.knowledge.extraction_state import get_extraction_registry
 from app.services.knowledge.graph_builder import get_graph_builder
 from app.services.knowledge.knowledge_database import knowledge_db
 from app.services.pdf_documents_service import PDFDocumentsService
@@ -177,6 +178,114 @@ async def extract_concepts(request: ExtractionRequest) -> ExtractionResponse:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@router.post("/cancel-extraction")
+async def cancel_extraction(
+    book_id: int = Query(..., description="Book ID"),
+    book_type: Literal["epub", "pdf"] = Query(..., description="Type of book"),
+    section_id: str | None = Query(
+        None,
+        description="Section ID (nav_id for EPUB, page_X for PDF). If not provided, cancels all for book.",
+    ),
+) -> dict:
+    """
+    Cancel a running extraction.
+
+    If section_id is provided, cancels just that section's extraction.
+    If section_id is not provided, cancels all running extractions for the book.
+
+    Note: Cancellation is cooperative - the extraction will stop between chunks.
+    """
+    registry = get_extraction_registry()
+
+    if section_id:
+        # Cancel specific section
+        success = registry.request_cancellation(book_id, book_type, section_id)
+        if success:
+            logger.info(
+                f"Cancellation requested for {book_type}:{book_id}:{section_id}"
+            )
+            return {
+                "success": True,
+                "message": f"Cancellation requested for section {section_id}",
+                "book_id": book_id,
+                "section_id": section_id,
+            }
+        else:
+            # Check if there's a completed or no extraction
+            state = registry.get_extraction_state(book_id, book_type, section_id)
+            if state:
+                return {
+                    "success": False,
+                    "message": f"Extraction is not running (status: {state.status.name})",
+                    "book_id": book_id,
+                    "section_id": section_id,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "No extraction found for this section",
+                    "book_id": book_id,
+                    "section_id": section_id,
+                }
+    else:
+        # Cancel all for book
+        count = registry.cancel_all_for_book(book_id, book_type)
+        if count > 0:
+            logger.info(
+                f"Cancellation requested for {count} extractions for {book_type}:{book_id}"
+            )
+            return {
+                "success": True,
+                "message": f"Cancellation requested for {count} running extractions",
+                "book_id": book_id,
+                "extractions_cancelled": count,
+            }
+        else:
+            return {
+                "success": False,
+                "message": "No running extractions found for this book",
+                "book_id": book_id,
+            }
+
+
+@router.get("/extraction-status")
+async def get_extraction_status(
+    book_id: int | None = Query(None, description="Filter by book ID"),
+    book_type: Literal["epub", "pdf"] | None = Query(
+        None, description="Filter by book type"
+    ),
+    section_id: str | None = Query(None, description="Get status of specific section"),
+) -> dict:
+    """
+    Get the status of running extractions.
+
+    If section_id is provided along with book_id and book_type, returns status of that specific extraction.
+    Otherwise, returns all running extractions (optionally filtered by book_id and/or book_type).
+    """
+    registry = get_extraction_registry()
+
+    if section_id and book_id is not None and book_type is not None:
+        # Get specific extraction status
+        state = registry.get_extraction_state(book_id, book_type, section_id)
+        if state:
+            return {
+                "found": True,
+                "extraction": state.to_dict(),
+            }
+        else:
+            return {
+                "found": False,
+                "message": "No extraction found for this section",
+            }
+    else:
+        # Get all running extractions
+        extractions = registry.get_running_extractions(book_id, book_type)
+        return {
+            "count": len(extractions),
+            "extractions": [e.to_dict() for e in extractions],
+        }
 
 
 @router.get("/concepts/{book_id}", response_model=list[Concept])

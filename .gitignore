@@ -392,3 +392,5 @@ gcloud-service-key.json
 .netlify/
 
 plans/
+
+backend/data/
