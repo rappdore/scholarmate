@@ -297,6 +297,94 @@ class KnowledgeDatabase:
             logger.error(f"Error getting concepts for book {book_id}: {e}")
             return []
 
+    def search_concepts(
+        self,
+        query: str,
+        book_id: int | None = None,
+        book_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """
+        Search concepts by name or definition text.
+
+        Uses LIKE queries for text matching with relevance ordering:
+        - Exact name match (highest priority)
+        - Name starts with query
+        - Name contains query
+        - Definition contains query (lowest priority)
+
+        Args:
+            query: Search query (searches name and definition)
+            book_id: Filter by book (optional)
+            book_type: Filter by book type (optional)
+            limit: Maximum results
+
+        Returns:
+            List of matching concepts, ordered by relevance
+        """
+        if not query or not query.strip():
+            return []
+
+        try:
+            with self.get_connection() as conn:
+                conn.row_factory = sqlite3.Row
+
+                # Escape special LIKE characters
+                escaped_query = (
+                    query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                )
+
+                # Build base query with relevance scoring
+                # Using CASE to order by: exact match > starts with > contains name > contains definition
+                sql = """
+                    SELECT *,
+                        CASE
+                            WHEN LOWER(name) = LOWER(?) THEN 1
+                            WHEN LOWER(name) LIKE LOWER(?) ESCAPE '\\' THEN 2
+                            WHEN LOWER(name) LIKE LOWER(?) ESCAPE '\\' THEN 3
+                            WHEN LOWER(definition) LIKE LOWER(?) ESCAPE '\\' THEN 4
+                            ELSE 5
+                        END as relevance
+                    FROM concepts
+                    WHERE (
+                        LOWER(name) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(definition) LIKE LOWER(?) ESCAPE '\\'
+                    )
+                """
+                params: list[Any] = [
+                    query,  # exact match
+                    f"{escaped_query}%",  # starts with
+                    f"%{escaped_query}%",  # contains (name)
+                    f"%{escaped_query}%",  # contains (definition)
+                    f"%{escaped_query}%",  # WHERE clause (name)
+                    f"%{escaped_query}%",  # WHERE clause (definition)
+                ]
+
+                if book_id is not None:
+                    sql += " AND book_id = ?"
+                    params.append(book_id)
+
+                if book_type is not None:
+                    sql += " AND book_type = ?"
+                    params.append(book_type)
+
+                sql += (
+                    " ORDER BY relevance ASC, importance DESC, created_at DESC LIMIT ?"
+                )
+                params.append(limit)
+
+                cursor = conn.execute(sql, params)
+                results = [dict(row) for row in cursor.fetchall()]
+
+                # Remove the relevance column from results
+                for r in results:
+                    r.pop("relevance", None)
+
+                return results
+        except Exception as e:
+            logger.error(f"Error searching concepts: {e}")
+            return []
+
     def update_concept(
         self,
         concept_id: int,
@@ -465,6 +553,81 @@ class KnowledgeDatabase:
         except Exception as e:
             logger.error(f"Error getting relationships for concept {concept_id}: {e}")
             return []
+
+    def get_relationship_by_id(self, relationship_id: int) -> dict[str, Any] | None:
+        """Get a relationship by its ID with joined concept info."""
+        try:
+            with self.get_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """
+                    SELECT r.*,
+                           sc.name as source_name, sc.definition as source_definition,
+                           tc.name as target_name, tc.definition as target_definition
+                    FROM relationships r
+                    JOIN concepts sc ON r.source_concept_id = sc.id
+                    JOIN concepts tc ON r.target_concept_id = tc.id
+                    WHERE r.id = ?
+                    """,
+                    (relationship_id,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting relationship {relationship_id}: {e}")
+            return None
+
+    def update_relationship(
+        self,
+        relationship_id: int,
+        relationship_type: str | None = None,
+        description: str | None = None,
+        weight: float | None = None,
+    ) -> bool:
+        """Update a relationship's fields."""
+        try:
+            updates = []
+            params: list[Any] = []
+
+            if relationship_type is not None:
+                updates.append("relationship_type = ?")
+                params.append(relationship_type)
+            if description is not None:
+                updates.append("description = ?")
+                params.append(description)
+            if weight is not None:
+                updates.append("weight = ?")
+                params.append(weight)
+
+            if not updates:
+                return True
+
+            params.append(relationship_id)
+
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    f"UPDATE relationships SET {', '.join(updates)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating relationship {relationship_id}: {e}")
+            return False
+
+    def delete_relationship(self, relationship_id: int) -> bool:
+        """Delete a relationship."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM relationships WHERE id = ?",
+                    (relationship_id,),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deleting relationship {relationship_id}: {e}")
+            return False
 
     def get_graph_for_book(self, book_id: int, book_type: str) -> dict[str, Any]:
         """

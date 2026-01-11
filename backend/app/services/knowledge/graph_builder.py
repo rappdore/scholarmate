@@ -453,6 +453,98 @@ class GraphBuilder:
             book_id=concept.get("book_id"),
         )
 
+    def recalculate_book_importance(
+        self, book_id: int, book_type: str
+    ) -> dict[int, int]:
+        """
+        Recalculate importance for all concepts in a book based on graph structure.
+
+        Importance is calculated based on:
+        - Number of relationships (more connections = higher importance)
+        - Types of relationships (being a source of 'explains' = higher importance)
+        - Connection to other high-importance concepts
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+
+        Returns:
+            Dictionary mapping concept_id to new importance value
+        """
+        # Get all concepts for the book
+        concepts = self.db.get_concepts_for_book(book_id, book_type)
+        if not concepts:
+            return {}
+
+        # Get the full graph
+        graph = self.db.get_graph_for_book(book_id, book_type)
+        edges = graph.get("edges", [])
+
+        # Build adjacency info for each concept
+        concept_stats: dict[int, dict[str, Any]] = {}
+        for concept in concepts:
+            concept_id = concept["id"]
+            concept_stats[concept_id] = {
+                "original_importance": concept.get("importance", 3),
+                "outgoing_count": 0,
+                "incoming_count": 0,
+                "explains_source": 0,  # Being a source of 'explains' is valuable
+                "high_importance_neighbors": 0,
+            }
+
+        # Count relationships
+        for edge in edges:
+            source_id = edge.get("source")
+            target_id = edge.get("target")
+            rel_type = edge.get("type", "")
+
+            if source_id in concept_stats:
+                concept_stats[source_id]["outgoing_count"] += 1
+                if rel_type == "explains":
+                    concept_stats[source_id]["explains_source"] += 1
+
+            if target_id in concept_stats:
+                concept_stats[target_id]["incoming_count"] += 1
+
+        # Calculate scores and determine new importance
+        updated: dict[int, int] = {}
+
+        for concept_id, stats in concept_stats.items():
+            # Base score from relationship count
+            total_connections = stats["outgoing_count"] + stats["incoming_count"]
+
+            # Score calculation:
+            # - Base: 2-3 based on connections (0-1 conn = 2, 2-4 = 3, 5+ = 4)
+            # - Bonus for 'explains' relationships (+0.5 per explains source)
+            # - High connectivity bonus (10+ connections = +1)
+
+            if total_connections == 0:
+                score = 2.0
+            elif total_connections <= 1:
+                score = 2.0
+            elif total_connections <= 4:
+                score = 3.0
+            elif total_connections <= 9:
+                score = 4.0
+            else:
+                score = 4.5
+
+            # Bonus for being a source of 'explains'
+            score += min(stats["explains_source"] * 0.3, 1.0)
+
+            # Convert to 1-5 scale
+            new_importance = max(1, min(5, round(score)))
+
+            # Only update if changed
+            if new_importance != stats["original_importance"]:
+                self.db.update_concept(concept_id, importance=new_importance)
+                updated[concept_id] = new_importance
+
+        logger.info(
+            f"Recalculated importance for book {book_id}: {len(updated)} concepts updated"
+        )
+        return updated
+
 
 # Factory function with thread-safe singleton
 _graph_builder: GraphBuilder | None = None
