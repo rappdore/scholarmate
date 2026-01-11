@@ -285,6 +285,50 @@ class TestExtractionProgress:
 
         assert len(progress) == 2
 
+    def test_extraction_progress_requires_exactly_one_identifier(
+        self, temp_db: KnowledgeDatabase
+    ):
+        """Test that extraction progress methods require exactly one of nav_id or page_num."""
+        # mark_section_extracted: Neither provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.mark_section_extracted(
+                book_id=1, book_type="epub", nav_id=None, page_num=None
+            )
+
+        # mark_section_extracted: Both provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.mark_section_extracted(
+                book_id=1, book_type="epub", nav_id="chapter1", page_num=5
+            )
+
+        # is_section_extracted: Neither provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.is_section_extracted(
+                book_id=1, book_type="epub", nav_id=None, page_num=None
+            )
+
+        # is_section_extracted: Both provided - should raise ValueError
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.is_section_extracted(
+                book_id=1, book_type="epub", nav_id="chapter1", page_num=5
+            )
+
+        # Only nav_id - should succeed
+        success = temp_db.mark_section_extracted(
+            book_id=1, book_type="epub", nav_id="chapter1"
+        )
+        assert success
+        assert temp_db.is_section_extracted(
+            book_id=1, book_type="epub", nav_id="chapter1"
+        )
+
+        # Only page_num - should succeed
+        success = temp_db.mark_section_extracted(
+            book_id=2, book_type="pdf", page_num=10
+        )
+        assert success
+        assert temp_db.is_section_extracted(book_id=2, book_type="pdf", page_num=10)
+
 
 class TestDeleteBookKnowledge:
     """Tests for deleting all book knowledge."""

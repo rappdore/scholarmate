@@ -555,7 +555,24 @@ class KnowledgeDatabase:
         nav_id: str | None = None,
         page_num: int | None = None,
     ) -> bool:
-        """Mark a section/page as having been extracted."""
+        """Mark a section/page as having been extracted.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
+        Returns:
+            True if the section was marked as extracted, False on error.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
+        """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 conn.execute(
@@ -579,7 +596,24 @@ class KnowledgeDatabase:
         nav_id: str | None = None,
         page_num: int | None = None,
     ) -> bool:
-        """Check if a section/page has been extracted."""
+        """Check if a section/page has been extracted.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
+        Returns:
+            True if the section has been extracted, False otherwise.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
+        """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 if nav_id is not None:
@@ -590,7 +624,7 @@ class KnowledgeDatabase:
                         """,
                         (book_id, book_type, nav_id),
                     )
-                elif page_num is not None:
+                else:
                     cursor = conn.execute(
                         """
                         SELECT 1 FROM extraction_progress
@@ -598,8 +632,6 @@ class KnowledgeDatabase:
                         """,
                         (book_id, book_type, page_num),
                     )
-                else:
-                    return False
 
                 return cursor.fetchone() is not None
         except Exception as e:
