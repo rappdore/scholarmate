@@ -147,6 +147,35 @@ class KnowledgeDatabase:
                 WHERE page_num IS NOT NULL
             """)
 
+            # Create relationship chunk progress tracking table (for resumable relationship extraction)
+            # Similar structure to chunk_progress but tracks relationship extraction phase
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS relationship_chunk_progress (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_id INTEGER NOT NULL,
+                    book_type TEXT NOT NULL CHECK (book_type IN ('epub', 'pdf')),
+                    nav_id TEXT,
+                    page_num INTEGER,
+                    chunk_index INTEGER NOT NULL,
+                    total_chunks INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CHECK ((nav_id IS NOT NULL AND page_num IS NULL) OR (nav_id IS NULL AND page_num IS NOT NULL))
+                )
+            """)
+
+            # Create partial unique indexes for relationship chunk progress
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_chunk_progress_epub_unique
+                ON relationship_chunk_progress(book_id, book_type, nav_id, chunk_index)
+                WHERE nav_id IS NOT NULL
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_chunk_progress_pdf_unique
+                ON relationship_chunk_progress(book_id, book_type, page_num, chunk_index)
+                WHERE page_num IS NOT NULL
+            """)
+
             # Create indexes for performance
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_concepts_book
@@ -183,6 +212,10 @@ class KnowledgeDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chunk_progress_section
                 ON chunk_progress(book_id, book_type, nav_id, page_num)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rel_chunk_progress_section
+                ON relationship_chunk_progress(book_id, book_type, nav_id, page_num)
             """)
 
             conn.commit()
@@ -723,6 +756,13 @@ class KnowledgeDatabase:
     # EXTRACTION PROGRESS TRACKING
     # ========================================
 
+    def _validate_section_identifier(
+        self, nav_id: str | None, page_num: int | None
+    ) -> None:
+        """Validate that exactly one of nav_id or page_num is provided."""
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
     def mark_section_extracted(
         self,
         book_id: int,
@@ -744,9 +784,7 @@ class KnowledgeDatabase:
         Raises:
             ValueError: If neither or both nav_id and page_num are provided.
         """
-        # Validate that exactly one of nav_id or page_num is provided
-        if (nav_id is None) == (page_num is None):
-            raise ValueError("Exactly one of nav_id or page_num must be provided")
+        self._validate_section_identifier(nav_id, page_num)
 
         try:
             with self.get_connection() as conn:
@@ -785,9 +823,7 @@ class KnowledgeDatabase:
         Raises:
             ValueError: If neither or both nav_id and page_num are provided.
         """
-        # Validate that exactly one of nav_id or page_num is provided
-        if (nav_id is None) == (page_num is None):
-            raise ValueError("Exactly one of nav_id or page_num must be provided")
+        self._validate_section_identifier(nav_id, page_num)
 
         try:
             with self.get_connection() as conn:
@@ -837,6 +873,108 @@ class KnowledgeDatabase:
     # CHUNK PROGRESS TRACKING (for resumable extraction)
     # ========================================
 
+    def _mark_chunk_extracted_impl(
+        self,
+        table_name: str,
+        book_id: int,
+        book_type: str,
+        chunk_index: int,
+        total_chunks: int,
+        content_hash: str,
+        nav_id: str | None,
+        page_num: int | None,
+    ) -> bool:
+        """Internal implementation for marking a chunk as extracted."""
+        self._validate_section_identifier(nav_id, page_num)
+
+        try:
+            with self.get_connection() as conn:
+                # Use ON CONFLICT with the appropriate partial index based on book type
+                conflict_column = "nav_id" if nav_id is not None else "page_num"
+                conn.execute(
+                    f"""
+                    INSERT INTO {table_name}
+                    (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(book_id, book_type, {conflict_column}, chunk_index)
+                    WHERE {conflict_column} IS NOT NULL
+                    DO UPDATE SET total_chunks = excluded.total_chunks,
+                                  content_hash = excluded.content_hash,
+                                  extracted_at = excluded.extracted_at
+                    """,
+                    (
+                        book_id,
+                        book_type,
+                        nav_id,
+                        page_num,
+                        chunk_index,
+                        total_chunks,
+                        content_hash,
+                        datetime.now().isoformat(),
+                    ),
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error marking chunk extracted in {table_name}: {e}")
+            return False
+
+    def _get_extracted_chunks_impl(
+        self,
+        table_name: str,
+        book_id: int,
+        book_type: str,
+        content_hash: str,
+        nav_id: str | None,
+        page_num: int | None,
+    ) -> set[int]:
+        """Internal implementation for getting extracted chunk indices."""
+        self._validate_section_identifier(nav_id, page_num)
+
+        try:
+            with self.get_connection() as conn:
+                location_column = "nav_id" if nav_id is not None else "page_num"
+                location_value = nav_id if nav_id is not None else page_num
+                cursor = conn.execute(
+                    f"""
+                    SELECT chunk_index FROM {table_name}
+                    WHERE book_id = ? AND book_type = ? AND {location_column} = ? AND content_hash = ?
+                    """,
+                    (book_id, book_type, location_value, content_hash),
+                )
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Error getting extracted chunks from {table_name}: {e}")
+            return set()
+
+    def _clear_chunk_progress_impl(
+        self,
+        table_name: str,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None,
+        page_num: int | None,
+    ) -> bool:
+        """Internal implementation for clearing chunk progress."""
+        self._validate_section_identifier(nav_id, page_num)
+
+        try:
+            with self.get_connection() as conn:
+                location_column = "nav_id" if nav_id is not None else "page_num"
+                location_value = nav_id if nav_id is not None else page_num
+                conn.execute(
+                    f"""
+                    DELETE FROM {table_name}
+                    WHERE book_id = ? AND book_type = ? AND {location_column} = ?
+                    """,
+                    (book_id, book_type, location_value),
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error clearing chunk progress from {table_name}: {e}")
+            return False
+
     def mark_chunk_extracted(
         self,
         book_id: int,
@@ -864,64 +1002,16 @@ class KnowledgeDatabase:
         Raises:
             ValueError: If neither or both nav_id and page_num are provided.
         """
-        # Validate that exactly one of nav_id or page_num is provided
-        if (nav_id is None) == (page_num is None):
-            raise ValueError("Exactly one of nav_id or page_num must be provided")
-
-        try:
-            with self.get_connection() as conn:
-                # Use ON CONFLICT with the appropriate partial index based on book type
-                # SQLite treats NULLs as distinct in UNIQUE constraints, so we have
-                # separate partial unique indexes for EPUB (nav_id) and PDF (page_num)
-                if nav_id is not None:
-                    conn.execute(
-                        """
-                        INSERT INTO chunk_progress
-                        (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(book_id, book_type, nav_id, chunk_index) WHERE nav_id IS NOT NULL
-                        DO UPDATE SET total_chunks = excluded.total_chunks,
-                                      content_hash = excluded.content_hash,
-                                      extracted_at = excluded.extracted_at
-                        """,
-                        (
-                            book_id,
-                            book_type,
-                            nav_id,
-                            page_num,
-                            chunk_index,
-                            total_chunks,
-                            content_hash,
-                            datetime.now().isoformat(),
-                        ),
-                    )
-                else:
-                    conn.execute(
-                        """
-                        INSERT INTO chunk_progress
-                        (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(book_id, book_type, page_num, chunk_index) WHERE page_num IS NOT NULL
-                        DO UPDATE SET total_chunks = excluded.total_chunks,
-                                      content_hash = excluded.content_hash,
-                                      extracted_at = excluded.extracted_at
-                        """,
-                        (
-                            book_id,
-                            book_type,
-                            nav_id,
-                            page_num,
-                            chunk_index,
-                            total_chunks,
-                            content_hash,
-                            datetime.now().isoformat(),
-                        ),
-                    )
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error marking chunk extracted: {e}")
-            return False
+        return self._mark_chunk_extracted_impl(
+            "chunk_progress",
+            book_id,
+            book_type,
+            chunk_index,
+            total_chunks,
+            content_hash,
+            nav_id,
+            page_num,
+        )
 
     def get_extracted_chunks(
         self,
@@ -949,33 +1039,9 @@ class KnowledgeDatabase:
         Raises:
             ValueError: If neither or both nav_id and page_num are provided.
         """
-        # Validate that exactly one of nav_id or page_num is provided
-        if (nav_id is None) == (page_num is None):
-            raise ValueError("Exactly one of nav_id or page_num must be provided")
-
-        try:
-            with self.get_connection() as conn:
-                if nav_id is not None:
-                    cursor = conn.execute(
-                        """
-                        SELECT chunk_index FROM chunk_progress
-                        WHERE book_id = ? AND book_type = ? AND nav_id = ? AND content_hash = ?
-                        """,
-                        (book_id, book_type, nav_id, content_hash),
-                    )
-                else:
-                    cursor = conn.execute(
-                        """
-                        SELECT chunk_index FROM chunk_progress
-                        WHERE book_id = ? AND book_type = ? AND page_num = ? AND content_hash = ?
-                        """,
-                        (book_id, book_type, page_num, content_hash),
-                    )
-
-                return {row[0] for row in cursor.fetchall()}
-        except Exception as e:
-            logger.error(f"Error getting extracted chunks: {e}")
-            return set()
+        return self._get_extracted_chunks_impl(
+            "chunk_progress", book_id, book_type, content_hash, nav_id, page_num
+        )
 
     def get_chunk_progress_info(
         self,
@@ -1061,33 +1127,111 @@ class KnowledgeDatabase:
         Raises:
             ValueError: If neither or both nav_id and page_num are provided.
         """
-        # Validate that exactly one of nav_id or page_num is provided
-        if (nav_id is None) == (page_num is None):
-            raise ValueError("Exactly one of nav_id or page_num must be provided")
+        return self._clear_chunk_progress_impl(
+            "chunk_progress", book_id, book_type, nav_id, page_num
+        )
 
-        try:
-            with self.get_connection() as conn:
-                if nav_id is not None:
-                    conn.execute(
-                        """
-                        DELETE FROM chunk_progress
-                        WHERE book_id = ? AND book_type = ? AND nav_id = ?
-                        """,
-                        (book_id, book_type, nav_id),
-                    )
-                else:
-                    conn.execute(
-                        """
-                        DELETE FROM chunk_progress
-                        WHERE book_id = ? AND book_type = ? AND page_num = ?
-                        """,
-                        (book_id, book_type, page_num),
-                    )
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error clearing chunk progress: {e}")
-            return False
+    # ========================================
+    # RELATIONSHIP CHUNK PROGRESS TRACKING (for resumable relationship extraction)
+    # ========================================
+
+    def mark_relationship_chunk_extracted(
+        self,
+        book_id: int,
+        book_type: str,
+        chunk_index: int,
+        total_chunks: int,
+        content_hash: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> bool:
+        """Mark a relationship chunk as having been extracted (for resumability).
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            chunk_index: Index of the chunk (0-based)
+            total_chunks: Total number of chunks in the section
+            content_hash: Hash of the content to detect changes
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
+        Returns:
+            True if the chunk was marked as extracted, False on error.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
+        """
+        return self._mark_chunk_extracted_impl(
+            "relationship_chunk_progress",
+            book_id,
+            book_type,
+            chunk_index,
+            total_chunks,
+            content_hash,
+            nav_id,
+            page_num,
+        )
+
+    def get_extracted_relationship_chunks(
+        self,
+        book_id: int,
+        book_type: str,
+        content_hash: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> set[int]:
+        """Get the set of relationship chunk indices that have been extracted for a section.
+
+        Only returns chunks that match the current content_hash (to detect
+        when content has changed and extraction needs to restart).
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            content_hash: Hash of the current content
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
+        Returns:
+            Set of chunk indices that have been extracted.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
+        """
+        return self._get_extracted_chunks_impl(
+            "relationship_chunk_progress",
+            book_id,
+            book_type,
+            content_hash,
+            nav_id,
+            page_num,
+        )
+
+    def clear_relationship_chunk_progress(
+        self,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> bool:
+        """Clear relationship chunk progress for a section.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
+        Returns:
+            True if cleared successfully, False on error.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
+        """
+        return self._clear_chunk_progress_impl(
+            "relationship_chunk_progress", book_id, book_type, nav_id, page_num
+        )
 
     # ========================================
     # FLASHCARD OPERATIONS (basic for Phase 1)
@@ -1270,6 +1414,12 @@ class KnowledgeDatabase:
                 # Delete chunk progress
                 conn.execute(
                     "DELETE FROM chunk_progress WHERE book_id = ? AND book_type = ?",
+                    (book_id, book_type),
+                )
+
+                # Delete relationship chunk progress
+                conn.execute(
+                    "DELETE FROM relationship_chunk_progress WHERE book_id = ? AND book_type = ?",
                     (book_id, book_type),
                 )
 

@@ -146,17 +146,26 @@ export type ExtractionStatusType =
   | 'completed'
   | 'failed';
 
+export type ExtractionPhase = 'concepts' | 'relationships';
+
 export interface ExtractionStatusInfo {
   book_id: number;
   book_type: 'epub' | 'pdf';
   section_id: string;
   status: ExtractionStatusType;
+  phase: ExtractionPhase;
   started_at: number;
   elapsed_seconds: number;
+  // Concept extraction progress
   chunks_processed: number;
   total_chunks: number;
   concepts_stored: number;
   progress_percent: number;
+  // Relationship extraction progress
+  rel_chunks_processed: number;
+  rel_total_chunks: number;
+  relationships_stored: number;
+  phase_progress_percent: number;
   error_message: string | null;
 }
 
@@ -174,6 +183,23 @@ export interface CancelExtractionResponse {
   book_id: number;
   section_id?: string;
   extractions_cancelled?: number;
+}
+
+export interface RelationshipExtractionRequest {
+  book_id: number;
+  book_type: 'epub' | 'pdf';
+  nav_id?: string | null;
+  page_num?: number | null;
+  force?: boolean;
+}
+
+export interface RelationshipExtractionResponse {
+  relationships_found: number;
+  chunks_processed: number;
+  total_chunks: number;
+  resumed: boolean;
+  cancelled?: boolean;
+  error?: string | null;
 }
 
 // Similar concept result with similarity score

@@ -10,7 +10,7 @@ Backend uses uv for environment management. So use uv to run any python commands
 
 
 
-- when asked to do something do not assume answers to questions that you do not know for sure. Use the AskUserQuestionTool aboute literally anything that you think will provide you more information on how to do the job better
+- when asked to do something do not assume answers to questions that you do not know for sure. Use the AskUserQuestionTool about literally anything that you think will provide you more information on how to do the job better
 
 - Always use the code simplifier agent at the end of coding session if we have added significant amount of code.
 

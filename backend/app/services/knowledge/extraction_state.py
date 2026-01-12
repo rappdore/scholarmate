@@ -28,6 +28,13 @@ class ExtractionStatus(Enum):
     FAILED = auto()
 
 
+class ExtractionPhase(Enum):
+    """Phase of an extraction operation."""
+
+    CONCEPTS = auto()
+    RELATIONSHIPS = auto()
+
+
 @dataclass
 class ExtractionState:
     """State of a single extraction operation."""
@@ -36,29 +43,54 @@ class ExtractionState:
     book_type: str
     section_id: str
     status: ExtractionStatus = ExtractionStatus.PENDING
+    phase: ExtractionPhase = ExtractionPhase.CONCEPTS
     started_at: float = field(default_factory=time.time)
+    # Concept extraction progress
     chunks_processed: int = 0
     total_chunks: int = 0
     concepts_stored: int = 0
+    # Relationship extraction progress
+    rel_chunks_processed: int = 0
+    rel_total_chunks: int = 0
+    relationships_stored: int = 0
     error_message: str | None = None
+
+    def _calculate_progress(self, processed: int, total: int) -> float:
+        """Calculate progress percentage."""
+        if total > 0:
+            return round(processed / total * 100, 1)
+        return 0.0
 
     def to_dict(self) -> dict:
         """Convert state to dictionary for API response."""
+        concept_progress = self._calculate_progress(
+            self.chunks_processed, self.total_chunks
+        )
+        rel_progress = self._calculate_progress(
+            self.rel_chunks_processed, self.rel_total_chunks
+        )
+        phase_progress = (
+            concept_progress if self.phase == ExtractionPhase.CONCEPTS else rel_progress
+        )
+
         return {
             "book_id": self.book_id,
             "book_type": self.book_type,
             "section_id": self.section_id,
             "status": self.status.name.lower(),
+            "phase": self.phase.name.lower(),
             "started_at": self.started_at,
             "elapsed_seconds": time.time() - self.started_at,
+            # Concept extraction progress
             "chunks_processed": self.chunks_processed,
             "total_chunks": self.total_chunks,
             "concepts_stored": self.concepts_stored,
-            "progress_percent": (
-                round(self.chunks_processed / self.total_chunks * 100, 1)
-                if self.total_chunks > 0
-                else 0
-            ),
+            "progress_percent": concept_progress,
+            # Relationship extraction progress
+            "rel_chunks_processed": self.rel_chunks_processed,
+            "rel_total_chunks": self.rel_total_chunks,
+            "relationships_stored": self.relationships_stored,
+            "phase_progress_percent": phase_progress,
             "error_message": self.error_message,
         }
 
@@ -133,7 +165,7 @@ class ExtractionRegistry:
         total_chunks: int,
         concepts_stored: int,
     ) -> None:
-        """Update progress for a running extraction."""
+        """Update progress for a running extraction (concept phase)."""
         key = self._make_key(book_id, book_type, section_id)
         with self._lock:
             if key in self._extractions:
@@ -141,6 +173,38 @@ class ExtractionRegistry:
                 state.chunks_processed = chunks_processed
                 state.total_chunks = total_chunks
                 state.concepts_stored = concepts_stored
+
+    def update_phase(
+        self,
+        book_id: int,
+        book_type: str,
+        section_id: str,
+        phase: ExtractionPhase,
+    ) -> None:
+        """Update the current extraction phase."""
+        key = self._make_key(book_id, book_type, section_id)
+        with self._lock:
+            if key in self._extractions:
+                self._extractions[key].phase = phase
+                logger.info(f"Updated phase to {phase.name} for: {key}")
+
+    def update_relationship_progress(
+        self,
+        book_id: int,
+        book_type: str,
+        section_id: str,
+        rel_chunks_processed: int,
+        rel_total_chunks: int,
+        relationships_stored: int,
+    ) -> None:
+        """Update progress for relationship extraction phase."""
+        key = self._make_key(book_id, book_type, section_id)
+        with self._lock:
+            if key in self._extractions:
+                state = self._extractions[key]
+                state.rel_chunks_processed = rel_chunks_processed
+                state.rel_total_chunks = rel_total_chunks
+                state.relationships_stored = relationships_stored
 
     def mark_completed(
         self,

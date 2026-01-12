@@ -309,12 +309,30 @@ interface ExtractionProgressProps {
 }
 
 function ExtractionProgress({ status, onCancel }: ExtractionProgressProps) {
-  const progressPercent = status?.progress_percent ?? 0;
+  const phase = status?.phase ?? 'concepts';
+  const isConceptPhase = phase === 'concepts';
+  const isCancelling = status?.status === 'cancelling';
+
+  // Concept phase progress
+  const conceptsProgress = status?.progress_percent ?? 0;
   const chunksProcessed = status?.chunks_processed ?? 0;
   const totalChunks = status?.total_chunks ?? 0;
   const conceptsStored = status?.concepts_stored ?? 0;
+
+  // Relationship phase progress
+  const relProgress = isConceptPhase
+    ? 0
+    : (status?.phase_progress_percent ?? 0);
+  const relChunksProcessed = status?.rel_chunks_processed ?? 0;
+  const relTotalChunks = status?.rel_total_chunks ?? 0;
+  const relationshipsStored = status?.relationships_stored ?? 0;
+
   const elapsedSeconds = status?.elapsed_seconds ?? 0;
-  const isCancelling = status?.status === 'cancelling';
+
+  // Overall progress (concepts = 0-50%, relationships = 50-100%)
+  const overallProgress = isConceptPhase
+    ? conceptsProgress / 2
+    : 50 + relProgress / 2;
 
   // Format elapsed time
   const formatTime = (seconds: number): string => {
@@ -326,16 +344,36 @@ function ExtractionProgress({ status, onCancel }: ExtractionProgressProps) {
 
   return (
     <div className="space-y-3">
-      {/* Progress bar */}
+      {/* Overall progress bar */}
       <div className="relative">
         <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 ${
               isCancelling ? 'bg-yellow-500' : 'bg-blue-500'
             }`}
-            style={{ width: `${progressPercent}%` }}
+            style={{ width: `${overallProgress}%` }}
           />
         </div>
+        {/* Phase indicator at 50% mark */}
+        <div className="absolute top-0 left-1/2 w-0.5 h-2 bg-gray-500" />
+      </div>
+
+      {/* Phase indicator */}
+      <div className="flex items-center justify-between text-xs">
+        <span
+          className={`${isConceptPhase ? 'text-blue-400' : 'text-green-400'}`}
+        >
+          {isConceptPhase
+            ? `Concepts (${chunksProcessed}/${totalChunks})`
+            : 'Concepts ✓'}
+        </span>
+        <span
+          className={`${!isConceptPhase ? 'text-blue-400' : 'text-gray-500'}`}
+        >
+          {!isConceptPhase
+            ? `Relationships (${relChunksProcessed}/${relTotalChunks})`
+            : 'Relationships'}
+        </span>
       </div>
 
       {/* Status text */}
@@ -344,11 +382,11 @@ function ExtractionProgress({ status, onCancel }: ExtractionProgressProps) {
           {isCancelling ? (
             <span className="text-yellow-400">Cancelling...</span>
           ) : status ? (
-            <>
-              Chunk {chunksProcessed}/{totalChunks} (
-              {progressPercent.toFixed(0)}
-              %)
-            </>
+            isConceptPhase ? (
+              `Extracting concepts... ${conceptsProgress.toFixed(0)}%`
+            ) : (
+              `Extracting relationships... ${relProgress.toFixed(0)}%`
+            )
           ) : (
             'Starting extraction...'
           )}
@@ -359,7 +397,8 @@ function ExtractionProgress({ status, onCancel }: ExtractionProgressProps) {
       {/* Stats */}
       {status && (
         <div className="flex items-center gap-4 text-xs text-gray-400">
-          <span>{conceptsStored} concepts extracted</span>
+          <span>{conceptsStored} concepts</span>
+          {!isConceptPhase && <span>{relationshipsStored} relationships</span>}
         </div>
       )}
 

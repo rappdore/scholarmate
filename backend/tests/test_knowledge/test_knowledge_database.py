@@ -525,3 +525,193 @@ class TestStats:
         stats = temp_db.get_stats()
         assert stats["total_concepts"] == 2
         assert stats["total_relationships"] == 1
+
+
+class TestRelationshipChunkProgress:
+    """Tests for relationship chunk progress tracking (resumable relationship extraction)."""
+
+    def test_mark_relationship_chunk_extracted(self, temp_db: KnowledgeDatabase):
+        """Test marking a relationship chunk as extracted."""
+        success = temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=0,
+            total_chunks=3,
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+        assert success
+
+    def test_get_extracted_relationship_chunks(self, temp_db: KnowledgeDatabase):
+        """Test getting set of extracted relationship chunk indices."""
+        # Mark some chunks as extracted
+        temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=0,
+            total_chunks=3,
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+        temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=2,
+            total_chunks=3,
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+
+        # Get extracted chunks with same hash
+        extracted = temp_db.get_extracted_relationship_chunks(
+            book_id=1,
+            book_type="epub",
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+
+        assert extracted == {0, 2}
+
+    def test_get_extracted_relationship_chunks_different_hash(
+        self, temp_db: KnowledgeDatabase
+    ):
+        """Test that chunks with different hash are not returned."""
+        # Mark chunk with hash "abc"
+        temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=0,
+            total_chunks=3,
+            content_hash="abc",
+            nav_id="chapter1",
+        )
+
+        # Query with different hash
+        extracted = temp_db.get_extracted_relationship_chunks(
+            book_id=1,
+            book_type="epub",
+            content_hash="xyz",
+            nav_id="chapter1",
+        )
+
+        assert extracted == set()
+
+    def test_clear_relationship_chunk_progress(self, temp_db: KnowledgeDatabase):
+        """Test clearing relationship chunk progress for a section."""
+        # Mark some chunks
+        temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=0,
+            total_chunks=3,
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+        temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="epub",
+            chunk_index=1,
+            total_chunks=3,
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+
+        # Clear progress
+        success = temp_db.clear_relationship_chunk_progress(
+            book_id=1,
+            book_type="epub",
+            nav_id="chapter1",
+        )
+        assert success
+
+        # Should be empty now
+        extracted = temp_db.get_extracted_relationship_chunks(
+            book_id=1,
+            book_type="epub",
+            content_hash="abc123",
+            nav_id="chapter1",
+        )
+        assert extracted == set()
+
+    def test_relationship_chunk_progress_pdf(self, temp_db: KnowledgeDatabase):
+        """Test relationship chunk progress for PDF (using page_num)."""
+        # Mark chunk for PDF
+        success = temp_db.mark_relationship_chunk_extracted(
+            book_id=1,
+            book_type="pdf",
+            chunk_index=0,
+            total_chunks=2,
+            content_hash="hash123",
+            page_num=5,
+        )
+        assert success
+
+        # Get extracted chunks
+        extracted = temp_db.get_extracted_relationship_chunks(
+            book_id=1,
+            book_type="pdf",
+            content_hash="hash123",
+            page_num=5,
+        )
+        assert extracted == {0}
+
+        # Clear and verify
+        temp_db.clear_relationship_chunk_progress(
+            book_id=1,
+            book_type="pdf",
+            page_num=5,
+        )
+        extracted = temp_db.get_extracted_relationship_chunks(
+            book_id=1,
+            book_type="pdf",
+            content_hash="hash123",
+            page_num=5,
+        )
+        assert extracted == set()
+
+    def test_relationship_chunk_progress_requires_exactly_one_identifier(
+        self, temp_db: KnowledgeDatabase
+    ):
+        """Test that relationship chunk methods require exactly one of nav_id or page_num."""
+        # mark_relationship_chunk_extracted: Neither provided
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.mark_relationship_chunk_extracted(
+                book_id=1,
+                book_type="epub",
+                chunk_index=0,
+                total_chunks=3,
+                content_hash="abc",
+                nav_id=None,
+                page_num=None,
+            )
+
+        # mark_relationship_chunk_extracted: Both provided
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.mark_relationship_chunk_extracted(
+                book_id=1,
+                book_type="epub",
+                chunk_index=0,
+                total_chunks=3,
+                content_hash="abc",
+                nav_id="chapter1",
+                page_num=5,
+            )
+
+        # get_extracted_relationship_chunks: Neither provided
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.get_extracted_relationship_chunks(
+                book_id=1,
+                book_type="epub",
+                content_hash="abc",
+                nav_id=None,
+                page_num=None,
+            )
+
+        # clear_relationship_chunk_progress: Neither provided
+        with pytest.raises(ValueError, match="Exactly one of"):
+            temp_db.clear_relationship_chunk_progress(
+                book_id=1,
+                book_type="epub",
+                nav_id=None,
+                page_num=None,
+            )

@@ -217,6 +217,27 @@ class ExtractionProgress(BaseModel):
     extracted_at: str
 
 
+class RelationshipExtractionRequest(BaseModel):
+    """Request model for extracting relationships only (concepts must exist)"""
+
+    book_id: int
+    book_type: Literal["epub", "pdf"]
+    nav_id: str | None = None
+    page_num: int | None = None
+    force: bool = False  # Force re-extraction even if already done
+
+
+class RelationshipExtractionResponse(BaseModel):
+    """Response model after relationship-only extraction completes"""
+
+    relationships_found: int
+    chunks_processed: int
+    total_chunks: int
+    resumed: bool
+    cancelled: bool = False
+    error: str | None = None
+
+
 # ========================================
 # GRAPH MODELS
 # ========================================

@@ -21,6 +21,8 @@ from app.models.knowledge_models import (
     KnowledgeStats,
     Relationship,
     RelationshipCreate,
+    RelationshipExtractionRequest,
+    RelationshipExtractionResponse,
     RelationshipUpdate,
 )
 from app.services.epub_documents_service import EPUBDocumentsService
@@ -178,6 +180,61 @@ async def extract_concepts(request: ExtractionRequest) -> ExtractionResponse:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@router.post("/extract-relationships", response_model=RelationshipExtractionResponse)
+async def extract_relationships_only(
+    request: RelationshipExtractionRequest,
+) -> RelationshipExtractionResponse:
+    """
+    Extract relationships for a section that already has concepts.
+
+    Use this to:
+    - Resume failed relationship extraction
+    - Re-extract relationships after manual concept edits
+    - Force refresh relationships
+
+    The section must already have concepts extracted. If there are fewer than
+    2 concepts, an error will be returned.
+    """
+    try:
+        # Get book info
+        filename, book_title = _get_book_info(request.book_id, request.book_type)
+
+        # Get section content
+        content, section_title = _get_section_content(
+            book_id=request.book_id,
+            book_type=request.book_type,
+            nav_id=request.nav_id,
+            page_num=request.page_num,
+        )
+
+        # Run relationship extraction
+        graph_builder = get_graph_builder()
+        result = await graph_builder.extract_relationships_only(
+            content=content,
+            book_id=request.book_id,
+            book_type=request.book_type,
+            nav_id=request.nav_id,
+            page_num=request.page_num,
+            force=request.force,
+        )
+
+        return RelationshipExtractionResponse(
+            relationships_found=result["relationships_found"],
+            chunks_processed=result["chunks_processed"],
+            total_chunks=result["total_chunks"],
+            resumed=result["resumed"],
+            cancelled=result.get("cancelled", False),
+            error=result.get("error"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Relationship extraction failed: {str(e)}"
+        )
 
 
 @router.post("/cancel-extraction")

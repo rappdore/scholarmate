@@ -5,6 +5,7 @@ import time
 import pytest
 
 from app.services.knowledge.extraction_state import (
+    ExtractionPhase,
     ExtractionRegistry,
     ExtractionState,
     ExtractionStatus,
@@ -26,9 +27,14 @@ class TestExtractionState:
         assert state.book_type == "epub"
         assert state.section_id == "chapter1"
         assert state.status == ExtractionStatus.PENDING
+        assert state.phase == ExtractionPhase.CONCEPTS
         assert state.chunks_processed == 0
         assert state.total_chunks == 0
         assert state.concepts_stored == 0
+        # Relationship progress fields
+        assert state.rel_chunks_processed == 0
+        assert state.rel_total_chunks == 0
+        assert state.relationships_stored == 0
         assert state.error_message is None
 
     def test_state_to_dict(self) -> None:
@@ -49,12 +55,43 @@ class TestExtractionState:
         assert result["book_type"] == "epub"
         assert result["section_id"] == "chapter1"
         assert result["status"] == "running"
+        assert result["phase"] == "concepts"
         assert result["chunks_processed"] == 5
         assert result["total_chunks"] == 10
         assert result["concepts_stored"] == 15
         assert result["progress_percent"] == 50.0
+        # Relationship progress fields
+        assert result["rel_chunks_processed"] == 0
+        assert result["rel_total_chunks"] == 0
+        assert result["relationships_stored"] == 0
+        assert result["phase_progress_percent"] == 50.0  # Same as concept progress
         assert "elapsed_seconds" in result
         assert "started_at" in result
+
+    def test_state_to_dict_relationship_phase(self) -> None:
+        """Test ExtractionState.to_dict() for relationship phase."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            status=ExtractionStatus.RUNNING,
+            phase=ExtractionPhase.RELATIONSHIPS,
+            chunks_processed=10,
+            total_chunks=10,
+            concepts_stored=20,
+            rel_chunks_processed=3,
+            rel_total_chunks=5,
+            relationships_stored=8,
+        )
+
+        result = state.to_dict()
+
+        assert result["phase"] == "relationships"
+        assert result["progress_percent"] == 100.0  # Concept progress
+        assert result["rel_chunks_processed"] == 3
+        assert result["rel_total_chunks"] == 5
+        assert result["relationships_stored"] == 8
+        assert result["phase_progress_percent"] == 60.0  # 3/5 = 60%
 
     def test_state_progress_percent_zero_chunks(self) -> None:
         """Test progress percent is 0 when total_chunks is 0."""
@@ -273,3 +310,43 @@ class TestExtractionRegistry:
         running = registry.get_running_extractions()
         assert len(running) == 1
         assert running[0].status == ExtractionStatus.CANCELLING
+
+    def test_update_phase(self, registry: ExtractionRegistry) -> None:
+        """Test updating extraction phase."""
+        registry.register_extraction(1, "epub", "chapter1")
+
+        # Initially should be CONCEPTS phase
+        state = registry.get_extraction_state(1, "epub", "chapter1")
+        assert state is not None
+        assert state.phase == ExtractionPhase.CONCEPTS
+
+        # Update to RELATIONSHIPS phase
+        registry.update_phase(1, "epub", "chapter1", ExtractionPhase.RELATIONSHIPS)
+
+        state = registry.get_extraction_state(1, "epub", "chapter1")
+        assert state is not None
+        assert state.phase == ExtractionPhase.RELATIONSHIPS
+
+    def test_update_relationship_progress(self, registry: ExtractionRegistry) -> None:
+        """Test updating relationship extraction progress."""
+        registry.register_extraction(1, "epub", "chapter1")
+        registry.update_phase(1, "epub", "chapter1", ExtractionPhase.RELATIONSHIPS)
+        registry.update_relationship_progress(1, "epub", "chapter1", 3, 5, 10)
+
+        state = registry.get_extraction_state(1, "epub", "chapter1")
+        assert state is not None
+        assert state.rel_chunks_processed == 3
+        assert state.rel_total_chunks == 5
+        assert state.relationships_stored == 10
+
+    def test_update_phase_nonexistent(self, registry: ExtractionRegistry) -> None:
+        """Test updating phase for nonexistent extraction does not fail."""
+        # Should not raise, just silently do nothing
+        registry.update_phase(999, "epub", "nonexistent", ExtractionPhase.RELATIONSHIPS)
+
+    def test_update_relationship_progress_nonexistent(
+        self, registry: ExtractionRegistry
+    ) -> None:
+        """Test updating relationship progress for nonexistent extraction."""
+        # Should not raise, just silently do nothing
+        registry.update_relationship_progress(999, "epub", "nonexistent", 1, 2, 3)
