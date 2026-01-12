@@ -54,6 +54,15 @@ export function useKnowledge({
   // Ref to track if we should continue polling
   const pollingRef = useRef<boolean>(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track when polling started to handle race condition with backend registration
+  const pollingStartTimeRef = useRef<number>(0);
+  // Track setTimeout IDs for cleanup on unmount
+  const statusClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  // Grace period before giving up on finding extraction status (ms)
+  // This accounts for time between API call start and backend registering the extraction
+  const POLLING_GRACE_PERIOD_MS = 10000; // 10 seconds
 
   // Compute section ID for status queries
   const sectionId = useMemo(() => {
@@ -164,6 +173,7 @@ export function useKnowledge({
     }
 
     pollingRef.current = true;
+    pollingStartTimeRef.current = Date.now();
 
     const poll = async () => {
       if (!pollingRef.current) return;
@@ -183,21 +193,29 @@ export function useKnowledge({
           setIsExtracting(false);
 
           // Refresh concepts and progress after completion
-          await loadConcepts();
-          await refreshExtractionProgress();
+          await Promise.all([loadConcepts(), refreshExtractionProgress()]);
 
           // Keep status visible for a moment, then clear
-          setTimeout(() => {
+          // Track the timeout so it can be cleared on unmount
+          statusClearTimeoutRef.current = setTimeout(() => {
             setExtractionStatus(null);
           }, 2000);
         }
       } else {
-        // No status found - extraction might have finished before we started polling
-        // or was never started. Stop polling.
-        if (pollingRef.current) {
-          stopPolling();
-          setIsExtracting(false);
+        // No status found - but don't give up immediately!
+        // There's a race condition: the backend might not have registered
+        // the extraction yet (it does setup before calling register_extraction).
+        // Only stop polling after the grace period has elapsed.
+        const elapsedMs = Date.now() - pollingStartTimeRef.current;
+        if (elapsedMs > POLLING_GRACE_PERIOD_MS) {
+          // Grace period exceeded - extraction either finished very quickly
+          // or was never started. Stop polling.
+          if (pollingRef.current) {
+            stopPolling();
+            setIsExtracting(false);
+          }
         }
+        // Otherwise, keep polling - the backend will register the extraction soon
       }
     };
 
@@ -215,6 +233,11 @@ export function useKnowledge({
   useEffect(() => {
     return () => {
       stopPolling();
+      // Clear any pending status clear timeout to prevent state update after unmount
+      if (statusClearTimeoutRef.current) {
+        clearTimeout(statusClearTimeoutRef.current);
+        statusClearTimeoutRef.current = null;
+      }
     };
   }, [stopPolling]);
 

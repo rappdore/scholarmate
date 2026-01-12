@@ -394,3 +394,5 @@ gcloud-service-key.json
 plans/
 
 backend/data/
+
+CLAUDE.md

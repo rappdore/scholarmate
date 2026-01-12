@@ -16,6 +16,7 @@ import type {
   KnowledgeStats,
   ExtractionStatusResponse,
   CancelExtractionResponse,
+  SimilarConceptResult,
 } from '../types/knowledge';
 
 const api = axios.create({
@@ -109,7 +110,7 @@ export const knowledgeService = {
   findSimilarConcepts: async (
     conceptId: number,
     options?: { n_results?: number; cross_book?: boolean }
-  ): Promise<Concept[]> => {
+  ): Promise<SimilarConceptResult[]> => {
     const response = await api.get(`/api/knowledge/similar/${conceptId}`, {
       params: options,
     });

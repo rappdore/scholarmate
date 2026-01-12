@@ -838,12 +838,19 @@ class KnowledgeDatabase:
             chunk_index: Index of the chunk (0-based)
             total_chunks: Total number of chunks in the section
             content_hash: Hash of the content to detect changes
-            nav_id: Navigation ID for EPUB sections
-            page_num: Page number for PDFs
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
 
         Returns:
             True if the chunk was marked as extracted, False on error.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
         """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 conn.execute(
@@ -886,12 +893,19 @@ class KnowledgeDatabase:
             book_id: ID of the book
             book_type: Type of book ('epub' or 'pdf')
             content_hash: Hash of the current content
-            nav_id: Navigation ID for EPUB sections
-            page_num: Page number for PDFs
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
 
         Returns:
             Set of chunk indices that have been extracted.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
         """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 if nav_id is not None:
@@ -925,10 +939,23 @@ class KnowledgeDatabase:
     ) -> dict[str, Any] | None:
         """Get chunk progress info for a section.
 
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
+
         Returns:
             Dictionary with 'extracted_chunks', 'total_chunks', 'content_hash',
             or None if no progress exists.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
         """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
@@ -978,12 +1005,19 @@ class KnowledgeDatabase:
         Args:
             book_id: ID of the book
             book_type: Type of book ('epub' or 'pdf')
-            nav_id: Navigation ID for EPUB sections
-            page_num: Page number for PDFs
+            nav_id: Navigation ID for EPUB sections (mutually exclusive with page_num)
+            page_num: Page number for PDFs (mutually exclusive with nav_id)
 
         Returns:
             True if cleared successfully, False on error.
+
+        Raises:
+            ValueError: If neither or both nav_id and page_num are provided.
         """
+        # Validate that exactly one of nav_id or page_num is provided
+        if (nav_id is None) == (page_num is None):
+            raise ValueError("Exactly one of nav_id or page_num must be provided")
+
         try:
             with self.get_connection() as conn:
                 if nav_id is not None:
@@ -1183,6 +1217,12 @@ class KnowledgeDatabase:
                 # Delete extraction progress
                 conn.execute(
                     "DELETE FROM extraction_progress WHERE book_id = ? AND book_type = ?",
+                    (book_id, book_type),
+                )
+
+                # Delete chunk progress
+                conn.execute(
+                    "DELETE FROM chunk_progress WHERE book_id = ? AND book_type = ?",
                     (book_id, book_type),
                 )
 

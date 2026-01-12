@@ -160,11 +160,20 @@ class GraphBuilder:
         stored_concepts: dict[str, int] = {}
         chunks_processed = 0
         chunks_skipped = 0
-        total_chunks = 0
         was_cancelled = False
+
+        # Pre-compute chunk count so we can report accurate progress from the start
+        chunks = self.concept_extractor.chunk_content(content)
+        total_chunks = len(chunks)
+        logger.info(f"Content will be split into {total_chunks} chunks")
 
         # Register this extraction for progress tracking and cancellation support
         self.extraction_registry.register_extraction(book_id, book_type, section_id)
+
+        # Update progress immediately with total chunk count (0 processed so far)
+        self.extraction_registry.update_progress(
+            book_id, book_type, section_id, 0, total_chunks, 0
+        )
 
         try:
             async for (
@@ -369,9 +378,8 @@ class GraphBuilder:
                 f"Re-run to resume."
             )
 
-        # Unregister extraction after completion (keep for a bit for status queries)
-        # The registry will auto-cleanup old finished extractions
-        # Don't unregister immediately so frontend can query final status
+        # Don't unregister extraction immediately so frontend can query final status.
+        # Call cleanup_finished periodically to remove stale finished extractions.
 
         result = {
             "concepts_extracted": len(stored_concepts),

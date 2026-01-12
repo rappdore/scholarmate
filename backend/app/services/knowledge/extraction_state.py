@@ -11,7 +11,7 @@ It enables:
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,9 @@ class ExtractionRegistry:
         """
         Register a new extraction as running.
 
+        Also performs opportunistic cleanup of old finished extractions
+        to prevent unbounded memory growth.
+
         Returns:
             The extraction key for later reference.
         """
@@ -101,6 +104,11 @@ class ExtractionRegistry:
                 status=ExtractionStatus.RUNNING,
             )
             logger.info(f"Registered extraction: {key}")
+
+        # Opportunistic cleanup of old finished extractions (outside lock)
+        # This prevents unbounded growth of _extractions dict
+        self.cleanup_finished(max_age_seconds=300)
+
         return key
 
     def unregister_extraction(
@@ -220,10 +228,17 @@ class ExtractionRegistry:
         book_type: str,
         section_id: str,
     ) -> ExtractionState | None:
-        """Get the state of a specific extraction."""
+        """Get the state of a specific extraction.
+
+        Returns a copy to prevent external mutation of internal state.
+        """
         key = self._make_key(book_id, book_type, section_id)
         with self._lock:
-            return self._extractions.get(key)
+            state = self._extractions.get(key)
+            if state is None:
+                return None
+            # Return a copy to prevent external mutation
+            return replace(state)
 
     def get_running_extractions(
         self,
@@ -238,7 +253,7 @@ class ExtractionRegistry:
             book_type: Filter by book type (optional)
 
         Returns:
-            List of extraction states.
+            List of extraction states (copies to prevent external mutation).
         """
         with self._lock:
             results = []
@@ -252,7 +267,8 @@ class ExtractionRegistry:
                     continue
                 if book_type is not None and state.book_type != book_type:
                     continue
-                results.append(state)
+                # Return copies to prevent external mutation
+                results.append(replace(state))
             return results
 
     def cancel_all_for_book(

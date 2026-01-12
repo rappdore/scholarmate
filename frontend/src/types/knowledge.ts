@@ -175,3 +175,13 @@ export interface CancelExtractionResponse {
   section_id?: string;
   extractions_cancelled?: number;
 }
+
+// Similar concept result with similarity score
+export interface SimilarConceptResult {
+  concept_id: number;
+  name: string;
+  definition: string | null;
+  similarity: number;
+  book_id?: number;
+  book_type?: 'epub' | 'pdf';
+}

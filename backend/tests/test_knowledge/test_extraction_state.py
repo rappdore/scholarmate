@@ -239,13 +239,17 @@ class TestExtractionRegistry:
         registry.mark_completed(1, "epub", "chapter1")
         registry.mark_cancelled(1, "epub", "chapter2")
 
-        # Manually set old start time
-        state1 = registry.get_extraction_state(1, "epub", "chapter1")
-        state2 = registry.get_extraction_state(1, "epub", "chapter2")
-        if state1:
-            state1.started_at = time.time() - 400  # 400 seconds old
-        if state2:
-            state2.started_at = time.time() - 400  # 400 seconds old
+        # Manually set old start time on the internal state objects
+        # (get_extraction_state returns copies, so we need to access internal state directly)
+        key1 = registry._make_key(1, "epub", "chapter1")
+        key2 = registry._make_key(1, "epub", "chapter2")
+        with registry._lock:
+            registry._extractions[key1].started_at = (
+                time.time() - 400
+            )  # 400 seconds old
+            registry._extractions[key2].started_at = (
+                time.time() - 400
+            )  # 400 seconds old
 
         # Cleanup with 300 second max age
         count = registry.cleanup_finished(max_age_seconds=300)
