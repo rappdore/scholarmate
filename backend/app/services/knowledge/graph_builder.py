@@ -97,6 +97,8 @@ class GraphBuilder:
         Returns:
             Dictionary with extraction results
         """
+        if nav_id is None and page_num is None:
+            raise ValueError("Either nav_id or page_num must be provided")
         section_id = nav_id or f"page_{page_num}"
         content_hash = self._compute_content_hash(content)
 
@@ -161,6 +163,8 @@ class GraphBuilder:
         chunks_processed = 0
         chunks_skipped = 0
         was_cancelled = False
+        extraction_failed = False
+        extraction_error: str | None = None
 
         # Pre-compute chunk count so we can report accurate progress from the start
         chunks = self.concept_extractor.chunk_content(content)
@@ -271,6 +275,8 @@ class GraphBuilder:
                     )
 
         except Exception as e:
+            extraction_failed = True
+            extraction_error = str(e)
             logger.error(
                 f"Error during incremental extraction at chunk {chunks_processed}/{total_chunks}: {e}",
                 exc_info=True,
@@ -390,6 +396,8 @@ class GraphBuilder:
             "total_chunks": total_chunks,
             "resumed": chunks_skipped > 0,
             "cancelled": was_cancelled,
+            "failed": extraction_failed,
+            "error": extraction_error,
         }
         logger.info(f"extract_and_store complete for section {section_id}: {result}")
         return result

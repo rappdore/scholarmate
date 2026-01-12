@@ -116,6 +116,9 @@ class KnowledgeDatabase:
 
             # Create chunk progress tracking table (for resumable extraction)
             # CHECK constraint enforces XOR: exactly one of nav_id or page_num must be set
+            # Note: We use partial unique indexes instead of a UNIQUE constraint because
+            # SQLite treats NULL values as distinct in UNIQUE constraints, which would
+            # cause INSERT OR REPLACE to fail when one of nav_id/page_num is NULL.
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS chunk_progress (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,9 +130,21 @@ class KnowledgeDatabase:
                     total_chunks INTEGER NOT NULL,
                     content_hash TEXT NOT NULL,
                     extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(book_id, book_type, nav_id, page_num, chunk_index),
                     CHECK ((nav_id IS NOT NULL AND page_num IS NULL) OR (nav_id IS NULL AND page_num IS NOT NULL))
                 )
+            """)
+
+            # Create partial unique indexes to enforce uniqueness with NULL columns
+            # SQLite treats NULLs as distinct in UNIQUE constraints, so we need separate indexes
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_chunk_progress_epub_unique
+                ON chunk_progress(book_id, book_type, nav_id, chunk_index)
+                WHERE nav_id IS NOT NULL
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_chunk_progress_pdf_unique
+                ON chunk_progress(book_id, book_type, page_num, chunk_index)
+                WHERE page_num IS NOT NULL
             """)
 
             # Create indexes for performance
@@ -855,23 +870,53 @@ class KnowledgeDatabase:
 
         try:
             with self.get_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO chunk_progress
-                    (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        book_id,
-                        book_type,
-                        nav_id,
-                        page_num,
-                        chunk_index,
-                        total_chunks,
-                        content_hash,
-                        datetime.now().isoformat(),
-                    ),
-                )
+                # Use ON CONFLICT with the appropriate partial index based on book type
+                # SQLite treats NULLs as distinct in UNIQUE constraints, so we have
+                # separate partial unique indexes for EPUB (nav_id) and PDF (page_num)
+                if nav_id is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO chunk_progress
+                        (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(book_id, book_type, nav_id, chunk_index) WHERE nav_id IS NOT NULL
+                        DO UPDATE SET total_chunks = excluded.total_chunks,
+                                      content_hash = excluded.content_hash,
+                                      extracted_at = excluded.extracted_at
+                        """,
+                        (
+                            book_id,
+                            book_type,
+                            nav_id,
+                            page_num,
+                            chunk_index,
+                            total_chunks,
+                            content_hash,
+                            datetime.now().isoformat(),
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO chunk_progress
+                        (book_id, book_type, nav_id, page_num, chunk_index, total_chunks, content_hash, extracted_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(book_id, book_type, page_num, chunk_index) WHERE page_num IS NOT NULL
+                        DO UPDATE SET total_chunks = excluded.total_chunks,
+                                      content_hash = excluded.content_hash,
+                                      extracted_at = excluded.extracted_at
+                        """,
+                        (
+                            book_id,
+                            book_type,
+                            nav_id,
+                            page_num,
+                            chunk_index,
+                            total_chunks,
+                            content_hash,
+                            datetime.now().isoformat(),
+                        ),
+                    )
                 conn.commit()
                 return True
         except Exception as e:

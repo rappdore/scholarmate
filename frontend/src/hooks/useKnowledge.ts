@@ -247,8 +247,11 @@ export function useKnowledge({
       return;
     }
 
+    let cancelled = false;
+
     const checkForOngoingExtraction = async () => {
       const status = await pollExtractionStatus();
+      if (cancelled) return;
       if (
         status &&
         (status.status === 'running' || status.status === 'cancelling')
@@ -261,6 +264,10 @@ export function useKnowledge({
     };
 
     checkForOngoingExtraction();
+
+    return () => {
+      cancelled = true;
+    };
   }, [bookId, bookType, sectionId, pollExtractionStatus, startPolling]);
 
   const extractConcepts =
