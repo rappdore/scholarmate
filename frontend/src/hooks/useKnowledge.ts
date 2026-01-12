@@ -219,9 +219,20 @@ export function useKnowledge({
       }
     };
 
-    // Poll immediately and then at intervals
-    poll();
-    pollIntervalRef.current = setInterval(poll, PROGRESS_POLL_INTERVAL);
+    // Poll immediately and schedule next poll after completion
+    // Using recursive setTimeout instead of setInterval to prevent overlapping
+    // requests when API response takes longer than the poll interval
+    const schedulePoll = async () => {
+      if (!pollingRef.current) return;
+      await poll();
+      if (pollingRef.current) {
+        pollIntervalRef.current = setTimeout(
+          schedulePoll,
+          PROGRESS_POLL_INTERVAL
+        );
+      }
+    };
+    schedulePoll();
   }, [
     pollExtractionStatus,
     loadConcepts,

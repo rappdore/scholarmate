@@ -191,6 +191,7 @@ class GraphBuilder:
                 section_title=section_title,
                 skip_chunks=skip_chunks,
                 known_concept_names=known_concept_names,
+                pre_chunked=chunks,
             ):
                 total_chunks = total
                 chunks_processed = chunk_idx + 1

@@ -308,6 +308,7 @@ class ConceptExtractor:
         section_title: str,
         skip_chunks: set[int] | None = None,
         known_concept_names: set[str] | None = None,
+        pre_chunked: list[str] | None = None,
     ):
         """
         Extract concepts from text chunk by chunk, yielding after each chunk.
@@ -316,17 +317,18 @@ class ConceptExtractor:
         incrementally as they are extracted, preventing data loss on failure.
 
         Args:
-            text: Text to extract from
+            text: Text to extract from (ignored if pre_chunked is provided)
             book_title: Title of the book
             section_title: Title of the section
             skip_chunks: Set of chunk indices to skip (for resuming)
             known_concept_names: Set of concept names already extracted (for dedup across resumes)
+            pre_chunked: Optional pre-chunked content list to avoid redundant chunking
 
         Yields:
             Tuple of (chunk_index, total_chunks, concepts, was_skipped) after each chunk
         """
-        # Chunk the content if needed
-        chunks = self.chunk_content(text)
+        # Use pre-chunked content if provided, otherwise chunk the text
+        chunks = pre_chunked if pre_chunked is not None else self.chunk_content(text)
         total_chunks = len(chunks)
         skip_chunks = skip_chunks or set()
 
