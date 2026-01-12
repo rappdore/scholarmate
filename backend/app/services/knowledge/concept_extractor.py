@@ -301,6 +301,129 @@ class ConceptExtractor:
             logger.error(f"Error extracting relationships: {e}")
             return []
 
+    async def extract_concepts_incrementally(
+        self,
+        text: str,
+        book_title: str,
+        section_title: str,
+        skip_chunks: set[int] | None = None,
+        known_concept_names: set[str] | None = None,
+        pre_chunked: list[str] | None = None,
+    ):
+        """
+        Extract concepts from text chunk by chunk, yielding after each chunk.
+
+        This is an async generator that allows the caller to store concepts
+        incrementally as they are extracted, preventing data loss on failure.
+
+        Args:
+            text: Text to extract from (ignored if pre_chunked is provided)
+            book_title: Title of the book
+            section_title: Title of the section
+            skip_chunks: Set of chunk indices to skip (for resuming)
+            known_concept_names: Set of concept names already extracted (for dedup across resumes)
+            pre_chunked: Optional pre-chunked content list to avoid redundant chunking
+
+        Yields:
+            Tuple of (chunk_index, total_chunks, concepts, was_skipped) after each chunk
+        """
+        # Use pre-chunked content if provided, otherwise chunk the text
+        chunks = pre_chunked if pre_chunked is not None else self.chunk_content(text)
+        total_chunks = len(chunks)
+        skip_chunks = skip_chunks or set()
+
+        skipping_count = len(skip_chunks & set(range(total_chunks)))
+        logger.info(
+            f"Starting incremental extraction: {total_chunks} chunks, "
+            f"skipping {skipping_count} already-extracted chunks"
+        )
+
+        # Initialize with known concept names to avoid re-extracting duplicates
+        concept_names_seen: set[str] = set(known_concept_names or set())
+
+        # Extract concepts from each chunk and yield immediately
+        for i, chunk in enumerate(chunks):
+            if i in skip_chunks:
+                logger.info(
+                    f"Chunk {i + 1}/{total_chunks}: SKIPPED (already extracted)"
+                )
+                yield (i, total_chunks, [], True)
+                continue
+
+            logger.info(f"Extracting concepts from chunk {i + 1}/{total_chunks}")
+            try:
+                concepts = await self.extract_concepts(chunk, book_title, section_title)
+
+                # Deduplicate by name within this extraction
+                unique_concepts: list[ExtractedConcept] = []
+                for concept in concepts:
+                    name_lower = concept.name.lower()
+                    if name_lower not in concept_names_seen:
+                        concept_names_seen.add(name_lower)
+                        unique_concepts.append(concept)
+
+                logger.info(
+                    f"Chunk {i + 1}/{total_chunks}: extracted {len(concepts)} concepts, "
+                    f"{len(unique_concepts)} unique (after dedup)"
+                )
+                yield (i, total_chunks, unique_concepts, False)
+
+            except Exception as e:
+                logger.error(f"Error extracting from chunk {i + 1}/{total_chunks}: {e}")
+                # Yield empty list for this chunk but continue with others
+                yield (i, total_chunks, [], False)
+
+    async def extract_relationships_for_concepts(
+        self,
+        text: str,
+        all_concepts: list[ExtractedConcept],
+    ) -> list[ExtractedRelationship]:
+        """
+        Extract relationships between concepts from text.
+
+        This should be called after all concepts have been extracted and stored.
+
+        Args:
+            text: Original text to extract relationships from
+            all_concepts: All concepts that have been extracted
+
+        Returns:
+            List of extracted relationships
+        """
+        if len(all_concepts) < 2:
+            logger.info("Fewer than 2 concepts, skipping relationship extraction")
+            return []
+
+        chunks = self.chunk_content(text)
+        total_chunks = len(chunks)
+        logger.info(f"Extracting relationships from {total_chunks} chunks")
+
+        all_relationships: list[ExtractedRelationship] = []
+        relationship_keys_seen: set[str] = set()
+
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Extracting relationships from chunk {i + 1}/{total_chunks}")
+            try:
+                relationships = await self.extract_relationships(chunk, all_concepts)
+
+                # Deduplicate relationships
+                for rel in relationships:
+                    key = f"{rel.source}|{rel.target}|{rel.type}"
+                    if key not in relationship_keys_seen:
+                        relationship_keys_seen.add(key)
+                        all_relationships.append(rel)
+
+            except Exception as e:
+                logger.error(
+                    f"Error extracting relationships from chunk {i + 1}/{total_chunks}: {e}"
+                )
+                # Continue with other chunks
+
+        logger.info(
+            f"Relationship extraction complete: {len(all_relationships)} relationships"
+        )
+        return all_relationships
+
     async def extract_from_text(
         self,
         text: str,
@@ -309,6 +432,10 @@ class ConceptExtractor:
     ) -> tuple[list[ExtractedConcept], list[ExtractedRelationship]]:
         """
         Full extraction pipeline for a piece of text.
+
+        Note: This method extracts all concepts and relationships in one go.
+        For incremental extraction with progress saving, use
+        extract_concepts_incrementally() followed by extract_relationships_for_concepts().
 
         Args:
             text: Text to extract from
@@ -338,19 +465,9 @@ class ConceptExtractor:
                     all_concepts.append(concept)
 
         # Pass 2: Extract relationships (using all concepts for context)
-        all_relationships: list[ExtractedRelationship] = []
-        relationship_keys_seen: set[str] = set()
-
-        for i, chunk in enumerate(chunks):
-            logger.debug(f"Extracting relationships from chunk {i + 1}/{len(chunks)}")
-            relationships = await self.extract_relationships(chunk, all_concepts)
-
-            # Deduplicate relationships
-            for rel in relationships:
-                key = f"{rel.source}|{rel.target}|{rel.type}"
-                if key not in relationship_keys_seen:
-                    relationship_keys_seen.add(key)
-                    all_relationships.append(rel)
+        all_relationships = await self.extract_relationships_for_concepts(
+            text, all_concepts
+        )
 
         logger.info(
             f"Extraction complete: {len(all_concepts)} concepts, {len(all_relationships)} relationships"
