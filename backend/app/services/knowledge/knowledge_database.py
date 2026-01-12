@@ -115,6 +115,7 @@ class KnowledgeDatabase:
             """)
 
             # Create chunk progress tracking table (for resumable extraction)
+            # CHECK constraint enforces XOR: exactly one of nav_id or page_num must be set
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS chunk_progress (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +127,8 @@ class KnowledgeDatabase:
                     total_chunks INTEGER NOT NULL,
                     content_hash TEXT NOT NULL,
                     extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(book_id, book_type, nav_id, page_num, chunk_index)
+                    UNIQUE(book_id, book_type, nav_id, page_num, chunk_index),
+                    CHECK ((nav_id IS NOT NULL AND page_num IS NULL) OR (nav_id IS NULL AND page_num IS NOT NULL))
                 )
             """)
 
