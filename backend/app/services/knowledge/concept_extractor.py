@@ -20,13 +20,13 @@ from app.services.llm_config_service import LLMConfigService
 logger = logging.getLogger(__name__)
 
 # Prompt templates for extraction
-CONCEPT_EXTRACTION_PROMPT = """Extract key concepts from this text. For each concept provide:
+CONCEPT_EXTRACTION_PROMPT = """Extract key important concepts from this text. For each concept provide:
 - name: canonical form of the concept (capitalize properly)
 - definition: 1-2 sentence explanation based on the text
 - importance: 1-5 scale (5 = core concept central to understanding, 1 = minor mention)
 - source_quote: exact phrase from the text where concept appears (keep brief, max 100 chars)
 
-Focus on concepts that would be valuable for learning and retention. Skip trivial or overly generic terms.
+Focus on concepts that would be valuable for learning and long-term retention. Skip trivial or overly generic terms.
 
 Text:
 {chunk_text}
