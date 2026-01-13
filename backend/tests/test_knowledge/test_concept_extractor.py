@@ -564,3 +564,87 @@ class TestTripleExtraction:
         assert relationships[0].type == "explains"
         assert relationships[1].source == "B"
         assert relationships[1].target == "C"
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_incrementally_yields_per_chunk(self, mock_extractor):
+        """Test that incremental extraction yields results per chunk."""
+
+        extractor, mock_client = mock_extractor
+
+        # Will be called twice (two chunks)
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "A", "definition": "D"},
+                            "predicate": "explains",
+                            "object": {"name": "B", "definition": "D"}
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Create content that will result in 2 chunks
+        text = "First chunk content. " * 50 + "Second chunk content. " * 50
+
+        results = []
+        async for (
+            chunk_idx,
+            total,
+            triples,
+            was_skipped,
+        ) in extractor.extract_triples_incrementally(
+            text=text,
+            book_title="Test",
+            section_title="Ch1",
+            chunk_size=500,
+        ):
+            results.append((chunk_idx, total, len(triples), was_skipped))
+
+        # Should have processed multiple chunks
+        assert len(results) >= 2
+        # Each result should have chunk index, total, and triples
+        for chunk_idx, total, triple_count, was_skipped in results:
+            assert chunk_idx >= 0
+            assert total > 0
+            assert not was_skipped  # No chunks skipped in fresh extraction
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_incrementally_skips_already_extracted(
+        self, mock_extractor
+    ):
+        """Test that incremental extraction skips chunks in skip_chunks set."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        text = "Chunk one. " * 100 + "Chunk two. " * 100
+
+        # Skip chunk 0
+        skip_chunks = {0}
+
+        results = []
+        async for (
+            chunk_idx,
+            total,
+            triples,
+            was_skipped,
+        ) in extractor.extract_triples_incrementally(
+            text=text,
+            book_title="Test",
+            section_title="Ch1",
+            skip_chunks=skip_chunks,
+            chunk_size=500,
+        ):
+            results.append((chunk_idx, was_skipped))
+
+        # First chunk should be skipped
+        assert results[0] == (0, True)
+        # Subsequent chunks should not be skipped
+        assert not results[1][1]

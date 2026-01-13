@@ -645,6 +645,71 @@ class ConceptExtractor:
 
         return concepts
 
+    async def extract_triples_incrementally(
+        self,
+        text: str,
+        book_title: str,
+        section_title: str,
+        skip_chunks: set[int] | None = None,
+        pre_chunked: list[str] | None = None,
+        chunk_size: int = 3000,
+        overlap: int = 200,
+    ):
+        """
+        Extract triples from text chunk by chunk, yielding after each chunk.
+
+        This is an async generator that allows the caller to store triples
+        incrementally as they are extracted, enabling progress tracking and resumability.
+
+        Args:
+            text: Text to extract from (ignored if pre_chunked is provided)
+            book_title: Title of the book
+            section_title: Title of the section
+            skip_chunks: Set of chunk indices to skip (for resuming)
+            pre_chunked: Optional pre-chunked content list to avoid redundant chunking
+            chunk_size: Size of each chunk in characters
+            overlap: Overlap between chunks
+
+        Yields:
+            Tuple of (chunk_index, total_chunks, triples, was_skipped) after each chunk
+        """
+        # Use pre-chunked content if provided, otherwise chunk the text
+        chunks = (
+            pre_chunked
+            if pre_chunked is not None
+            else self.chunk_content(text, chunk_size=chunk_size, overlap=overlap)
+        )
+        total_chunks = len(chunks)
+        skip_chunks = skip_chunks or set()
+
+        skipping_count = len(skip_chunks & set(range(total_chunks)))
+        logger.info(
+            f"Starting incremental triple extraction: {total_chunks} chunks, "
+            f"skipping {skipping_count} already-extracted chunks"
+        )
+
+        for i, chunk in enumerate(chunks):
+            if i in skip_chunks:
+                logger.info(
+                    f"Triple chunk {i + 1}/{total_chunks}: SKIPPED (already extracted)"
+                )
+                yield (i, total_chunks, [], True)
+                continue
+
+            logger.info(f"Extracting triples from chunk {i + 1}/{total_chunks}")
+            try:
+                triples = await self.extract_triples(chunk, book_title, section_title)
+                logger.info(
+                    f"Chunk {i + 1}/{total_chunks}: extracted {len(triples)} triples"
+                )
+                yield (i, total_chunks, triples, False)
+
+            except Exception as e:
+                logger.error(
+                    f"Error extracting triples from chunk {i + 1}/{total_chunks}: {e}"
+                )
+                yield (i, total_chunks, [], False)
+
     def triples_to_relationships(
         self,
         triples: list[ExtractedTriple],
