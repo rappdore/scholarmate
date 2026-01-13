@@ -391,6 +391,7 @@ export function useKnowledge({
 
         // Refresh data (relationships affect the graph)
         await loadConcepts();
+        await refreshExtractionProgress();
 
         return result;
       } catch (err) {
@@ -411,6 +412,7 @@ export function useKnowledge({
       navId,
       pageNum,
       loadConcepts,
+      refreshExtractionProgress,
       startPolling,
       stopPolling,
     ]);

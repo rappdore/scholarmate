@@ -711,6 +711,15 @@ class GraphBuilder:
         extraction_failed = False
         extraction_error: str | None = None
 
+        # Initialize concept cache with existing concepts from previous runs
+        # This avoids repeated database queries inside the chunk loop
+        existing_concepts = self.db.get_concepts_for_book(
+            book_id, book_type, nav_id=nav_id, page_num=page_num
+        )
+        all_stored_concepts: dict[str, int] = {
+            c["name"]: c["id"] for c in existing_concepts
+        }
+
         try:
             async for (
                 chunk_idx,
@@ -789,6 +798,9 @@ class GraphBuilder:
                         )
                         stored_concepts.update(chunk_stored)
 
+                        # Update the in-memory cache with newly stored concepts
+                        all_stored_concepts.update(chunk_stored)
+
                         # Track known concept names for future chunks
                         for c in new_concepts:
                             known_concept_names.add(c.name.lower())
@@ -799,15 +811,9 @@ class GraphBuilder:
                     )
 
                     if chunk_relationships:
-                        # Get all stored concepts (including from previous runs)
-                        all_section_concepts = self.db.get_concepts_for_book(
-                            book_id, book_type, nav_id=nav_id, page_num=page_num
-                        )
-                        all_stored = {c["name"]: c["id"] for c in all_section_concepts}
-
                         chunk_rel_ids = self._store_relationships(
                             extracted_relationships=chunk_relationships,
-                            stored_concepts=all_stored,
+                            stored_concepts=all_stored_concepts,
                         )
                         stored_relationships.extend(chunk_rel_ids)
 
