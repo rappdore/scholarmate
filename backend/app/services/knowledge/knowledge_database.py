@@ -367,6 +367,61 @@ class KnowledgeDatabase:
             logger.error(f"Error getting concepts for book {book_id}: {e}")
             return []
 
+    def count_relationships_for_section(
+        self,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+    ) -> int:
+        """
+        Count relationships where both source and target concepts belong to the section.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Filter by navigation section (for EPUBs)
+            page_num: Filter by page number (for PDFs)
+
+        Returns:
+            Count of relationships between concepts in the section
+        """
+        try:
+            with self.get_connection() as conn:
+                # Build the concept filter condition
+                concept_filter = "book_id = ? AND book_type = ?"
+                params: list[Any] = [book_id, book_type, book_id, book_type]
+
+                if nav_id is not None:
+                    concept_filter += " AND nav_id = ?"
+                    params.insert(2, nav_id)
+                    params.append(nav_id)
+
+                if page_num is not None:
+                    concept_filter += " AND page_num = ?"
+                    params.insert(2 if nav_id is None else 3, page_num)
+                    params.append(page_num)
+
+                # Count relationships where both source and target are in the section
+                query = f"""
+                    SELECT COUNT(*) FROM relationships r
+                    WHERE r.source_concept_id IN (
+                        SELECT id FROM concepts WHERE {concept_filter}
+                    )
+                    AND r.target_concept_id IN (
+                        SELECT id FROM concepts WHERE {concept_filter}
+                    )
+                """
+
+                cursor = conn.execute(query, params)
+                row = cursor.fetchone()
+                return row[0] if row else 0
+        except Exception as e:
+            logger.error(
+                f"Error counting relationships for section book_id={book_id}: {e}"
+            )
+            return 0
+
     def search_concepts(
         self,
         query: str,
