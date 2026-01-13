@@ -50,6 +50,13 @@ class ConceptUpdate(BaseModel):
     importance: int | None = Field(default=None, ge=1, le=5)
 
 
+class ConceptsResponse(BaseModel):
+    """Response model for getting concepts with stats"""
+
+    concepts: list[Concept]
+    relationship_count: int = 0
+
+
 # ========================================
 # RELATIONSHIP MODELS
 # ========================================
@@ -307,3 +314,25 @@ class ExtractedRelationship(BaseModel):
     target: str  # target concept name
     type: RELATIONSHIP_TYPES
     description: str
+
+
+class TripleEntity(BaseModel):
+    """Entity within a triple (subject or object)."""
+
+    name: str = Field(..., min_length=1, max_length=500)
+    definition: str | None = None
+    importance: int = Field(default=3, ge=1, le=5)
+    source_quote: str | None = None
+
+
+class ExtractedTriple(BaseModel):
+    """A knowledge triple extracted from text by LLM.
+
+    Represents a (subject, predicate, object) fact from the text.
+    Example: (Photosynthesis, requires, Chlorophyll)
+    """
+
+    subject: TripleEntity
+    predicate: str  # Relationship type (normalized during processing)
+    object: TripleEntity
+    description: str | None = None  # Optional explanation of the relationship

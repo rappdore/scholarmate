@@ -3,6 +3,7 @@ import { API_BASE_URL } from './config';
 import type {
   Concept,
   ConceptCreate,
+  ConceptsResponse,
   ConceptUpdate,
   Relationship,
   RelationshipCreate,
@@ -17,6 +18,8 @@ import type {
   ExtractionStatusResponse,
   CancelExtractionResponse,
   SimilarConceptResult,
+  RelationshipExtractionRequest,
+  RelationshipExtractionResponse,
 } from '../types/knowledge';
 
 const api = axios.create({
@@ -35,6 +38,16 @@ export const knowledgeService = {
     request: BookExtractionRequest
   ): Promise<BookExtractionResponse> => {
     const response = await api.post('/api/knowledge/extract-book', request);
+    return response.data;
+  },
+
+  extractRelationships: async (
+    request: RelationshipExtractionRequest
+  ): Promise<RelationshipExtractionResponse> => {
+    const response = await api.post(
+      '/api/knowledge/extract-relationships',
+      request
+    );
     return response.data;
   },
 
@@ -59,7 +72,7 @@ export const knowledgeService = {
       page_num?: number;
       importance_min?: number;
     }
-  ): Promise<Concept[]> => {
+  ): Promise<ConceptsResponse> => {
     const response = await api.get(`/api/knowledge/concepts/${bookId}`, {
       params: {
         book_type: bookType,

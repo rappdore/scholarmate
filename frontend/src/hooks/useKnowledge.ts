@@ -5,6 +5,7 @@ import type {
   ExtractionResponse,
   ExtractionProgress,
   ExtractionStatusInfo,
+  RelationshipExtractionResponse,
 } from '../types/knowledge';
 
 interface UseKnowledgeOptions {
@@ -17,6 +18,7 @@ interface UseKnowledgeOptions {
 
 interface UseKnowledgeReturn {
   concepts: Concept[];
+  relationshipCount: number;
   isLoading: boolean;
   isExtracting: boolean;
   error: string | null;
@@ -26,6 +28,7 @@ interface UseKnowledgeReturn {
   extractionStatus: ExtractionStatusInfo | null;
   loadConcepts: () => Promise<void>;
   extractConcepts: () => Promise<ExtractionResponse | null>;
+  extractRelationships: () => Promise<RelationshipExtractionResponse | null>;
   cancelExtraction: () => Promise<boolean>;
   refreshExtractionProgress: () => Promise<void>;
   clearError: () => void;
@@ -42,6 +45,7 @@ export function useKnowledge({
   autoLoad = true,
 }: UseKnowledgeOptions): UseKnowledgeReturn {
   const [concepts, setConcepts] = useState<Concept[]>([]);
+  const [relationshipCount, setRelationshipCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +93,7 @@ export function useKnowledge({
   const loadConcepts = useCallback(async () => {
     if (!bookId || !bookType) {
       setConcepts([]);
+      setRelationshipCount(0);
       return;
     }
 
@@ -100,7 +105,8 @@ export function useKnowledge({
         nav_id: navId,
         page_num: pageNum,
       });
-      setConcepts(data);
+      setConcepts(data.concepts);
+      setRelationshipCount(data.relationship_count);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to load concepts';
@@ -346,6 +352,71 @@ export function useKnowledge({
       stopPolling,
     ]);
 
+  const extractRelationships =
+    useCallback(async (): Promise<RelationshipExtractionResponse | null> => {
+      if (!bookId || !bookType) {
+        setError('No book selected');
+        return null;
+      }
+
+      if (bookType === 'epub' && !navId) {
+        setError('No section selected for EPUB');
+        return null;
+      }
+      if (bookType === 'pdf' && pageNum === undefined) {
+        setError('No page selected for PDF');
+        return null;
+      }
+
+      setIsExtracting(true);
+      setError(null);
+      setExtractionStatus(null);
+
+      // Start polling for progress
+      startPolling();
+
+      try {
+        const result = await knowledgeService.extractRelationships({
+          book_id: bookId,
+          book_type: bookType,
+          nav_id: navId,
+          page_num: pageNum,
+          force: false, // Resume from where we left off if there's prior progress
+        });
+
+        // Extraction finished - stop polling and update state
+        stopPolling();
+        setIsExtracting(false);
+        setExtractionStatus(null);
+
+        // Refresh data (relationships affect the graph)
+        await loadConcepts();
+        await refreshExtractionProgress();
+
+        return result;
+      } catch (err) {
+        // Error occurred - stop polling and update state
+        stopPolling();
+        setIsExtracting(false);
+        setExtractionStatus(null);
+
+        const message =
+          err instanceof Error ? err.message : 'Relationship extraction failed';
+        setError(message);
+        console.error('Error extracting relationships:', err);
+        return null;
+      }
+    }, [
+      bookId,
+      bookType,
+      navId,
+      pageNum,
+      loadConcepts,
+      refreshExtractionProgress,
+      startPolling,
+      stopPolling,
+    ]);
+
   const cancelExtraction = useCallback(async (): Promise<boolean> => {
     if (!bookId || !bookType || !sectionId) {
       setError('No extraction to cancel');
@@ -397,6 +468,7 @@ export function useKnowledge({
 
   return {
     concepts,
+    relationshipCount,
     isLoading,
     isExtracting,
     error,
@@ -405,6 +477,7 @@ export function useKnowledge({
     extractionStatus,
     loadConcepts,
     extractConcepts,
+    extractRelationships,
     cancelExtraction,
     refreshExtractionProgress,
     clearError,

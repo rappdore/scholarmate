@@ -30,3 +30,6 @@ test_frontend:
 
 test_all:
 	make test_backend && make test_frontend
+
+clear_knowledge_db:
+	sqlite3 backend/data/knowledge.db "DELETE FROM relationships; DELETE FROM concepts; DELETE FROM extraction_progress; DELETE FROM chunk_progress; DELETE FROM flashcards; VACUUM;"
