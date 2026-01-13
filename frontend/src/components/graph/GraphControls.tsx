@@ -180,8 +180,11 @@ export function GraphControls({
               value={filter.pageRange?.[0] || ''}
               onChange={e => {
                 const start = parseInt(e.target.value) || 1;
-                const end =
-                  filter.pageRange?.[1] || Math.max(...(sections as number[]));
+                const maxPage =
+                  (sections as number[]).length > 0
+                    ? Math.max(...(sections as number[]))
+                    : 1;
+                const end = filter.pageRange?.[1] || maxPage;
                 onFilterChange({ pageRange: [start, end] });
               }}
               className="w-20 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-sm text-gray-200"
@@ -194,9 +197,11 @@ export function GraphControls({
               value={filter.pageRange?.[1] || ''}
               onChange={e => {
                 const start = filter.pageRange?.[0] || 1;
-                const end =
-                  parseInt(e.target.value) ||
-                  Math.max(...(sections as number[]));
+                const maxPage =
+                  (sections as number[]).length > 0
+                    ? Math.max(...(sections as number[]))
+                    : 1;
+                const end = parseInt(e.target.value) || maxPage;
                 onFilterChange({ pageRange: [start, end] });
               }}
               className="w-20 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-sm text-gray-200"

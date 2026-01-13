@@ -24,6 +24,7 @@ export default function GraphPage() {
   const [selectedNode, setSelectedNode] = useState<D3Node | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<D3Link | null>(null);
   const [hoveredNode, setHoveredNode] = useState<D3Node | null>(null);
+  const [zoomTransform, setZoomTransform] = useState({ k: 1, x: 0, y: 0 });
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth - 320,
     height: window.innerHeight - 64,
@@ -95,8 +96,8 @@ export default function GraphPage() {
         setSelectedEdge(null);
         setFilter({ selectedNodeId: null, selectedEdgeId: null });
       },
-      onZoomChange: () => {
-        // Could display zoom level or save position
+      onZoomChange: transform => {
+        setZoomTransform(transform);
       },
     }),
     [bookId, bookType, navigate, setFilter]
@@ -343,8 +344,8 @@ export default function GraphPage() {
             <div
               className="absolute bg-gray-800 border border-gray-600 rounded px-3 py-2 pointer-events-none shadow-lg z-10"
               style={{
-                left: hoveredNode.x + 20,
-                top: hoveredNode.y,
+                left: hoveredNode.x * zoomTransform.k + zoomTransform.x + 20,
+                top: hoveredNode.y * zoomTransform.k + zoomTransform.y,
                 maxWidth: 250,
               }}
             >
