@@ -14,7 +14,12 @@ import threading
 
 from openai import AsyncOpenAI
 
-from app.models.knowledge_models import ExtractedConcept, ExtractedRelationship
+from app.models.knowledge_models import (
+    ExtractedConcept,
+    ExtractedRelationship,
+    ExtractedTriple,
+    TripleEntity,
+)
 from app.services.llm_config_service import LLMConfigService
 
 logger = logging.getLogger(__name__)
@@ -532,6 +537,139 @@ class ConceptExtractor:
                 )
                 # Yield empty list for this chunk but continue with others
                 yield (i, total_chunks, [], False)
+
+    async def extract_triples(
+        self,
+        text: str,
+        book_title: str,
+        section_title: str,
+    ) -> list[ExtractedTriple]:
+        """
+        Extract knowledge triples from text using LLM (single-pass extraction).
+
+        This is more efficient than separate concept + relationship extraction
+        because it makes ONE LLM call instead of TWO.
+
+        Args:
+            text: Text to extract triples from
+            book_title: Title of the book
+            section_title: Title of the current section
+
+        Returns:
+            List of extracted triples (subject, predicate, object)
+        """
+        if not self._client or not self._model:
+            raise RuntimeError("LLM not configured")
+
+        prompt = TRIPLE_EXTRACTION_PROMPT.format(
+            chunk_text=text,
+            book_title=book_title,
+            section_title=section_title,
+        )
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a knowledge extraction assistant. Extract knowledge triples and return valid JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+            )
+
+            if not response.choices:
+                logger.warning("LLM returned empty choices for triple extraction")
+                return []
+
+            content = response.choices[0].message.content
+            if not content:
+                logger.warning("LLM returned empty content for triple extraction")
+                return []
+
+            triples = self._parse_triples_json(content.strip())
+            logger.info(f"Extracted {len(triples)} triples from text")
+            return triples
+
+        except Exception as e:
+            logger.error(f"Error extracting triples: {e}")
+            return []
+
+    def _parse_triples_json(self, content: str) -> list[ExtractedTriple]:
+        """Parse LLM response into ExtractedTriple objects."""
+        try:
+            json_str = self._extract_json_array(content)
+            data = json.loads(json_str)
+
+            if not isinstance(data, list):
+                logger.warning("Expected JSON array for triples, got something else")
+                return []
+
+            triples = []
+            valid_types = [
+                "explains",
+                "contrasts",
+                "requires",
+                "builds-on",
+                "examples",
+                "causes",
+            ]
+
+            for item in data:
+                try:
+                    # Parse subject
+                    subj_data = item.get("subject", {})
+                    subject = TripleEntity(
+                        name=subj_data.get("name", "").strip(),
+                        definition=subj_data.get("definition", ""),
+                        importance=min(5, max(1, int(subj_data.get("importance", 3)))),
+                        source_quote=subj_data.get("source_quote", ""),
+                    )
+
+                    # Parse object
+                    obj_data = item.get("object", {})
+                    obj = TripleEntity(
+                        name=obj_data.get("name", "").strip(),
+                        definition=obj_data.get("definition", ""),
+                        importance=min(5, max(1, int(obj_data.get("importance", 3)))),
+                        source_quote=obj_data.get("source_quote", ""),
+                    )
+
+                    # Skip if either entity has empty name
+                    if not subject.name or not obj.name:
+                        logger.debug("Skipping triple with empty entity name")
+                        continue
+
+                    # Normalize predicate
+                    predicate = (
+                        item.get("predicate", "").strip().lower().replace("_", "-")
+                    )
+                    if predicate not in valid_types:
+                        logger.debug(
+                            f"Unknown predicate '{predicate}', using 'related-to'"
+                        )
+                        predicate = "related-to"
+
+                    triple = ExtractedTriple(
+                        subject=subject,
+                        predicate=predicate,
+                        object=obj,
+                        description=item.get("description", "")[:500],
+                    )
+                    triples.append(triple)
+
+                except Exception as e:
+                    logger.warning(f"Failed to parse triple: {e}")
+                    continue
+
+            return triples
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse triples JSON: {e}")
+            logger.debug(f"Raw content: {content[:500]}")
+            return []
 
     async def extract_from_text(
         self,

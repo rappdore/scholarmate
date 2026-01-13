@@ -348,3 +348,125 @@ class TestExtraction:
         assert len(concepts) == 2
         assert len(relationships) == 1
         assert relationships[0].type == "explains"
+
+
+class TestTripleExtraction:
+    """Tests for the new triple-based extraction."""
+
+    @pytest.fixture
+    def mock_extractor(self):
+        """Create extractor with fully mocked LLM."""
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = MagicMock(
+                base_url="http://test",
+                api_key="test",
+                model_name="test-model",
+            )
+
+            with patch(
+                "app.services.knowledge.concept_extractor.AsyncOpenAI"
+            ) as mock_openai:
+                extractor = ConceptExtractor()
+                extractor._client = mock_openai.return_value
+                extractor._model = "test-model"
+                yield extractor, mock_openai.return_value
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_returns_triples(self, mock_extractor):
+        """Test that extract_triples returns ExtractedTriple objects."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "Photosynthesis", "definition": "Process of converting light to energy"},
+                            "predicate": "requires",
+                            "object": {"name": "Chlorophyll", "definition": "Green pigment in plants"},
+                            "description": "Photosynthesis requires chlorophyll"
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Plants use photosynthesis which requires chlorophyll.",
+            book_title="Biology 101",
+            section_title="Chapter 1",
+        )
+
+        assert len(triples) == 1
+        assert triples[0].subject.name == "Photosynthesis"
+        assert triples[0].predicate == "requires"
+        assert triples[0].object.name == "Chlorophyll"
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_single_llm_call(self, mock_extractor):
+        """Test that extract_triples makes exactly ONE LLM call (the efficiency goal)."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        await extractor.extract_triples(
+            text="Some text",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        # KEY ASSERTION: Only ONE LLM call, not two
+        assert mock_client.chat.completions.create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_handles_empty_response(self, mock_extractor):
+        """Test handling of empty LLM response."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Generic text with no relationships",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        assert triples == []
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_normalizes_predicate(self, mock_extractor):
+        """Test that predicates are normalized (lowercase, underscores to hyphens)."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "A", "definition": "D"},
+                            "predicate": "Builds_On",
+                            "object": {"name": "B", "definition": "D"},
+                            "description": "A builds on B"
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Text",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        assert triples[0].predicate == "builds-on"
