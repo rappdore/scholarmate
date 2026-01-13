@@ -42,6 +42,11 @@ class GraphBuilder:
     to construct a coherent knowledge graph from document content.
     """
 
+    # Feature flag for triple-based extraction (v2)
+    # Set to True to use the more efficient single-pass extraction (50% fewer LLM calls)
+    # Set to False to use the legacy two-pass extraction (concepts, then relationships)
+    USE_TRIPLE_EXTRACTION: bool = True
+
     def __init__(
         self,
         db: KnowledgeDatabase | None = None,
@@ -910,6 +915,64 @@ class GraphBuilder:
         }
         logger.info(f"extract_and_store_v2 complete for section {section_id}: {result}")
         return result
+
+    async def extract_and_store_auto(
+        self,
+        content: str,
+        book_id: int,
+        book_type: str,
+        book_title: str,
+        section_title: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract and store using the configured extraction method.
+
+        Uses USE_TRIPLE_EXTRACTION class flag to choose between:
+        - v2 (True): Single-pass triple extraction - N LLM calls (50% more efficient)
+        - v1 (False): Two-pass extraction (concepts, then relationships) - 2N LLM calls
+
+        This method allows easy A/B testing and rollback between extraction approaches.
+
+        Args:
+            content: Text content to extract from
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            book_title: Title of the book
+            section_title: Title of the section
+            nav_id: Navigation ID (for EPUBs)
+            page_num: Page number (for PDFs)
+            force: Force re-extraction even if already done
+
+        Returns:
+            Dictionary with extraction results
+        """
+        if GraphBuilder.USE_TRIPLE_EXTRACTION:
+            logger.info("Using v2 triple-based extraction (efficient single-pass)")
+            return await self.extract_and_store_v2(
+                content=content,
+                book_id=book_id,
+                book_type=book_type,
+                book_title=book_title,
+                section_title=section_title,
+                nav_id=nav_id,
+                page_num=page_num,
+                force=force,
+            )
+        else:
+            logger.info("Using v1 two-pass extraction (legacy)")
+            return await self.extract_and_store(
+                content=content,
+                book_id=book_id,
+                book_type=book_type,
+                book_title=book_title,
+                section_title=section_title,
+                nav_id=nav_id,
+                page_num=page_num,
+                force=force,
+            )
 
     async def _store_concepts(
         self,

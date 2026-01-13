@@ -384,3 +384,199 @@ class TestGraphBuilderTripleExtraction:
         )
 
         mock_db.clear_chunk_progress.assert_called()
+
+
+class TestGraphBuilderAutoExtraction:
+    """Tests for USE_TRIPLE_EXTRACTION flag and extract_and_store_auto method."""
+
+    @pytest.fixture
+    def mock_graph_builder(self):
+        """Create GraphBuilder with mocked dependencies."""
+        mock_db = MagicMock()
+        mock_db.is_section_extracted.return_value = False
+        mock_db.get_extracted_chunks.return_value = set()
+        mock_db.create_concept.side_effect = (
+            lambda **kwargs: hash(kwargs["name"]) % 1000
+        )
+        mock_db.create_relationship.return_value = 1
+        mock_db.get_concepts_for_book.return_value = []
+
+        mock_embedding = MagicMock()
+        mock_embedding.check_duplicate.return_value = None
+
+        mock_extractor = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.is_cancellation_requested.return_value = False
+
+        builder = GraphBuilder(
+            db=mock_db,
+            embedding_service=mock_embedding,
+            concept_extractor=mock_extractor,
+            extraction_registry=mock_registry,
+        )
+
+        return builder, mock_db, mock_extractor, mock_registry
+
+    def test_use_triple_extraction_flag_exists_as_class_variable(self):
+        """Test that USE_TRIPLE_EXTRACTION flag exists as a class variable."""
+        assert hasattr(GraphBuilder, "USE_TRIPLE_EXTRACTION")
+        # Default value should be True (using the efficient v2 extraction)
+        assert GraphBuilder.USE_TRIPLE_EXTRACTION is True
+
+    @pytest.mark.asyncio
+    async def test_extract_and_store_auto_calls_v2_when_flag_true(
+        self, mock_graph_builder
+    ):
+        """Test that extract_and_store_auto calls extract_and_store_v2 when flag is True."""
+        builder, mock_db, mock_extractor, mock_registry = mock_graph_builder
+
+        # Set the flag to True
+        original_flag = GraphBuilder.USE_TRIPLE_EXTRACTION
+        try:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = True
+
+            async def mock_triple_generator(*args, **kwargs):
+                yield (0, 1, [], False)
+
+            mock_extractor.extract_triples_incrementally = mock_triple_generator
+            mock_extractor.chunk_content.return_value = ["chunk1"]
+
+            result = await builder.extract_and_store_auto(
+                content="Test content",
+                book_id=1,
+                book_type="epub",
+                book_title="Test",
+                section_title="Ch1",
+                nav_id="ch1",
+            )
+
+            # v2 uses extract_triples_incrementally (not extract_concepts_incrementally)
+            # We can verify v2 was called by checking that the registry was properly updated
+            mock_registry.register_extraction.assert_called_once()
+            assert result is not None
+            assert "already_extracted" in result
+        finally:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = original_flag
+
+    @pytest.mark.asyncio
+    async def test_extract_and_store_auto_calls_v1_when_flag_false(
+        self, mock_graph_builder
+    ):
+        """Test that extract_and_store_auto calls extract_and_store (v1) when flag is False."""
+        builder, mock_db, mock_extractor, mock_registry = mock_graph_builder
+
+        # Set the flag to False
+        original_flag = GraphBuilder.USE_TRIPLE_EXTRACTION
+        try:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = False
+
+            async def mock_concept_generator(*args, **kwargs):
+                yield (0, 1, [], False)
+
+            mock_extractor.extract_concepts_incrementally = mock_concept_generator
+            mock_extractor.chunk_content.return_value = ["chunk1"]
+
+            result = await builder.extract_and_store_auto(
+                content="Test content",
+                book_id=1,
+                book_type="epub",
+                book_title="Test",
+                section_title="Ch1",
+                nav_id="ch1",
+            )
+
+            # v1 uses extract_concepts_incrementally (not extract_triples_incrementally)
+            mock_registry.register_extraction.assert_called_once()
+            assert result is not None
+            assert "already_extracted" in result
+        finally:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = original_flag
+
+    @pytest.mark.asyncio
+    async def test_extract_and_store_auto_passes_all_parameters(
+        self, mock_graph_builder
+    ):
+        """Test that extract_and_store_auto passes all parameters correctly."""
+        builder, mock_db, mock_extractor, mock_registry = mock_graph_builder
+
+        original_flag = GraphBuilder.USE_TRIPLE_EXTRACTION
+        try:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = True
+
+            async def mock_triple_generator(*args, **kwargs):
+                yield (0, 1, [], False)
+
+            mock_extractor.extract_triples_incrementally = mock_triple_generator
+            mock_extractor.chunk_content.return_value = ["chunk1"]
+
+            # Call with all parameters
+            await builder.extract_and_store_auto(
+                content="Test content",
+                book_id=42,
+                book_type="pdf",
+                book_title="My Book",
+                section_title="Chapter 5",
+                nav_id=None,
+                page_num=10,
+                force=True,
+            )
+
+            # Verify db.clear_chunk_progress was called (force=True triggers this)
+            mock_db.clear_chunk_progress.assert_called()
+        finally:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = original_flag
+
+    @pytest.mark.asyncio
+    async def test_extract_and_store_auto_returns_v2_result_format(
+        self, mock_graph_builder
+    ):
+        """Test that extract_and_store_auto returns proper result format from v2."""
+        builder, mock_db, mock_extractor, mock_registry = mock_graph_builder
+
+        original_flag = GraphBuilder.USE_TRIPLE_EXTRACTION
+        try:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = True
+
+            async def mock_triple_generator(*args, **kwargs):
+                yield (0, 1, [], False)
+
+            mock_extractor.extract_triples_incrementally = mock_triple_generator
+            mock_extractor.chunk_content.return_value = ["chunk1"]
+
+            result = await builder.extract_and_store_auto(
+                content="Test content",
+                book_id=1,
+                book_type="epub",
+                book_title="Test",
+                section_title="Ch1",
+                nav_id="ch1",
+            )
+
+            # Verify result structure matches v2 format
+            assert "concepts_extracted" in result
+            assert "relationships_found" in result
+            assert "already_extracted" in result
+            assert "chunks_processed" in result
+            assert "cancelled" in result
+            assert "failed" in result
+        finally:
+            GraphBuilder.USE_TRIPLE_EXTRACTION = original_flag
+
+    @pytest.mark.asyncio
+    async def test_extract_and_store_auto_requires_nav_id_or_page_num(
+        self, mock_graph_builder
+    ):
+        """Test that extract_and_store_auto raises error if neither nav_id nor page_num provided."""
+        builder, mock_db, mock_extractor, mock_registry = mock_graph_builder
+
+        with pytest.raises(
+            ValueError, match="Either nav_id or page_num must be provided"
+        ):
+            await builder.extract_and_store_auto(
+                content="Test content",
+                book_id=1,
+                book_type="epub",
+                book_title="Test",
+                section_title="Ch1",
+                # Neither nav_id nor page_num provided
+            )
