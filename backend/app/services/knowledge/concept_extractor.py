@@ -424,6 +424,81 @@ class ConceptExtractor:
         )
         return all_relationships
 
+    async def extract_relationships_incrementally(
+        self,
+        text: str,
+        all_concepts: list[ExtractedConcept],
+        skip_chunks: set[int] | None = None,
+        known_relationship_keys: set[str] | None = None,
+        pre_chunked: list[str] | None = None,
+    ):
+        """
+        Extract relationships chunk by chunk, yielding after each chunk.
+
+        This is an async generator that allows the caller to store relationships
+        incrementally as they are extracted, enabling progress tracking and resumability.
+
+        Args:
+            text: Text to extract from (ignored if pre_chunked is provided)
+            all_concepts: All concepts to find relationships between
+            skip_chunks: Set of chunk indices to skip (for resuming)
+            known_relationship_keys: Set of relationship keys already extracted (for dedup)
+            pre_chunked: Optional pre-chunked content list to avoid redundant chunking
+
+        Yields:
+            Tuple of (chunk_index, total_chunks, relationships, was_skipped) after each chunk
+        """
+        if len(all_concepts) < 2:
+            logger.info("Fewer than 2 concepts, skipping relationship extraction")
+            return
+
+        # Use pre-chunked content if provided, otherwise chunk the text
+        chunks = pre_chunked if pre_chunked is not None else self.chunk_content(text)
+        total_chunks = len(chunks)
+        skip_chunks = skip_chunks or set()
+
+        skipping_count = len(skip_chunks & set(range(total_chunks)))
+        logger.info(
+            f"Starting incremental relationship extraction: {total_chunks} chunks, "
+            f"skipping {skipping_count} already-extracted chunks"
+        )
+
+        # Initialize with known relationship keys to avoid duplicates
+        relationship_keys_seen: set[str] = set(known_relationship_keys or set())
+
+        for i, chunk in enumerate(chunks):
+            if i in skip_chunks:
+                logger.info(
+                    f"Relationship chunk {i + 1}/{total_chunks}: SKIPPED (already extracted)"
+                )
+                yield (i, total_chunks, [], True)
+                continue
+
+            logger.info(f"Extracting relationships from chunk {i + 1}/{total_chunks}")
+            try:
+                relationships = await self.extract_relationships(chunk, all_concepts)
+
+                # Deduplicate relationships
+                unique_relationships: list[ExtractedRelationship] = []
+                for rel in relationships:
+                    key = f"{rel.source}|{rel.target}|{rel.type}"
+                    if key not in relationship_keys_seen:
+                        relationship_keys_seen.add(key)
+                        unique_relationships.append(rel)
+
+                logger.info(
+                    f"Relationship chunk {i + 1}/{total_chunks}: extracted {len(relationships)} relationships, "
+                    f"{len(unique_relationships)} unique (after dedup)"
+                )
+                yield (i, total_chunks, unique_relationships, False)
+
+            except Exception as e:
+                logger.error(
+                    f"Error extracting relationships from chunk {i + 1}/{total_chunks}: {e}"
+                )
+                # Yield empty list for this chunk but continue with others
+                yield (i, total_chunks, [], False)
+
     async def extract_from_text(
         self,
         text: str,

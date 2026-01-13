@@ -20,7 +20,11 @@ from app.models.knowledge_models import (
 
 from .concept_extractor import ConceptExtractor, get_concept_extractor
 from .embedding_service import EmbeddingService, get_embedding_service
-from .extraction_state import ExtractionRegistry, get_extraction_registry
+from .extraction_state import (
+    ExtractionPhase,
+    ExtractionRegistry,
+    get_extraction_registry,
+)
 from .knowledge_database import KnowledgeDatabase, knowledge_db
 
 logger = logging.getLogger(__name__)
@@ -62,6 +66,49 @@ class GraphBuilder:
     def _compute_content_hash(self, content: str) -> str:
         """Compute a hash of content for change detection."""
         return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    def _build_relationship_keys_from_graph(
+        self,
+        book_id: int,
+        book_type: str,
+        section_concepts: list[dict[str, Any]],
+    ) -> set[str]:
+        """Build set of existing relationship keys for deduplication.
+
+        Args:
+            book_id: ID of the book
+            book_type: Type of book
+            section_concepts: List of concept dicts with 'id' and 'name' keys
+
+        Returns:
+            Set of relationship keys in format "source|target|type"
+        """
+        concept_id_to_name = {c["id"]: c["name"] for c in section_concepts}
+        existing_rels = self.db.get_graph_for_book(book_id, book_type).get("edges", [])
+
+        known_keys: set[str] = set()
+        for rel in existing_rels:
+            source_name = concept_id_to_name.get(rel.get("source"))
+            target_name = concept_id_to_name.get(rel.get("target"))
+            if source_name and target_name:
+                key = f"{source_name}|{target_name}|{rel.get('type', '')}"
+                known_keys.add(key)
+
+        return known_keys
+
+    def _convert_db_concepts_to_extracted(
+        self, db_concepts: list[dict[str, Any]]
+    ) -> list[ExtractedConcept]:
+        """Convert database concept dicts to ExtractedConcept objects."""
+        return [
+            ExtractedConcept(
+                name=c["name"],
+                definition=c.get("definition", ""),
+                importance=c.get("importance", 3),
+                source_quote=c.get("source_quote", ""),
+            )
+            for c in db_concepts
+        ]
 
     async def extract_and_store(
         self,
@@ -303,6 +350,10 @@ class GraphBuilder:
         # For resumed extractions, we need to get ALL concepts for the section
         # Skip relationship extraction if cancelled
         stored_relationships: list[int] = []
+        rel_chunks_processed = 0
+        rel_total_chunks = 0
+        rel_was_cancelled = False
+
         if chunks_processed == total_chunks and not was_cancelled:
             # Get all concepts for this section (including from previous runs)
             all_section_concepts = self.db.get_concepts_for_book(
@@ -314,39 +365,153 @@ class GraphBuilder:
                     f"Starting relationship extraction for section {section_id} "
                     f"with {len(all_section_concepts)} total concepts..."
                 )
+
+                # Switch to relationship phase
+                self.extraction_registry.update_phase(
+                    book_id, book_type, section_id, ExtractionPhase.RELATIONSHIPS
+                )
+
+                # Convert DB concepts back to ExtractedConcept for relationship extraction
+                concepts_for_rel = self._convert_db_concepts_to_extracted(
+                    all_section_concepts
+                )
+
+                # Build stored_concepts map from all section concepts
+                all_stored = {c["name"]: c["id"] for c in all_section_concepts}
+
+                # Check for partial relationship chunk progress (for resumability)
+                skip_rel_chunks: set[int] = set()
+                known_rel_keys: set[str] = set()
+
+                if force:
+                    # Clear any existing relationship chunk progress
+                    self.db.clear_relationship_chunk_progress(
+                        book_id, book_type, nav_id, page_num
+                    )
+                    logger.info(
+                        "Cleared relationship chunk progress for forced re-extraction"
+                    )
+                else:
+                    # Check for existing relationship chunk progress
+                    skip_rel_chunks = self.db.get_extracted_relationship_chunks(
+                        book_id, book_type, content_hash, nav_id, page_num
+                    )
+                    if skip_rel_chunks:
+                        logger.info(
+                            f"RESUMING relationship extraction: found {len(skip_rel_chunks)} already-extracted chunks"
+                        )
+                        known_rel_keys = self._build_relationship_keys_from_graph(
+                            book_id, book_type, all_section_concepts
+                        )
+                        logger.info(
+                            f"Loaded {len(known_rel_keys)} existing relationship keys for deduplication"
+                        )
+
+                # Pre-compute relationship chunks
+                rel_chunks = self.concept_extractor.chunk_content(content)
+                rel_total_chunks = len(rel_chunks)
+
+                # Initialize relationship progress
+                self.extraction_registry.update_relationship_progress(
+                    book_id, book_type, section_id, 0, rel_total_chunks, 0
+                )
+
                 try:
-                    # Convert DB concepts back to ExtractedConcept for relationship extraction
-                    concepts_for_rel = [
-                        ExtractedConcept(
-                            name=c["name"],
-                            definition=c.get("definition", ""),
-                            importance=c.get("importance", 3),
-                            source_quote=c.get("source_quote", ""),
+                    # Incremental relationship extraction
+                    async for (
+                        rel_chunk_idx,
+                        rel_total,
+                        chunk_relationships,
+                        rel_was_skipped,
+                    ) in self.concept_extractor.extract_relationships_incrementally(
+                        text=content,
+                        all_concepts=concepts_for_rel,
+                        skip_chunks=skip_rel_chunks,
+                        known_relationship_keys=known_rel_keys,
+                        pre_chunked=rel_chunks,
+                    ):
+                        rel_total_chunks = rel_total
+                        rel_chunks_processed = rel_chunk_idx + 1
+
+                        # Check for cancellation between relationship chunks
+                        if self.extraction_registry.is_cancellation_requested(
+                            book_id, book_type, section_id
+                        ):
+                            logger.info(
+                                f"Relationship extraction CANCELLED for section {section_id} "
+                                f"at chunk {rel_chunks_processed}/{rel_total_chunks}. "
+                                f"Stored {len(stored_relationships)} relationships before cancellation."
+                            )
+                            rel_was_cancelled = True
+                            self.extraction_registry.mark_cancelled(
+                                book_id, book_type, section_id
+                            )
+                            break
+
+                        if rel_was_skipped:
+                            # Update progress even for skipped chunks
+                            self.extraction_registry.update_relationship_progress(
+                                book_id,
+                                book_type,
+                                section_id,
+                                rel_chunks_processed,
+                                rel_total_chunks,
+                                len(stored_relationships),
+                            )
+                            continue
+
+                        if chunk_relationships:
+                            logger.info(
+                                f"Relationship chunk {rel_chunks_processed}/{rel_total_chunks}: "
+                                f"Storing {len(chunk_relationships)} relationships immediately..."
+                            )
+
+                            # Store this chunk's relationships immediately
+                            chunk_stored_ids = self._store_relationships(
+                                extracted_relationships=chunk_relationships,
+                                stored_concepts=all_stored,
+                            )
+                            stored_relationships.extend(chunk_stored_ids)
+
+                            logger.info(
+                                f"Relationship chunk {rel_chunks_processed}/{rel_total_chunks}: "
+                                f"Stored {len(chunk_stored_ids)} relationships. "
+                                f"Total so far: {len(stored_relationships)}"
+                            )
+
+                        # Mark this relationship chunk as extracted (for resumability)
+                        self.db.mark_relationship_chunk_extracted(
+                            book_id=book_id,
+                            book_type=book_type,
+                            chunk_index=rel_chunk_idx,
+                            total_chunks=rel_total,
+                            content_hash=content_hash,
+                            nav_id=nav_id,
+                            page_num=page_num,
                         )
-                        for c in all_section_concepts
-                    ]
 
-                    extracted_relationships = (
-                        await self.concept_extractor.extract_relationships_for_concepts(
-                            text=content,
-                            all_concepts=concepts_for_rel,
+                        # Update relationship progress in registry
+                        self.extraction_registry.update_relationship_progress(
+                            book_id,
+                            book_type,
+                            section_id,
+                            rel_chunks_processed,
+                            rel_total_chunks,
+                            len(stored_relationships),
                         )
-                    )
+
+                        if not chunk_relationships:
+                            logger.info(
+                                f"Relationship chunk {rel_chunks_processed}/{rel_total_chunks}: "
+                                "No relationships extracted"
+                            )
+
                     logger.info(
-                        f"Extracted {len(extracted_relationships)} relationships for section {section_id}"
+                        f"Relationship extraction complete for section {section_id}: "
+                        f"{rel_chunks_processed}/{rel_total_chunks} chunks processed, "
+                        f"{len(stored_relationships)} relationships stored"
                     )
 
-                    # Build stored_concepts map from all section concepts
-                    all_stored = {c["name"]: c["id"] for c in all_section_concepts}
-
-                    # Store relationships
-                    stored_relationships = self._store_relationships(
-                        extracted_relationships=extracted_relationships,
-                        stored_concepts=all_stored,
-                    )
-                    logger.info(
-                        f"Stored {len(stored_relationships)} relationships for section {section_id}"
-                    )
                 except Exception as e:
                     logger.error(
                         f"Failed to extract/store relationships for section {section_id}: {e}",
@@ -358,12 +523,25 @@ class GraphBuilder:
                     f"Skipping relationship extraction: only {len(all_section_concepts)} concepts"
                 )
 
-        # Mark section as extracted (only if we completed all chunks and not cancelled)
-        if chunks_processed == total_chunks and total_chunks > 0 and not was_cancelled:
+        # Mark section as extracted (only if we completed all phases and not cancelled)
+        both_phases_complete = (
+            chunks_processed == total_chunks
+            and total_chunks > 0
+            and not was_cancelled
+            and (
+                rel_total_chunks == 0  # No relationships to extract
+                or (rel_chunks_processed == rel_total_chunks and not rel_was_cancelled)
+            )
+        )
+
+        if both_phases_complete:
             try:
                 self.db.mark_section_extracted(book_id, book_type, nav_id, page_num)
                 # Clear chunk progress since section is now fully extracted
                 self.db.clear_chunk_progress(book_id, book_type, nav_id, page_num)
+                self.db.clear_relationship_chunk_progress(
+                    book_id, book_type, nav_id, page_num
+                )
                 logger.info(f"Marked section {section_id} as fully extracted")
                 # Mark as completed in registry
                 self.extraction_registry.mark_completed(book_id, book_type, section_id)
@@ -372,16 +550,18 @@ class GraphBuilder:
                     f"Failed to mark section {section_id} as extracted: {e}",
                     exc_info=True,
                 )
-        elif was_cancelled:
+        elif was_cancelled or rel_was_cancelled:
+            phase_cancelled = "concept" if was_cancelled else "relationship"
             logger.info(
                 f"NOT marking section {section_id} as extracted: "
-                f"extraction was cancelled at {chunks_processed}/{total_chunks} chunks. "
+                f"extraction was cancelled during {phase_cancelled} phase. "
                 f"Re-run to resume."
             )
         else:
             logger.warning(
                 f"NOT marking section {section_id} as extracted: "
-                f"only {chunks_processed}/{total_chunks} chunks completed. "
+                f"concept chunks: {chunks_processed}/{total_chunks}, "
+                f"relationship chunks: {rel_chunks_processed}/{rel_total_chunks}. "
                 f"Re-run to resume."
             )
 
@@ -396,9 +576,12 @@ class GraphBuilder:
             "chunks_skipped": chunks_skipped,
             "total_chunks": total_chunks,
             "resumed": chunks_skipped > 0,
-            "cancelled": was_cancelled,
+            "cancelled": was_cancelled or rel_was_cancelled,
             "failed": extraction_failed,
             "error": extraction_error,
+            # Relationship extraction details
+            "rel_chunks_processed": rel_chunks_processed,
+            "rel_total_chunks": rel_total_chunks,
         }
         logger.info(f"extract_and_store complete for section {section_id}: {result}")
         return result
@@ -791,6 +974,213 @@ class GraphBuilder:
             exclude_same_book=not cross_book,
             book_id=concept.get("book_id"),
         )
+
+    async def extract_relationships_only(
+        self,
+        content: str,
+        book_id: int,
+        book_type: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract relationships for a section that already has concepts.
+
+        Use this to:
+        - Resume failed relationship extraction
+        - Re-extract relationships after manual concept edits
+        - Force refresh relationships
+
+        Args:
+            content: Text content to extract from
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            nav_id: Navigation ID (for EPUBs)
+            page_num: Page number (for PDFs)
+            force: Force re-extraction even if relationships exist
+
+        Returns:
+            Dictionary with extraction results
+        """
+        if nav_id is None and page_num is None:
+            raise ValueError("Either nav_id or page_num must be provided")
+
+        section_id = nav_id or f"page_{page_num}"
+        content_hash = self._compute_content_hash(content)
+
+        logger.info(
+            f"Starting extract_relationships_only for book_id={book_id}, "
+            f"book_type={book_type}, section={section_id}, force={force}"
+        )
+
+        # Get all concepts for this section
+        all_section_concepts = self.db.get_concepts_for_book(
+            book_id, book_type, nav_id=nav_id, page_num=page_num
+        )
+
+        if len(all_section_concepts) < 2:
+            logger.info(
+                f"Fewer than 2 concepts for section {section_id}, "
+                "cannot extract relationships"
+            )
+            return {
+                "relationships_found": 0,
+                "chunks_processed": 0,
+                "total_chunks": 0,
+                "resumed": False,
+                "error": "Need at least 2 concepts to extract relationships",
+            }
+
+        # Convert DB concepts back to ExtractedConcept
+        concepts_for_rel = self._convert_db_concepts_to_extracted(all_section_concepts)
+
+        # Build stored_concepts map
+        all_stored = {c["name"]: c["id"] for c in all_section_concepts}
+
+        # Check for partial relationship chunk progress
+        skip_rel_chunks: set[int] = set()
+        known_rel_keys: set[str] = set()
+
+        if force:
+            self.db.clear_relationship_chunk_progress(
+                book_id, book_type, nav_id, page_num
+            )
+            logger.info("Cleared relationship chunk progress for forced re-extraction")
+        else:
+            skip_rel_chunks = self.db.get_extracted_relationship_chunks(
+                book_id, book_type, content_hash, nav_id, page_num
+            )
+            if skip_rel_chunks:
+                logger.info(
+                    f"RESUMING relationship extraction: found {len(skip_rel_chunks)} already-extracted chunks"
+                )
+                known_rel_keys = self._build_relationship_keys_from_graph(
+                    book_id, book_type, all_section_concepts
+                )
+
+        # Register this extraction for progress tracking
+        self.extraction_registry.register_extraction(book_id, book_type, section_id)
+        self.extraction_registry.update_phase(
+            book_id, book_type, section_id, ExtractionPhase.RELATIONSHIPS
+        )
+
+        # Pre-compute chunks
+        rel_chunks = self.concept_extractor.chunk_content(content)
+        rel_total_chunks = len(rel_chunks)
+
+        # Initialize progress
+        self.extraction_registry.update_relationship_progress(
+            book_id, book_type, section_id, 0, rel_total_chunks, 0
+        )
+
+        stored_relationships: list[int] = []
+        rel_chunks_processed = 0
+        rel_was_cancelled = False
+
+        try:
+            async for (
+                rel_chunk_idx,
+                rel_total,
+                chunk_relationships,
+                rel_was_skipped,
+            ) in self.concept_extractor.extract_relationships_incrementally(
+                text=content,
+                all_concepts=concepts_for_rel,
+                skip_chunks=skip_rel_chunks,
+                known_relationship_keys=known_rel_keys,
+                pre_chunked=rel_chunks,
+            ):
+                rel_total_chunks = rel_total
+                rel_chunks_processed = rel_chunk_idx + 1
+
+                # Check for cancellation
+                if self.extraction_registry.is_cancellation_requested(
+                    book_id, book_type, section_id
+                ):
+                    logger.info(
+                        f"Relationship extraction CANCELLED for section {section_id} "
+                        f"at chunk {rel_chunks_processed}/{rel_total_chunks}"
+                    )
+                    rel_was_cancelled = True
+                    self.extraction_registry.mark_cancelled(
+                        book_id, book_type, section_id
+                    )
+                    break
+
+                if rel_was_skipped:
+                    self.extraction_registry.update_relationship_progress(
+                        book_id,
+                        book_type,
+                        section_id,
+                        rel_chunks_processed,
+                        rel_total_chunks,
+                        len(stored_relationships),
+                    )
+                    continue
+
+                if chunk_relationships:
+                    chunk_stored_ids = self._store_relationships(
+                        extracted_relationships=chunk_relationships,
+                        stored_concepts=all_stored,
+                    )
+                    stored_relationships.extend(chunk_stored_ids)
+
+                self.db.mark_relationship_chunk_extracted(
+                    book_id=book_id,
+                    book_type=book_type,
+                    chunk_index=rel_chunk_idx,
+                    total_chunks=rel_total,
+                    content_hash=content_hash,
+                    nav_id=nav_id,
+                    page_num=page_num,
+                )
+
+                self.extraction_registry.update_relationship_progress(
+                    book_id,
+                    book_type,
+                    section_id,
+                    rel_chunks_processed,
+                    rel_total_chunks,
+                    len(stored_relationships),
+                )
+
+            if rel_chunks_processed == rel_total_chunks and not rel_was_cancelled:
+                # Clear progress on completion
+                self.db.clear_relationship_chunk_progress(
+                    book_id, book_type, nav_id, page_num
+                )
+                self.extraction_registry.mark_completed(book_id, book_type, section_id)
+
+            logger.info(
+                f"Relationship-only extraction complete for section {section_id}: "
+                f"{rel_chunks_processed}/{rel_total_chunks} chunks, "
+                f"{len(stored_relationships)} relationships"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed relationship-only extraction for section {section_id}: {e}",
+                exc_info=True,
+            )
+            self.extraction_registry.mark_failed(book_id, book_type, section_id, str(e))
+            return {
+                "relationships_found": len(stored_relationships),
+                "chunks_processed": rel_chunks_processed,
+                "total_chunks": rel_total_chunks,
+                "resumed": len(skip_rel_chunks) > 0,
+                "cancelled": rel_was_cancelled,
+                "error": str(e),
+            }
+
+        return {
+            "relationships_found": len(stored_relationships),
+            "chunks_processed": rel_chunks_processed,
+            "total_chunks": rel_total_chunks,
+            "resumed": len(skip_rel_chunks) > 0,
+            "cancelled": rel_was_cancelled,
+            "error": None,
+        }
 
     def recalculate_book_importance(
         self, book_id: int, book_type: str
