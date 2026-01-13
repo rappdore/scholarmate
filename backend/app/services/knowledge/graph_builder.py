@@ -688,7 +688,9 @@ class GraphBuilder:
                 )
 
         # Pre-compute chunk count so we can report accurate progress from the start
-        chunks = self.concept_extractor.chunk_content(content)
+        # Use smaller chunks (1500 chars) for triple extraction since each chunk
+        # extracts both concepts AND relationships in one pass
+        chunks = self.concept_extractor.chunk_content(content, chunk_size=1500)
         total_chunks = len(chunks)
         logger.info(f"Content will be split into {total_chunks} chunks")
 
