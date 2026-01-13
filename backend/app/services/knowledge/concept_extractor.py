@@ -79,6 +79,40 @@ Return a JSON array of relationships. Example:
 
 Return ONLY valid JSON, no markdown or explanation. If no clear relationships exist, return an empty array []."""
 
+TRIPLE_EXTRACTION_PROMPT = """Extract knowledge triples from this text. Each triple represents a fact: (subject, relationship, object).
+
+For each triple provide:
+- subject: the source entity with name and 1-2 sentence definition
+- predicate: relationship type (one of: explains, contrasts, requires, builds-on, examples, causes)
+- object: the target entity with name and 1-2 sentence definition
+- description: brief explanation of how they relate (1 sentence)
+
+Relationship types:
+- explains: subject explains or clarifies object
+- contrasts: subject is contrasted with or opposed to object
+- requires: subject requires understanding of object first
+- builds-on: subject builds upon or extends object
+- examples: subject is an example or instance of object
+- causes: subject causes or leads to object
+
+Text:
+{chunk_text}
+
+Context: This is from "{book_title}", section: {section_title}
+
+Return a JSON array of triples. Example:
+[
+  {{
+    "subject": {{"name": "Wave-Particle Duality", "definition": "The concept that quantum entities exhibit both wave and particle properties."}},
+    "predicate": "explains",
+    "object": {{"name": "Uncertainty Principle", "definition": "The principle that certain pairs of physical properties cannot both be precisely measured."}},
+    "description": "Wave-particle duality provides the foundation for understanding why the uncertainty principle exists."
+  }}
+]
+
+Focus on extracting meaningful educational relationships. Skip trivial or overly generic connections.
+Return ONLY valid JSON, no markdown or explanation. If no clear relationships exist, return an empty array []."""
+
 
 class ConceptExtractor:
     """
