@@ -597,6 +597,81 @@ class ConceptExtractor:
             logger.error(f"Error extracting triples: {e}")
             return []
 
+    def triples_to_concepts(
+        self,
+        triples: list[ExtractedTriple],
+    ) -> list[ExtractedConcept]:
+        """
+        Convert triples to a deduplicated list of concepts.
+
+        Extracts all unique entities (subjects and objects) from triples.
+        Deduplication is case-insensitive.
+
+        Args:
+            triples: List of extracted triples
+
+        Returns:
+            List of unique ExtractedConcept objects
+        """
+        seen_names: set[str] = set()
+        concepts: list[ExtractedConcept] = []
+
+        for triple in triples:
+            # Process subject
+            subj_key = triple.subject.name.lower()
+            if subj_key not in seen_names:
+                seen_names.add(subj_key)
+                concepts.append(
+                    ExtractedConcept(
+                        name=triple.subject.name,
+                        definition=triple.subject.definition or "",
+                        importance=triple.subject.importance,
+                        source_quote=triple.subject.source_quote or "",
+                    )
+                )
+
+            # Process object
+            obj_key = triple.object.name.lower()
+            if obj_key not in seen_names:
+                seen_names.add(obj_key)
+                concepts.append(
+                    ExtractedConcept(
+                        name=triple.object.name,
+                        definition=triple.object.definition or "",
+                        importance=triple.object.importance,
+                        source_quote=triple.object.source_quote or "",
+                    )
+                )
+
+        return concepts
+
+    def triples_to_relationships(
+        self,
+        triples: list[ExtractedTriple],
+    ) -> list[ExtractedRelationship]:
+        """
+        Convert triples to a list of relationships.
+
+        Args:
+            triples: List of extracted triples
+
+        Returns:
+            List of ExtractedRelationship objects
+        """
+        relationships: list[ExtractedRelationship] = []
+
+        for triple in triples:
+            relationships.append(
+                ExtractedRelationship(
+                    source=triple.subject.name,
+                    target=triple.object.name,
+                    type=triple.predicate,
+                    description=triple.description or "",
+                )
+            )
+
+        return relationships
+
     def _parse_triples_json(self, content: str) -> list[ExtractedTriple]:
         """Parse LLM response into ExtractedTriple objects."""
         try:

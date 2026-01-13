@@ -470,3 +470,97 @@ class TestTripleExtraction:
         )
 
         assert triples[0].predicate == "builds-on"
+
+    def test_triples_to_concepts_extracts_unique_concepts(self):
+        """Test converting triples to concept list (deduped)."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="A", definition="Def A"),
+                predicate="explains",
+                object=TripleEntity(name="B", definition="Def B"),
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(name="B", definition="Def B updated"),  # Duplicate
+                predicate="requires",
+                object=TripleEntity(name="C", definition="Def C"),
+            ),
+        ]
+
+        concepts = extractor.triples_to_concepts(triples)
+
+        # Should have 3 unique concepts: A, B, C
+        assert len(concepts) == 3
+        names = {c.name for c in concepts}
+        assert names == {"A", "B", "C"}
+
+    def test_triples_to_concepts_case_insensitive_dedup(self):
+        """Test that concept deduplication is case-insensitive."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="Photosynthesis", definition="Def 1"),
+                predicate="explains",
+                object=TripleEntity(name="chlorophyll", definition="Def 2"),
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(
+                    name="CHLOROPHYLL", definition="Def 3"
+                ),  # Same as chlorophyll
+                predicate="requires",
+                object=TripleEntity(name="Light", definition="Def 4"),
+            ),
+        ]
+
+        concepts = extractor.triples_to_concepts(triples)
+
+        # Should have 3 concepts: Photosynthesis, chlorophyll (first occurrence), Light
+        assert len(concepts) == 3
+
+    def test_triples_to_relationships(self):
+        """Test converting triples to relationship list."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="A", definition="Def A"),
+                predicate="explains",
+                object=TripleEntity(name="B", definition="Def B"),
+                description="A explains B",
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(name="B", definition="Def B"),
+                predicate="requires",
+                object=TripleEntity(name="C", definition="Def C"),
+                description="B requires C",
+            ),
+        ]
+
+        relationships = extractor.triples_to_relationships(triples)
+
+        assert len(relationships) == 2
+        assert relationships[0].source == "A"
+        assert relationships[0].target == "B"
+        assert relationships[0].type == "explains"
+        assert relationships[1].source == "B"
+        assert relationships[1].target == "C"
