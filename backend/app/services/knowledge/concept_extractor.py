@@ -26,7 +26,7 @@ CONCEPT_EXTRACTION_PROMPT = """Extract key important concepts from this text. Fo
 - importance: 1-5 scale (5 = core concept central to understanding, 1 = minor mention)
 - source_quote: exact phrase from the text where concept appears (keep brief, max 100 chars)
 
-Focus on concepts that would be valuable for learning and retention but also very important to remember. Skip trivial or overly generic terms and concepts.
+Focus on concepts that would be valuable for learning and long-term retention. Skip trivial or overly generic terms.
 
 Text:
 {chunk_text}
