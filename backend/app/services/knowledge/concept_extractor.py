@@ -697,18 +697,14 @@ class ConceptExtractor:
                 continue
 
             logger.info(f"Extracting triples from chunk {i + 1}/{total_chunks}")
-            try:
-                triples = await self.extract_triples(chunk, book_title, section_title)
-                logger.info(
-                    f"Chunk {i + 1}/{total_chunks}: extracted {len(triples)} triples"
-                )
-                yield (i, total_chunks, triples, False)
-
-            except Exception as e:
-                logger.error(
-                    f"Error extracting triples from chunk {i + 1}/{total_chunks}: {e}"
-                )
-                yield (i, total_chunks, [], False)
+            # Don't catch exceptions here - let them propagate to the caller
+            # so extraction_failed can be properly set and the section won't be
+            # incorrectly marked as fully extracted
+            triples = await self.extract_triples(chunk, book_title, section_title)
+            logger.info(
+                f"Chunk {i + 1}/{total_chunks}: extracted {len(triples)} triples"
+            )
+            yield (i, total_chunks, triples, False)
 
     def triples_to_relationships(
         self,
