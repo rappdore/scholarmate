@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
+    "@types/d3": "^7.4.3",
     "axios": "^1.9.0",
+    "d3": "^7.9.0",
     "date-fns": "^4.1.0",
     "hast-util-sanitize": "5.0.2",
     "katex": "^0.16.22",

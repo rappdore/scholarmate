@@ -139,6 +139,8 @@ export default function ConceptsPanel({
           <h3 className="text-sm font-medium text-gray-200">Concepts</h3>
           <a
             href={`/graph/${bookId}?type=${documentType}`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
           >
             View Full Graph →
