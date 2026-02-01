@@ -1,10 +1,14 @@
 {
-  "name": "frontend",
+  "name": "scholarmate",
+  "productName": "ScholarMate",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Intelligent study assistant for reading and understanding documents",
+  "main": ".vite/build/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "electron-forge start",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -14,7 +18,10 @@
     "check": "npm run format:check && npm run lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
@@ -39,6 +46,12 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-deb": "^7.6.0",
+    "@electron-forge/maker-rpm": "^7.6.0",
+    "@electron-forge/maker-squirrel": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
+    "@electron-forge/plugin-vite": "^7.6.0",
     "@eslint/js": "^9.25.0",
     "@tailwindcss/postcss": "^4.1.7",
     "@testing-library/jest-dom": "^6.9.1",
@@ -52,6 +65,8 @@
     "@types/regression": "^2.0.6",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
+    "electron": "^33.2.1",
+    "electron-squirrel-startup": "^1.0.1",
     "eslint": "^9.25.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-react-hooks": "^5.2.0",

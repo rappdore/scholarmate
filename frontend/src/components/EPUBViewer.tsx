@@ -1281,6 +1281,8 @@ export default function EPUBViewer({
               Section {currentContent.spine_position + 1} of{' '}
               {currentContent.total_sections}
               {' • '}
+              {Math.round(scrollProgressRatio * 100)}% through section
+              {' • '}
               {currentContent.progress_percentage}% complete
               {savedProgress && (
                 <span
@@ -1541,7 +1543,8 @@ export default function EPUBViewer({
           <div className="flex gap-4">
             <span>
               Section {currentContent.spine_position + 1} of{' '}
-              {currentContent.total_sections}
+              {currentContent.total_sections} (
+              {Math.round(scrollProgressRatio * 100)}% through)
             </span>
             {navigation.has_toc && (
               <span className="text-purple-400">

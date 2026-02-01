@@ -8,18 +8,16 @@ export default function Header() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700/50">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h1
-              onClick={() => navigate('/')}
-              className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent cursor-pointer hover:opacity-80 transition-opacity"
-            >
-              📚 Scholarmate
-            </h1>
-          </div>
+      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700/50 [-webkit-app-region:drag]">
+        <div className="relative px-4 py-3 flex items-center justify-center">
+          <h1
+            onClick={() => navigate('/')}
+            className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent cursor-pointer hover:opacity-80 transition-opacity [-webkit-app-region:no-drag]"
+          >
+            📚 Scholarmate
+          </h1>
 
-          <div className="flex items-center space-x-4">
+          <div className="absolute right-4 flex items-center space-x-4 [-webkit-app-region:no-drag]">
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors group"
