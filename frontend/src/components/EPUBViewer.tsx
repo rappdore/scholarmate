@@ -104,7 +104,7 @@ export default function EPUBViewer({
   });
   const [lineHeight, setLineHeight] = useState<LineHeight>(() => {
     const saved = sessionStorage.getItem('epub-reader-line-height');
-    return (saved as LineHeight) || 'normal';
+    return (saved as LineHeight) || 'loose';
   });
   const [showSettings, setShowSettings] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
