@@ -4,8 +4,15 @@ run_backend:
 run_frontend:
 	cd frontend && npm run dev
 
+run_electron:
+	cd frontend && npm run start
+
 run_all:
 	make run_backend & make run_frontend
+
+# run_app launches electron which manages the backend automatically
+run_app:
+	cd frontend && npm run start
 
 setup_hooks:
 	./setup-hooks.sh
@@ -30,3 +37,6 @@ test_frontend:
 
 test_all:
 	make test_backend && make test_frontend
+
+clear_knowledge_db:
+	sqlite3 backend/data/knowledge.db "DELETE FROM relationships; DELETE FROM concepts; DELETE FROM extraction_progress; DELETE FROM chunk_progress; DELETE FROM flashcards; VACUUM;"

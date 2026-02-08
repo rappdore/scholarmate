@@ -94,6 +94,33 @@ class ExtractionState:
             "error_message": self.error_message,
         }
 
+    def to_dict_v2(self) -> dict:
+        """Convert state to dictionary for API response (v2 single-phase extraction).
+
+        This method provides a simplified progress structure for single-pass triple
+        extraction where concepts and relationships are extracted together in one LLM call.
+        Unlike to_dict(), this method:
+        - Does not include separate phase tracking (no 'phase' field)
+        - Does not include relationship-specific chunk progress fields
+        - Uses a single progress_percent based on overall chunk progress
+        """
+        progress = self._calculate_progress(self.chunks_processed, self.total_chunks)
+
+        return {
+            "book_id": self.book_id,
+            "book_type": self.book_type,
+            "section_id": self.section_id,
+            "status": self.status.name.lower(),
+            "started_at": self.started_at,
+            "elapsed_seconds": time.time() - self.started_at,
+            "chunks_processed": self.chunks_processed,
+            "total_chunks": self.total_chunks,
+            "concepts_stored": self.concepts_stored,
+            "relationships_stored": self.relationships_stored,
+            "progress_percent": progress,
+            "error_message": self.error_message,
+        }
+
 
 class ExtractionRegistry:
     """

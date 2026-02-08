@@ -42,6 +42,11 @@ class GraphBuilder:
     to construct a coherent knowledge graph from document content.
     """
 
+    # Feature flag for triple-based extraction (v2)
+    # Set to True to use the more efficient single-pass extraction (50% fewer LLM calls)
+    # Set to False to use the legacy two-pass extraction (concepts, then relationships)
+    USE_TRIPLE_EXTRACTION: bool = True
+
     def __init__(
         self,
         db: KnowledgeDatabase | None = None,
@@ -585,6 +590,397 @@ class GraphBuilder:
         }
         logger.info(f"extract_and_store complete for section {section_id}: {result}")
         return result
+
+    async def extract_and_store_v2(
+        self,
+        content: str,
+        book_id: int,
+        book_type: str,
+        book_title: str,
+        section_title: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract concepts and relationships using SINGLE-PASS triple extraction.
+
+        This method uses extract_triples_incrementally to extract both concepts
+        and relationships in a single LLM call per chunk, making it more efficient
+        than the two-pass approach in extract_and_store.
+
+        Supports RESUMABILITY: if extraction was interrupted, re-running will
+        skip already-extracted chunks and continue from where it left off.
+
+        Args:
+            content: Text content to extract from
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            book_title: Title of the book
+            section_title: Title of the section
+            nav_id: Navigation ID (for EPUBs)
+            page_num: Page number (for PDFs)
+            force: Force re-extraction even if already done
+
+        Returns:
+            Dictionary with extraction results
+        """
+        if nav_id is None and page_num is None:
+            raise ValueError("Either nav_id or page_num must be provided")
+        section_id = nav_id or f"page_{page_num}"
+        content_hash = self._compute_content_hash(content)
+
+        logger.info(
+            f"Starting extract_and_store_v2 for book_id={book_id}, "
+            f"book_type={book_type}, section={section_id}, force={force}"
+        )
+        logger.info(f"Content length: {len(content)} characters, hash: {content_hash}")
+
+        # Check if already fully extracted
+        try:
+            if not force and self.db.is_section_extracted(
+                book_id, book_type, nav_id, page_num
+            ):
+                logger.info(
+                    f"Section already extracted: book={book_id}, section={section_id}"
+                )
+                return {
+                    "concepts_extracted": 0,
+                    "relationships_found": 0,
+                    "already_extracted": True,
+                    "chunks_processed": 0,
+                    "chunks_skipped": 0,
+                    "total_chunks": 0,
+                    "resumed": False,
+                    "cancelled": False,
+                    "failed": False,
+                    "error": None,
+                }
+        except ValueError as e:
+            logger.warning(
+                f"Validation error checking extraction status: {e}. Proceeding with extraction."
+            )
+
+        # Check for partial chunk progress (for resumability)
+        skip_chunks: set[int] = set()
+        known_concept_names: set[str] = set()
+
+        if force:
+            # Clear any existing chunk progress when forcing re-extraction
+            self.db.clear_chunk_progress(book_id, book_type, nav_id, page_num)
+            logger.info("Cleared chunk progress for forced re-extraction")
+        else:
+            # Check for existing chunk progress with matching content hash
+            skip_chunks = self.db.get_extracted_chunks(
+                book_id, book_type, content_hash, nav_id, page_num
+            )
+            if skip_chunks:
+                logger.info(
+                    f"RESUMING extraction: found {len(skip_chunks)} already-extracted chunks"
+                )
+                # Get existing concept names to avoid duplicates
+                existing_concepts = self.db.get_concepts_for_book(
+                    book_id, book_type, nav_id=nav_id, page_num=page_num
+                )
+                known_concept_names = {c["name"].lower() for c in existing_concepts}
+                logger.info(
+                    f"Loaded {len(known_concept_names)} existing concept names for deduplication"
+                )
+
+        # Pre-compute chunk count so we can report accurate progress from the start
+        # Use smaller chunks (1500 chars) for triple extraction since each chunk
+        # extracts both concepts AND relationships in one pass
+        chunks = self.concept_extractor.chunk_content(content, chunk_size=1500)
+        total_chunks = len(chunks)
+        logger.info(f"Content will be split into {total_chunks} chunks")
+
+        # Register this extraction for progress tracking and cancellation support
+        self.extraction_registry.register_extraction(book_id, book_type, section_id)
+
+        # Update progress immediately with total chunk count (0 processed so far)
+        self.extraction_registry.update_progress(
+            book_id, book_type, section_id, 0, total_chunks, 0
+        )
+
+        # Tracking state
+        stored_concepts: dict[str, int] = {}
+        stored_relationships: list[int] = []
+        chunks_processed = 0
+        chunks_skipped = 0
+        was_cancelled = False
+        extraction_failed = False
+        extraction_error: str | None = None
+
+        # Initialize concept cache with existing concepts from previous runs
+        # This avoids repeated database queries inside the chunk loop
+        existing_concepts = self.db.get_concepts_for_book(
+            book_id, book_type, nav_id=nav_id, page_num=page_num
+        )
+        all_stored_concepts: dict[str, int] = {
+            c["name"]: c["id"] for c in existing_concepts
+        }
+
+        try:
+            async for (
+                chunk_idx,
+                total,
+                chunk_triples,
+                was_skipped,
+            ) in self.concept_extractor.extract_triples_incrementally(
+                text=content,
+                book_title=book_title,
+                section_title=section_title,
+                skip_chunks=skip_chunks,
+                pre_chunked=chunks,
+            ):
+                total_chunks = total
+                chunks_processed = chunk_idx + 1
+
+                # Check for cancellation between chunks
+                if self.extraction_registry.is_cancellation_requested(
+                    book_id, book_type, section_id
+                ):
+                    logger.info(
+                        f"Extraction CANCELLED for section {section_id} "
+                        f"at chunk {chunks_processed}/{total_chunks}. "
+                        f"Stored {len(stored_concepts)} concepts before cancellation."
+                    )
+                    was_cancelled = True
+                    self.extraction_registry.mark_cancelled(
+                        book_id, book_type, section_id
+                    )
+                    break
+
+                if was_skipped:
+                    chunks_skipped += 1
+                    # Update progress even for skipped chunks
+                    self.extraction_registry.update_progress(
+                        book_id,
+                        book_type,
+                        section_id,
+                        chunks_processed,
+                        total_chunks,
+                        len(stored_concepts),
+                    )
+                    continue
+
+                if chunk_triples:
+                    logger.info(
+                        f"Chunk {chunks_processed}/{total_chunks}: "
+                        f"Processing {len(chunk_triples)} triples..."
+                    )
+
+                    # Convert triples to concepts (deduplicated)
+                    chunk_concepts = self.concept_extractor.triples_to_concepts(
+                        chunk_triples
+                    )
+
+                    # Filter out concepts we already have
+                    new_concepts = [
+                        c
+                        for c in chunk_concepts
+                        if c.name.lower() not in known_concept_names
+                    ]
+
+                    if new_concepts:
+                        logger.info(
+                            f"Chunk {chunks_processed}/{total_chunks}: "
+                            f"Storing {len(new_concepts)} new concepts..."
+                        )
+
+                        # Store this chunk's concepts immediately
+                        chunk_stored = await self._store_concepts(
+                            extracted_concepts=new_concepts,
+                            book_id=book_id,
+                            book_type=book_type,
+                            nav_id=nav_id,
+                            page_num=page_num,
+                        )
+                        stored_concepts.update(chunk_stored)
+
+                        # Update the in-memory cache with newly stored concepts
+                        all_stored_concepts.update(chunk_stored)
+
+                        # Track known concept names for future chunks
+                        for c in new_concepts:
+                            known_concept_names.add(c.name.lower())
+
+                    # Convert triples to relationships and store
+                    chunk_relationships = (
+                        self.concept_extractor.triples_to_relationships(chunk_triples)
+                    )
+
+                    if chunk_relationships:
+                        chunk_rel_ids = self._store_relationships(
+                            extracted_relationships=chunk_relationships,
+                            stored_concepts=all_stored_concepts,
+                        )
+                        stored_relationships.extend(chunk_rel_ids)
+
+                        logger.info(
+                            f"Chunk {chunks_processed}/{total_chunks}: "
+                            f"Stored {len(chunk_rel_ids)} relationships. "
+                            f"Total so far: {len(stored_relationships)}"
+                        )
+
+                # Mark this chunk as extracted (for resumability)
+                self.db.mark_chunk_extracted(
+                    book_id=book_id,
+                    book_type=book_type,
+                    chunk_index=chunk_idx,
+                    total_chunks=total,
+                    content_hash=content_hash,
+                    nav_id=nav_id,
+                    page_num=page_num,
+                )
+
+                # Update progress in registry
+                self.extraction_registry.update_progress(
+                    book_id,
+                    book_type,
+                    section_id,
+                    chunks_processed,
+                    total_chunks,
+                    len(stored_concepts),
+                )
+
+                if not chunk_triples:
+                    logger.info(
+                        f"Chunk {chunks_processed}/{total_chunks}: No triples extracted"
+                    )
+
+        except Exception as e:
+            extraction_failed = True
+            extraction_error = str(e)
+            logger.error(
+                f"Error during triple extraction at chunk {chunks_processed}/{total_chunks}: {e}",
+                exc_info=True,
+            )
+            # Mark as failed in registry
+            self.extraction_registry.mark_failed(book_id, book_type, section_id, str(e))
+            # Don't raise - we want to keep whatever we've stored so far
+            logger.warning(
+                f"Triple extraction failed after {chunks_processed} chunks. "
+                f"Stored {len(stored_concepts)} concepts before failure. "
+                f"Re-run to resume from chunk {chunks_processed}."
+            )
+
+        logger.info(
+            f"Triple extraction complete for section {section_id}: "
+            f"{chunks_processed}/{total_chunks} chunks processed, "
+            f"{chunks_skipped} skipped (resumed), "
+            f"{len(stored_concepts)} concepts stored this run, "
+            f"{len(stored_relationships)} relationships stored this run, "
+            f"cancelled={was_cancelled}"
+        )
+
+        # Mark section as extracted (only if we completed all chunks and not cancelled)
+        if (
+            chunks_processed == total_chunks
+            and total_chunks > 0
+            and not was_cancelled
+            and not extraction_failed
+        ):
+            try:
+                self.db.mark_section_extracted(book_id, book_type, nav_id, page_num)
+                # Clear chunk progress since section is now fully extracted
+                self.db.clear_chunk_progress(book_id, book_type, nav_id, page_num)
+                logger.info(f"Marked section {section_id} as fully extracted")
+                # Mark as completed in registry
+                self.extraction_registry.mark_completed(book_id, book_type, section_id)
+            except Exception as e:
+                logger.error(
+                    f"Failed to mark section {section_id} as extracted: {e}",
+                    exc_info=True,
+                )
+        elif was_cancelled:
+            logger.info(
+                f"NOT marking section {section_id} as extracted: "
+                f"extraction was cancelled. Re-run to resume."
+            )
+        elif extraction_failed:
+            logger.warning(
+                f"NOT marking section {section_id} as extracted: "
+                f"extraction failed. Re-run to resume."
+            )
+        else:
+            logger.warning(
+                f"NOT marking section {section_id} as extracted: "
+                f"chunks: {chunks_processed}/{total_chunks}. Re-run to resume."
+            )
+
+        result = {
+            "concepts_extracted": len(stored_concepts),
+            "relationships_found": len(stored_relationships),
+            "already_extracted": False,
+            "chunks_processed": chunks_processed,
+            "chunks_skipped": chunks_skipped,
+            "total_chunks": total_chunks,
+            "resumed": chunks_skipped > 0,
+            "cancelled": was_cancelled,
+            "failed": extraction_failed,
+            "error": extraction_error,
+        }
+        logger.info(f"extract_and_store_v2 complete for section {section_id}: {result}")
+        return result
+
+    async def extract_and_store_auto(
+        self,
+        content: str,
+        book_id: int,
+        book_type: str,
+        book_title: str,
+        section_title: str,
+        nav_id: str | None = None,
+        page_num: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract and store using the configured extraction method.
+
+        Uses USE_TRIPLE_EXTRACTION class flag to choose between:
+        - v2 (True): Single-pass triple extraction - N LLM calls (50% more efficient)
+        - v1 (False): Two-pass extraction (concepts, then relationships) - 2N LLM calls
+
+        This method allows easy A/B testing and rollback between extraction approaches.
+
+        Args:
+            content: Text content to extract from
+            book_id: ID of the book
+            book_type: Type of book ('epub' or 'pdf')
+            book_title: Title of the book
+            section_title: Title of the section
+            nav_id: Navigation ID (for EPUBs)
+            page_num: Page number (for PDFs)
+            force: Force re-extraction even if already done
+
+        Returns:
+            Dictionary with extraction results
+        """
+        if GraphBuilder.USE_TRIPLE_EXTRACTION:
+            logger.info("Using v2 triple-based extraction (efficient single-pass)")
+            return await self.extract_and_store_v2(
+                content=content,
+                book_id=book_id,
+                book_type=book_type,
+                book_title=book_title,
+                section_title=section_title,
+                nav_id=nav_id,
+                page_num=page_num,
+                force=force,
+            )
+        else:
+            logger.info("Using v1 two-pass extraction (legacy)")
+            return await self.extract_and_store(
+                content=content,
+                book_id=book_id,
+                book_type=book_type,
+                book_title=book_title,
+                section_title=section_title,
+                nav_id=nav_id,
+                page_num=page_num,
+                force=force,
+            )
 
     async def _store_concepts(
         self,

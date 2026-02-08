@@ -350,3 +350,135 @@ class TestExtractionRegistry:
         """Test updating relationship progress for nonexistent extraction."""
         # Should not raise, just silently do nothing
         registry.update_relationship_progress(999, "epub", "nonexistent", 1, 2, 3)
+
+
+class TestExtractionStateV2:
+    """Tests for ExtractionState.to_dict_v2 method for single-phase extraction."""
+
+    def test_to_dict_v2_returns_simplified_progress(self) -> None:
+        """Test to_dict_v2 returns simplified single-phase progress structure."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            status=ExtractionStatus.RUNNING,
+            chunks_processed=5,
+            total_chunks=10,
+            concepts_stored=15,
+            relationships_stored=8,
+        )
+
+        result = state.to_dict_v2()
+
+        # Basic fields
+        assert result["book_id"] == 1
+        assert result["book_type"] == "epub"
+        assert result["section_id"] == "chapter1"
+        assert result["status"] == "running"
+
+        # Timing fields
+        assert "started_at" in result
+        assert "elapsed_seconds" in result
+
+        # Progress fields
+        assert result["chunks_processed"] == 5
+        assert result["total_chunks"] == 10
+        assert result["concepts_stored"] == 15
+        assert result["relationships_stored"] == 8
+        assert result["progress_percent"] == 50.0
+        assert result["error_message"] is None
+
+    def test_to_dict_v2_no_phase_field(self) -> None:
+        """Test to_dict_v2 does not include phase field (single-phase extraction)."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            phase=ExtractionPhase.RELATIONSHIPS,  # This should be ignored in v2
+        )
+
+        result = state.to_dict_v2()
+
+        # v2 should NOT have phase field since extraction is single-phase
+        assert "phase" not in result
+        # v2 should NOT have phase_progress_percent since there's only one phase
+        assert "phase_progress_percent" not in result
+
+    def test_to_dict_v2_no_rel_chunk_fields(self) -> None:
+        """Test to_dict_v2 does not include rel_chunks fields (not needed for v2)."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            rel_chunks_processed=3,
+            rel_total_chunks=5,
+        )
+
+        result = state.to_dict_v2()
+
+        # v2 should NOT have separate relationship chunk tracking fields
+        # since relationships are extracted in the same pass as concepts
+        assert "rel_chunks_processed" not in result
+        assert "rel_total_chunks" not in result
+
+    def test_to_dict_v2_progress_zero_chunks(self) -> None:
+        """Test to_dict_v2 progress is 0 when total_chunks is 0."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            total_chunks=0,
+        )
+
+        result = state.to_dict_v2()
+
+        assert result["progress_percent"] == 0.0
+
+    def test_to_dict_v2_completed_state(self) -> None:
+        """Test to_dict_v2 for completed extraction."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            status=ExtractionStatus.COMPLETED,
+            chunks_processed=10,
+            total_chunks=10,
+            concepts_stored=25,
+            relationships_stored=15,
+        )
+
+        result = state.to_dict_v2()
+
+        assert result["status"] == "completed"
+        assert result["progress_percent"] == 100.0
+        assert result["concepts_stored"] == 25
+        assert result["relationships_stored"] == 15
+
+    def test_to_dict_v2_failed_state_includes_error(self) -> None:
+        """Test to_dict_v2 includes error message for failed extraction."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+            status=ExtractionStatus.FAILED,
+            error_message="LLM rate limit exceeded",
+        )
+
+        result = state.to_dict_v2()
+
+        assert result["status"] == "failed"
+        assert result["error_message"] == "LLM rate limit exceeded"
+
+    def test_to_dict_v2_elapsed_seconds_positive(self) -> None:
+        """Test to_dict_v2 elapsed_seconds is calculated correctly."""
+        state = ExtractionState(
+            book_id=1,
+            book_type="epub",
+            section_id="chapter1",
+        )
+
+        result = state.to_dict_v2()
+
+        # elapsed_seconds should be a non-negative number
+        assert result["elapsed_seconds"] >= 0
+        assert isinstance(result["elapsed_seconds"], float)

@@ -348,3 +348,303 @@ class TestExtraction:
         assert len(concepts) == 2
         assert len(relationships) == 1
         assert relationships[0].type == "explains"
+
+
+class TestTripleExtraction:
+    """Tests for the new triple-based extraction."""
+
+    @pytest.fixture
+    def mock_extractor(self):
+        """Create extractor with fully mocked LLM."""
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = MagicMock(
+                base_url="http://test",
+                api_key="test",
+                model_name="test-model",
+            )
+
+            with patch(
+                "app.services.knowledge.concept_extractor.AsyncOpenAI"
+            ) as mock_openai:
+                extractor = ConceptExtractor()
+                extractor._client = mock_openai.return_value
+                extractor._model = "test-model"
+                yield extractor, mock_openai.return_value
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_returns_triples(self, mock_extractor):
+        """Test that extract_triples returns ExtractedTriple objects."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "Photosynthesis", "definition": "Process of converting light to energy"},
+                            "predicate": "requires",
+                            "object": {"name": "Chlorophyll", "definition": "Green pigment in plants"},
+                            "description": "Photosynthesis requires chlorophyll"
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Plants use photosynthesis which requires chlorophyll.",
+            book_title="Biology 101",
+            section_title="Chapter 1",
+        )
+
+        assert len(triples) == 1
+        assert triples[0].subject.name == "Photosynthesis"
+        assert triples[0].predicate == "requires"
+        assert triples[0].object.name == "Chlorophyll"
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_single_llm_call(self, mock_extractor):
+        """Test that extract_triples makes exactly ONE LLM call (the efficiency goal)."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        await extractor.extract_triples(
+            text="Some text",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        # KEY ASSERTION: Only ONE LLM call, not two
+        assert mock_client.chat.completions.create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_handles_empty_response(self, mock_extractor):
+        """Test handling of empty LLM response."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Generic text with no relationships",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        assert triples == []
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_normalizes_predicate(self, mock_extractor):
+        """Test that predicates are normalized (lowercase, underscores to hyphens)."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "A", "definition": "D"},
+                            "predicate": "Builds_On",
+                            "object": {"name": "B", "definition": "D"},
+                            "description": "A builds on B"
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        triples = await extractor.extract_triples(
+            text="Text",
+            book_title="Test",
+            section_title="Ch1",
+        )
+
+        assert triples[0].predicate == "builds-on"
+
+    def test_triples_to_concepts_extracts_unique_concepts(self):
+        """Test converting triples to concept list (deduped)."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="A", definition="Def A"),
+                predicate="explains",
+                object=TripleEntity(name="B", definition="Def B"),
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(name="B", definition="Def B updated"),  # Duplicate
+                predicate="requires",
+                object=TripleEntity(name="C", definition="Def C"),
+            ),
+        ]
+
+        concepts = extractor.triples_to_concepts(triples)
+
+        # Should have 3 unique concepts: A, B, C
+        assert len(concepts) == 3
+        names = {c.name for c in concepts}
+        assert names == {"A", "B", "C"}
+
+    def test_triples_to_concepts_case_insensitive_dedup(self):
+        """Test that concept deduplication is case-insensitive."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="Photosynthesis", definition="Def 1"),
+                predicate="explains",
+                object=TripleEntity(name="chlorophyll", definition="Def 2"),
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(
+                    name="CHLOROPHYLL", definition="Def 3"
+                ),  # Same as chlorophyll
+                predicate="requires",
+                object=TripleEntity(name="Light", definition="Def 4"),
+            ),
+        ]
+
+        concepts = extractor.triples_to_concepts(triples)
+
+        # Should have 3 concepts: Photosynthesis, chlorophyll (first occurrence), Light
+        assert len(concepts) == 3
+
+    def test_triples_to_relationships(self):
+        """Test converting triples to relationship list."""
+        from app.models.knowledge_models import ExtractedTriple, TripleEntity
+
+        with patch(
+            "app.services.knowledge.concept_extractor.LLMConfigService"
+        ) as mock_config:
+            mock_config.return_value.get_active_configuration.return_value = None
+            extractor = ConceptExtractor()
+
+        triples = [
+            ExtractedTriple(
+                subject=TripleEntity(name="A", definition="Def A"),
+                predicate="explains",
+                object=TripleEntity(name="B", definition="Def B"),
+                description="A explains B",
+            ),
+            ExtractedTriple(
+                subject=TripleEntity(name="B", definition="Def B"),
+                predicate="requires",
+                object=TripleEntity(name="C", definition="Def C"),
+                description="B requires C",
+            ),
+        ]
+
+        relationships = extractor.triples_to_relationships(triples)
+
+        assert len(relationships) == 2
+        assert relationships[0].source == "A"
+        assert relationships[0].target == "B"
+        assert relationships[0].type == "explains"
+        assert relationships[1].source == "B"
+        assert relationships[1].target == "C"
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_incrementally_yields_per_chunk(self, mock_extractor):
+        """Test that incremental extraction yields results per chunk."""
+
+        extractor, mock_client = mock_extractor
+
+        # Will be called twice (two chunks)
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="""[
+                        {
+                            "subject": {"name": "A", "definition": "D"},
+                            "predicate": "explains",
+                            "object": {"name": "B", "definition": "D"}
+                        }
+                    ]"""
+                )
+            )
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Create content that will result in 2 chunks
+        text = "First chunk content. " * 50 + "Second chunk content. " * 50
+
+        results = []
+        async for (
+            chunk_idx,
+            total,
+            triples,
+            was_skipped,
+        ) in extractor.extract_triples_incrementally(
+            text=text,
+            book_title="Test",
+            section_title="Ch1",
+            chunk_size=500,
+        ):
+            results.append((chunk_idx, total, len(triples), was_skipped))
+
+        # Should have processed multiple chunks
+        assert len(results) >= 2
+        # Each result should have chunk index, total, and triples
+        for chunk_idx, total, triple_count, was_skipped in results:
+            assert chunk_idx >= 0
+            assert total > 0
+            assert not was_skipped  # No chunks skipped in fresh extraction
+
+    @pytest.mark.asyncio
+    async def test_extract_triples_incrementally_skips_already_extracted(
+        self, mock_extractor
+    ):
+        """Test that incremental extraction skips chunks in skip_chunks set."""
+        extractor, mock_client = mock_extractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="[]"))]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        text = "Chunk one. " * 100 + "Chunk two. " * 100
+
+        # Skip chunk 0
+        skip_chunks = {0}
+
+        results = []
+        async for (
+            chunk_idx,
+            total,
+            triples,
+            was_skipped,
+        ) in extractor.extract_triples_incrementally(
+            text=text,
+            book_title="Test",
+            section_title="Ch1",
+            skip_chunks=skip_chunks,
+            chunk_size=500,
+        ):
+            results.append((chunk_idx, was_skipped))
+
+        # First chunk should be skipped
+        assert results[0] == (0, True)
+        # Subsequent chunks should not be skipped
+        assert not results[1][1]
