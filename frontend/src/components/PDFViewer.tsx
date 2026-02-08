@@ -11,8 +11,9 @@ import type {
 import HighlightOverlay from './HighlightOverlay';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
 
-// Set up the worker for react-pdf v9
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Set up the worker for react-pdf v9 - use local copy instead of CDN for Electron compatibility
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 interface PDFViewerProps {
   pdfId?: number;
