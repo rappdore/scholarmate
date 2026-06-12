@@ -17,11 +17,9 @@ from typing import TYPE_CHECKING, Any
 
 from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
 from .epub_highlights_service import EPUBHighlightService
-from .epub_reading_statistics_service import EPUBReadingStatisticsService
 from .highlights_service import HighlightsService
 from .notes_service import NotesService
 from .progress_service import ProgressService
-from .reading_statistics_service import ReadingStatisticsService
 
 if TYPE_CHECKING:
     from app.models.pdf_responses import DatabaseDeletionResults
@@ -61,8 +59,6 @@ class DatabaseService:
         self.notes = NotesService(db_path)
         self.highlights = HighlightsService(db_path)
         self.epub_highlights = EPUBHighlightService(db_path)
-        self.reading_statistics = ReadingStatisticsService(db_path)
-        self.epub_reading_statistics = EPUBReadingStatisticsService(db_path)
 
     def _ensure_data_dir(self):
         """

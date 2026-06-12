@@ -1,7 +1,9 @@
 """
 Reading Statistics Router
 
-API endpoints for managing reading session statistics.
+API endpoints for managing PDF reading session statistics on the unified
+sessions service. ``pages_read``/``average_time_per_page`` remain the PDF
+wire vocabulary; storage is units_read + time_spent_seconds.
 """
 
 from typing import Optional
@@ -9,8 +11,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..services.database_service import DatabaseService
-from ..services.registry import get_db_service
+from ..services.registry import get_sessions_service
+from ..services.sessions_service import SessionsService
 
 router = APIRouter(prefix="/reading-statistics", tags=["reading-statistics"])
 
@@ -27,30 +29,17 @@ class SessionUpdateRequest(BaseModel):
 @router.put("/session/update")
 def update_session(
     request: SessionUpdateRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ):
     """
     Update or create a reading session.
-
-    Args:
-        request: SessionUpdateRequest containing:
-            - session_id: Unique UUID for the session
-            - pdf_id: PDF document ID
-            - pages_read: Total pages read in this session
-            - average_time_per_page: Average time per page in seconds
-
-    Returns:
-        dict: Success message
-
-    Raises:
-        HTTPException: If the database operation fails
     """
     try:
-        success = db_service.reading_statistics.upsert_session(
+        success = sessions_service.upsert_session(
             session_id=request.session_id,
-            pdf_id=request.pdf_id,
-            pages_read=request.pages_read,
-            average_time_per_page=request.average_time_per_page,
+            document_id=request.pdf_id,
+            units_read=request.pages_read,
+            time_spent_seconds=request.pages_read * request.average_time_per_page,
         )
 
         if not success:
@@ -76,27 +65,29 @@ def get_sessions_by_id(
         None, ge=1, description="Maximum number of sessions to return"
     ),
     offset: Optional[int] = Query(None, ge=0, description="Number of sessions to skip"),
-    db_service: DatabaseService = Depends(get_db_service),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ):
     """
     Get all reading sessions for a specific PDF by ID.
-
-    Args:
-        pdf_id: ID of the PDF (URL path parameter)
-        limit: Optional maximum number of sessions to return
-        offset: Optional number of sessions to skip (for pagination)
-
-    Returns:
-        dict: Dictionary containing pdf_id, total_sessions, and sessions list
-
-    Raises:
-        HTTPException: If the database operation fails
     """
     try:
-        result = db_service.reading_statistics.get_sessions_by_pdf_id(
-            pdf_id=pdf_id, limit=limit, offset=offset
-        )
-        return result
+        page = sessions_service.get_sessions(pdf_id, limit=limit, offset=offset)
+        return {
+            "pdf_id": pdf_id,
+            "total_sessions": page.total_sessions,
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "session_start": s.session_start,
+                    "last_updated": s.last_updated,
+                    "pages_read": s.units_read,
+                    "average_time_per_page": (
+                        s.time_spent_seconds / s.units_read if s.units_read else 0.0
+                    ),
+                }
+                for s in page.sessions
+            ],
+        }
 
     except Exception as e:
         raise HTTPException(

@@ -1,7 +1,9 @@
 """
 EPUB Reading Statistics Router
 
-API endpoints for managing EPUB reading session statistics.
+API endpoints for managing EPUB reading session statistics on the unified
+sessions service. ``words_read`` remains the EPUB wire vocabulary; storage
+is units_read + time_spent_seconds.
 """
 
 from typing import Optional
@@ -9,8 +11,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..services.database_service import DatabaseService
-from ..services.registry import get_db_service
+from ..services.registry import get_sessions_service
+from ..services.sessions_service import SessionsService
 
 router = APIRouter(prefix="/epub/reading-statistics", tags=["epub-reading-statistics"])
 
@@ -27,29 +29,16 @@ class EPUBSessionUpdateRequest(BaseModel):
 @router.put("/session/update")
 def update_session(
     request: EPUBSessionUpdateRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ):
     """
     Update or create an EPUB reading session.
-
-    Args:
-        request: EPUBSessionUpdateRequest containing:
-            - session_id: Unique UUID for the session
-            - epub_id: EPUB document ID
-            - words_read: Total words read in this session
-            - time_spent_seconds: Time spent reading in seconds
-
-    Returns:
-        dict: Success message
-
-    Raises:
-        HTTPException: If the database operation fails
     """
     try:
-        success = db_service.epub_reading_statistics.upsert_session(
+        success = sessions_service.upsert_session(
             session_id=request.session_id,
-            epub_id=request.epub_id,
-            words_read=request.words_read,
+            document_id=request.epub_id,
+            units_read=request.words_read,
             time_spent_seconds=request.time_spent_seconds,
         )
 
@@ -76,27 +65,27 @@ def get_sessions_by_id(
         None, ge=1, description="Maximum number of sessions to return"
     ),
     offset: Optional[int] = Query(None, ge=0, description="Number of sessions to skip"),
-    db_service: DatabaseService = Depends(get_db_service),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ):
     """
     Get all reading sessions for a specific EPUB by ID.
-
-    Args:
-        epub_id: ID of the EPUB (URL path parameter)
-        limit: Optional maximum number of sessions to return
-        offset: Optional number of sessions to skip (for pagination)
-
-    Returns:
-        dict: Dictionary containing epub_id, total_sessions, and sessions list
-
-    Raises:
-        HTTPException: If the database operation fails
     """
     try:
-        result = db_service.epub_reading_statistics.get_sessions_by_epub_id(
-            epub_id=epub_id, limit=limit, offset=offset
-        )
-        return result
+        page = sessions_service.get_sessions(epub_id, limit=limit, offset=offset)
+        return {
+            "epub_id": epub_id,
+            "total_sessions": page.total_sessions,
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "session_start": s.session_start,
+                    "last_updated": s.last_updated,
+                    "words_read": s.units_read,
+                    "time_spent_seconds": s.time_spent_seconds,
+                }
+                for s in page.sessions
+            ],
+        }
 
     except Exception as e:
         raise HTTPException(

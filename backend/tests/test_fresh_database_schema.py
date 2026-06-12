@@ -22,6 +22,7 @@ from app.models.documents import (
 from app.services.database_service import DatabaseService
 from app.services.documents_repository import DocumentsRepository
 from app.services.llm_config_service import LLMConfigService
+from app.services.sessions_service import SessionsService
 
 
 @pytest.fixture
@@ -38,9 +39,11 @@ def repo(db_path):
 @pytest.fixture
 def db_service(db_path, repo):
     """A DatabaseService (and therefore all its specialized services) on a fresh DB."""
-    # The documents repository and LLM-config service own their tables and are
-    # constructed independently of the facade, exactly like at app startup.
+    # The documents repository, sessions service, and LLM-config service own
+    # their tables and are constructed independently of the facade, exactly
+    # like at app startup (see services.registry.build_registry).
     LLMConfigService(db_path)
+    SessionsService(db_path)
     return DatabaseService(db_path)
 
 
@@ -63,10 +66,9 @@ class TestFreshSchemaIsComplete:
         expected = {
             "document_progress",
             "document_notes",
+            "document_sessions",
             "highlights",
             "epub_highlights",
-            "reading_sessions",
-            "epub_reading_sessions",
             "documents",
             "llm_configurations",
         }

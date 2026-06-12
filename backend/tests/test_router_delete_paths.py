@@ -73,13 +73,15 @@ class TestPdfDeletePath:
             reading_progress=True, notes=True, highlights=True
         )
 
+        fake_sessions = Mock()
         response = pdf_router.delete_book_by_id(
             pdf_id,
             documents_repository=pdf_docs,
             pdf_service=fake_pdf_service,
             db_service=fake_db,
+            sessions_service=fake_sessions,
         )
-        return pdf_id, fake_pdf_service, fake_db, response
+        return pdf_id, fake_pdf_service, fake_sessions, response
 
     def test_registry_row_deleted(self, pdf_docs):
         pdf_id, _, _, response = self._run_delete(pdf_docs)
@@ -88,10 +90,8 @@ class TestPdfDeletePath:
         assert pdf_docs.get_by_filename("gone.pdf") is None
 
     def test_reading_sessions_deleted(self, pdf_docs):
-        pdf_id, _, fake_db, _ = self._run_delete(pdf_docs)
-        fake_db.reading_statistics.delete_sessions_by_pdf_id.assert_called_once_with(
-            pdf_id
-        )
+        pdf_id, _, fake_sessions, _ = self._run_delete(pdf_docs)
+        fake_sessions.delete_sessions_for_document.assert_called_once_with(pdf_id)
 
     def test_cache_entry_evicted(self, pdf_docs):
         _, fake_pdf_service, _, _ = self._run_delete(pdf_docs)
@@ -104,6 +104,7 @@ class TestPdfDeletePath:
                 documents_repository=pdf_docs,
                 pdf_service=Mock(),
                 db_service=Mock(),
+                sessions_service=Mock(),
             )
         assert exc_info.value.status_code == 404
 
@@ -121,15 +122,17 @@ class TestEpubDeletePath:
             "epub_chat_notes": True,
             "epub_highlights": True,
         }
-        fake_db.epub_reading_statistics.delete_sessions_by_epub_id.return_value = True
+        fake_sessions = Mock()
+        fake_sessions.delete_sessions_for_document.return_value = True
 
         response = epub_router.delete_epub_book_by_id(
             epub_id,
             db_service=fake_db,
             epub_service=fake_epub_service,
             documents_repository=epub_docs,
+            sessions_service=fake_sessions,
         )
-        return epub_id, fake_epub_service, fake_db, response
+        return epub_id, fake_epub_service, fake_sessions, response
 
     def test_registry_row_deleted(self, epub_docs):
         epub_id, _, _, response = self._run_delete(epub_docs)
@@ -139,10 +142,8 @@ class TestEpubDeletePath:
         assert epub_docs.get_by_filename("gone.epub") is None
 
     def test_reading_sessions_deleted(self, epub_docs):
-        epub_id, _, fake_db, response = self._run_delete(epub_docs)
-        fake_db.epub_reading_statistics.delete_sessions_by_epub_id.assert_called_once_with(
-            epub_id
-        )
+        epub_id, _, fake_sessions, response = self._run_delete(epub_docs)
+        fake_sessions.delete_sessions_for_document.assert_called_once_with(epub_id)
         assert response["deletion_details"]["epub_reading_sessions"] is True
 
     def test_cache_entry_evicted(self, epub_docs):
@@ -156,6 +157,7 @@ class TestEpubDeletePath:
                 db_service=Mock(),
                 epub_service=Mock(),
                 documents_repository=epub_docs,
+                sessions_service=Mock(),
             )
         assert exc_info.value.status_code == 404
 

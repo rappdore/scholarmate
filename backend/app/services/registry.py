@@ -37,6 +37,7 @@ from .ollama_service import OllamaService
 from .pdf_service import PDFService
 from .progress_service import ProgressService
 from .request_tracking_service import RequestTrackingService
+from .sessions_service import SessionsService
 from .tts_service import TTSService
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class ServiceRegistry:
     documents_repository: DocumentsRepository
     progress_service: ProgressService
     notes_service: NotesService
+    sessions_service: SessionsService
     pdf_service: PDFService
     epub_service: EPUBService
     epub_chat_context_service: EPUBChatContextService
@@ -85,6 +87,7 @@ def build_registry(settings: Settings) -> ServiceRegistry:
         documents_repository=DocumentsRepository(settings.db_path),
         progress_service=ProgressService(settings.db_path),
         notes_service=NotesService(settings.db_path),
+        sessions_service=SessionsService(settings.db_path),
         pdf_service=pdf_service,
         epub_service=epub_service,
         epub_chat_context_service=EPUBChatContextService(
@@ -138,6 +141,10 @@ def get_progress_service() -> ProgressService:
 
 def get_notes_service() -> NotesService:
     return get_registry().notes_service
+
+
+def get_sessions_service() -> SessionsService:
+    return get_registry().sessions_service
 
 
 def get_pdf_service() -> PDFService:

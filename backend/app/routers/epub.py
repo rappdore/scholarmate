@@ -24,7 +24,9 @@ from ..services.registry import (
     get_epub_service,
     get_notes_service,
     get_progress_service,
+    get_sessions_service,
 )
+from ..services.sessions_service import SessionsService
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +439,7 @@ def delete_epub_book_by_id(
     db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ) -> Dict[str, Any]:
     """
     Delete an EPUB book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
@@ -478,7 +481,7 @@ def delete_epub_book_by_id(
         # Delete reading sessions tied to this EPUB
         try:
             deletion_results["epub_reading_sessions"] = (
-                db_service.epub_reading_statistics.delete_sessions_by_epub_id(epub_id)
+                sessions_service.delete_sessions_for_document(epub_id)
             )
         except Exception:
             deletion_results["epub_reading_sessions"] = False

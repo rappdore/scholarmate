@@ -39,7 +39,9 @@ from ..services.registry import (
     get_notes_service,
     get_pdf_service,
     get_progress_service,
+    get_sessions_service,
 )
+from ..services.sessions_service import SessionsService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
 
@@ -305,6 +307,7 @@ def delete_book_by_id(
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
     db_service: DatabaseService = Depends(get_db_service),
+    sessions_service: SessionsService = Depends(get_sessions_service),
 ) -> BookDeletionResponse:
     """
     Delete a book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
@@ -342,7 +345,7 @@ def delete_book_by_id(
 
         # Delete reading sessions tied to this PDF
         try:
-            db_service.reading_statistics.delete_sessions_by_pdf_id(pdf_id)
+            sessions_service.delete_sessions_for_document(pdf_id)
         except Exception:
             logger.warning(
                 "Could not delete reading sessions for PDF ID %s", pdf_id, exc_info=True

@@ -123,6 +123,30 @@ class EpubPosition(BaseModel):
 DocumentPosition = PdfPosition | EpubPosition
 
 
+class ReadingSessionRecord(BaseModel):
+    """A row of the unified ``document_sessions`` table.
+
+    ``units_read`` counts pages for PDFs and words for EPUBs — the
+    format-specific *semantics* live in the consumers, storage is shared.
+    Timestamps are ISO-8601 with a UTC indicator.
+    """
+
+    session_id: str
+    document_id: int
+    session_start: str
+    last_updated: str
+    units_read: int
+    time_spent_seconds: float
+
+
+class SessionsPage(BaseModel):
+    """A (possibly paginated) listing of one document's reading sessions."""
+
+    document_id: int
+    total_sessions: int
+    sessions: list[ReadingSessionRecord]
+
+
 class PdfNoteAnchor(BaseModel):
     """Where a note attaches in a PDF: a page."""
 
