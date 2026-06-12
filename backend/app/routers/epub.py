@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from ..models.documents import (
@@ -243,20 +243,19 @@ def get_epub_image_by_id(
         image_data = epub_service.get_epub_image(epub_doc.filename, image_path)
 
         # Determine media type based on file extension
-        if image_path.lower().endswith(".png"):
+        lower_path = image_path.lower()
+        if lower_path.endswith(".png"):
             media_type = "image/png"
-        elif image_path.lower().endswith((".jpg", ".jpeg")):
+        elif lower_path.endswith((".jpg", ".jpeg")):
             media_type = "image/jpeg"
-        elif image_path.lower().endswith(".gif"):
+        elif lower_path.endswith(".gif"):
             media_type = "image/gif"
-        elif image_path.lower().endswith(".svg"):
+        elif lower_path.endswith(".svg"):
             media_type = "image/svg+xml"
-        elif image_path.lower().endswith(".webp"):
+        elif lower_path.endswith(".webp"):
             media_type = "image/webp"
         else:
             media_type = "application/octet-stream"
-
-        from fastapi.responses import Response
 
         return Response(content=image_data, media_type=media_type)
 

@@ -129,9 +129,7 @@ class ProgressService(BaseDatabaseService):
             last_updated=row["last_updated"],
             status=BookStatus(row["status"]) if row["status"] else BookStatus.NEW,
             status_updated_at=row["status_updated_at"],
-            manually_set=bool(row["manually_set"])
-            if row["manually_set"] is not None
-            else False,
+            manually_set=bool(row["manually_set"]),
         )
 
     # ------------------------------------------------------------------
