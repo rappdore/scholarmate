@@ -139,94 +139,63 @@ class EPUBProgressService(BaseDatabaseService):
             # Convert metadata to JSON string
             nav_metadata_json = json.dumps(nav_metadata) if nav_metadata else None
 
-            # Check if record exists
-            existing = self.get_progress(epub_filename)
+            # Single-statement upsert (B-8): avoids the SELECT-then-INSERT/UPDATE
+            # race. Update semantics preserved from the old two-step code:
+            # - nav_metadata: existing non-NULL value wins (it contains word
+            #   counts); a NULL incoming value never erases it.
+            # - epub_id: only overwritten when the lookup succeeded (B-6).
+            # - status/status_updated_at: auto-derived from progress unless the
+            #   status was manually set (formerly _auto_update_status_based_on_progress).
+            query = """
+                INSERT INTO epub_reading_progress
+                (epub_filename, current_nav_id, chapter_id, chapter_title,
+                 scroll_position, total_sections, progress_percentage, nav_metadata,
+                 last_updated, status, status_updated_at, manually_set, epub_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(epub_filename) DO UPDATE SET
+                    current_nav_id = excluded.current_nav_id,
+                    chapter_id = excluded.chapter_id,
+                    chapter_title = excluded.chapter_title,
+                    scroll_position = excluded.scroll_position,
+                    total_sections = excluded.total_sections,
+                    progress_percentage = excluded.progress_percentage,
+                    nav_metadata = COALESCE(nav_metadata, excluded.nav_metadata),
+                    last_updated = excluded.last_updated,
+                    epub_id = COALESCE(excluded.epub_id, epub_id),
+                    status = CASE
+                        WHEN manually_set = 0 THEN
+                            CASE
+                                WHEN excluded.progress_percentage >= 95.0 THEN 'finished'
+                                WHEN excluded.progress_percentage > 0 THEN 'reading'
+                                ELSE 'new'
+                            END
+                        ELSE status
+                    END,
+                    status_updated_at = CASE
+                        WHEN manually_set = 0 THEN excluded.status_updated_at
+                        ELSE status_updated_at
+                    END
+            """
+            params = (
+                epub_filename,
+                current_nav_id,
+                chapter_id,
+                chapter_title,
+                scroll_position,
+                total_sections,
+                progress_percentage,
+                nav_metadata_json,
+                self.get_current_timestamp(),
+                "reading"
+                if progress_percentage > 0
+                else "new",  # Auto-set initial status
+                self.get_current_timestamp(),
+                False,  # Default manually_set for new records
+                epub_id,  # Phase 2b: Auto-populate epub_id
+            )
+            result = self.execute_update_delete(query, params)
 
-            if existing:
-                # Update existing record, preserving status fields unless auto-updating
-                # Phase 2b: Also update epub_id if it's not set
-                # IMPORTANT: Preserve existing nav_metadata if it exists (contains word counts)
-                # Only update nav_metadata if the existing record doesn't have it
-                existing_nav_metadata = existing.get("nav_metadata")
-                should_update_nav_metadata = existing_nav_metadata is None
-
-                if should_update_nav_metadata:
-                    query = """
-                        UPDATE epub_reading_progress
-                        SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
-                            scroll_position = ?, total_sections = ?, progress_percentage = ?,
-                            nav_metadata = ?, last_updated = ?, epub_id = ?
-                        WHERE epub_filename = ?
-                    """
-                    params = (
-                        current_nav_id,
-                        chapter_id,
-                        chapter_title,
-                        scroll_position,
-                        total_sections,
-                        progress_percentage,
-                        nav_metadata_json,
-                        self.get_current_timestamp(),
-                        epub_id,
-                        epub_filename,
-                    )
-                else:
-                    # Don't touch nav_metadata - preserve existing word counts
-                    query = """
-                        UPDATE epub_reading_progress
-                        SET current_nav_id = ?, chapter_id = ?, chapter_title = ?,
-                            scroll_position = ?, total_sections = ?, progress_percentage = ?,
-                            last_updated = ?, epub_id = ?
-                        WHERE epub_filename = ?
-                    """
-                    params = (
-                        current_nav_id,
-                        chapter_id,
-                        chapter_title,
-                        scroll_position,
-                        total_sections,
-                        progress_percentage,
-                        self.get_current_timestamp(),
-                        epub_id,
-                        epub_filename,
-                    )
-                result = self.execute_update_delete(query, params)
-
-                # Auto-update status based on progress if not manually set
-                if existing.get("manually_set", False) is False:
-                    self._auto_update_status_based_on_progress(
-                        epub_filename, progress_percentage
-                    )
-            else:
-                # Insert new record with default status values
-                # Phase 2b: Include epub_id in insert
-                query = """
-                    INSERT INTO epub_reading_progress
-                    (epub_filename, current_nav_id, chapter_id, chapter_title,
-                     scroll_position, total_sections, progress_percentage, nav_metadata,
-                     last_updated, status, status_updated_at, manually_set, epub_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """
-                params = (
-                    epub_filename,
-                    current_nav_id,
-                    chapter_id,
-                    chapter_title,
-                    scroll_position,
-                    total_sections,
-                    progress_percentage,
-                    nav_metadata_json,
-                    self.get_current_timestamp(),
-                    "reading"
-                    if progress_percentage > 0
-                    else "new",  # Auto-set initial status
-                    self.get_current_timestamp(),
-                    False,  # Default manually_set for new records
-                    epub_id,  # Phase 2b: Auto-populate epub_id
-                )
-                result = self.execute_insert(query, params)
-
-            if result is not None:
+            if result:
                 logger.info(
                     f"Saved EPUB progress for {epub_filename}: {current_nav_id} ({progress_percentage:.1f}%)"
                     + (f" (epub_id: {epub_id})" if epub_id else "")
@@ -392,40 +361,33 @@ class EPUBProgressService(BaseDatabaseService):
             # Phase 2b: Look up epub_id for this filename
             epub_id = self._get_epub_id(epub_filename)
 
-            # Check if record exists
-            existing = self.get_progress(epub_filename)
             current_time = self.get_current_timestamp()
 
-            if existing:
-                # Update existing record
-                # Phase 2b: Also update epub_id if it's not set
-                query = """
-                    UPDATE epub_reading_progress
-                    SET status = ?, status_updated_at = ?, manually_set = ?, epub_id = ?
-                    WHERE epub_filename = ?
-                """
-                params = (status, current_time, manual, epub_id, epub_filename)
-                result = self.execute_update_delete(query, params)
-            else:
-                # Create new record with minimal data
-                # Phase 2b: Include epub_id in insert
-                query = """
-                    INSERT INTO epub_reading_progress
-                    (epub_filename, current_nav_id, status, status_updated_at, manually_set, last_updated, epub_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """
-                params = (
-                    epub_filename,
-                    "start",  # Default nav_id for new records
-                    status,
-                    current_time,
-                    manual,
-                    current_time,
-                    epub_id,  # Phase 2b: Auto-populate epub_id
-                )
-                result = self.execute_insert(query, params)
+            # Single-statement upsert (B-8): creates the row with minimal data
+            # when missing, otherwise only touches the status fields. epub_id is
+            # only overwritten when the lookup succeeded (B-6).
+            query = """
+                INSERT INTO epub_reading_progress
+                (epub_filename, current_nav_id, status, status_updated_at, manually_set, last_updated, epub_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(epub_filename) DO UPDATE SET
+                    status = excluded.status,
+                    status_updated_at = excluded.status_updated_at,
+                    manually_set = excluded.manually_set,
+                    epub_id = COALESCE(excluded.epub_id, epub_id)
+            """
+            params = (
+                epub_filename,
+                "start",  # Default nav_id for new records
+                status,
+                current_time,
+                manual,
+                current_time,
+                epub_id,  # Phase 2b: Auto-populate epub_id
+            )
+            result = self.execute_update_delete(query, params)
 
-            if result is not None:
+            if result:
                 logger.info(
                     f"Updated EPUB status for {epub_filename}: {status}"
                     + (f" (epub_id: {epub_id})" if epub_id else "")
@@ -519,12 +481,18 @@ class EPUBProgressService(BaseDatabaseService):
             if rows:
                 for row in rows:
                     status = row[0] if row[0] else "new"
-                    counts[status] = row[1]
+                    count_val = row[1] if row[1] else 0
+                    # Guard membership so an unexpected status value can't KeyError
+                    if status in counts:
+                        counts[status] = count_val
+
+            # Calculate total (matches the PDF twin)
+            counts["all"] = sum(counts.values())
 
             return counts
         except Exception as e:
             logger.error(f"Error getting EPUB status counts: {e}")
-            return {"new": 0, "reading": 0, "finished": 0}
+            return {"all": 0, "new": 0, "reading": 0, "finished": 0}
 
     def delete_progress(self, epub_filename: str) -> bool:
         """

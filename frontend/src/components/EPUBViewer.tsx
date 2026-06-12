@@ -118,6 +118,27 @@ export default function EPUBViewer({
   const contentContainerRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
 
+  // Timers owned by callbacks (not effects) - cleared on re-fire and unmount
+  const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const selectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
+  useEffect(() => {
+    return () => {
+      if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+      if (scrollRestoreTimerRef.current) {
+        clearTimeout(scrollRestoreTimerRef.current);
+      }
+      if (selectionTimeoutRef.current) {
+        clearTimeout(selectionTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Highlighting state - use shared context
   const {
     createHighlight: createContextHighlight,
@@ -206,12 +227,25 @@ export default function EPUBViewer({
       bookStatus,
     });
 
+  // Monotonic request sequences used to drop stale async resolutions:
+  // a slow response for a previous EPUB/section must not overwrite state
+  // belonging to a newer one (or arrive after unmount).
+  const epubLoadSeqRef = useRef(0);
+  const contentLoadSeqRef = useRef(0);
+
   useEffect(() => {
     if (!epubId) return;
+    epubLoadSeqRef.current++;
     loadNavigation();
     loadStyles();
     loadProgress();
     setInitialLoadDone(false); // Reset initial load flag for new EPUB
+
+    return () => {
+      // Invalidate in-flight loads on EPUB change or unmount
+      epubLoadSeqRef.current++;
+      contentLoadSeqRef.current++;
+    };
   }, [epubId]);
 
   // Persist reader settings to sessionStorage
@@ -242,9 +276,11 @@ export default function EPUBViewer({
     }
 
     // Apply highlights after the DOM has updated
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       applyHighlightsToContent();
     }, 50);
+
+    return () => clearTimeout(timeoutId);
   }, [currentContent]);
 
   // Re-apply highlights whenever the section highlights change (e.g. after creating a new one or color update)
@@ -258,17 +294,22 @@ export default function EPUBViewer({
     }
 
     // Re-apply on next tick so the DOM has settled after state updates
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       applyHighlightsToContent();
     }, 20);
+
+    return () => clearTimeout(timeoutId);
   }, [sectionHighlights]);
 
   // Load saved progress and restore position
   const loadProgress = async () => {
     if (!epubId) return;
+    const seq = epubLoadSeqRef.current;
 
     try {
       const progress = await epubService.getEPUBProgress(epubId);
+      if (seq !== epubLoadSeqRef.current) return; // Stale: EPUB changed
+
       setSavedProgress(progress);
 
       // Set loaded flag for both new and existing progress
@@ -276,6 +317,7 @@ export default function EPUBViewer({
 
       console.log('Loaded EPUB progress:', progress);
     } catch (error) {
+      if (seq !== epubLoadSeqRef.current) return; // Stale: EPUB changed
       console.error('Error loading EPUB progress:', error);
       setIsProgressLoaded(true); // Set loaded even on error to allow new progress
     }
@@ -323,7 +365,8 @@ export default function EPUBViewer({
         last_updated: new Date().toISOString(),
       }));
       setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 2000); // Effect for 2s
+      if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+      justSavedTimerRef.current = setTimeout(() => setJustSaved(false), 2000); // Effect for 2s
       console.log('Saved EPUB progress:', progressData);
     } catch (error) {
       console.error('Error saving EPUB progress:', error);
@@ -591,9 +634,11 @@ export default function EPUBViewer({
 
   const loadStyles = async () => {
     if (!epubId) return;
+    const seq = epubLoadSeqRef.current;
 
     try {
       const stylesData = await epubService.getStyles(epubId);
+      if (seq !== epubLoadSeqRef.current) return; // Stale: EPUB changed
       setEpubStyles(stylesData);
     } catch (err) {
       console.error('Error loading EPUB styles:', err);
@@ -603,12 +648,15 @@ export default function EPUBViewer({
 
   const loadNavigation = async () => {
     if (!epubId) return;
+    const seq = epubLoadSeqRef.current;
 
     try {
       setLoading(true);
       setError(null);
 
       const navData = await epubService.getNavigation(epubId);
+      if (seq !== epubLoadSeqRef.current) return; // Stale: EPUB changed
+
       setNavigation(navData);
 
       // Create flat list of chapter-level options for dropdown
@@ -619,11 +667,14 @@ export default function EPUBViewer({
       // Set this as loaded only after we have navigation
       console.log('Navigation loaded, preparing to restore progress...');
     } catch (err) {
+      if (seq !== epubLoadSeqRef.current) return; // Stale: EPUB changed
       console.error('Error loading navigation:', err);
       setError('Failed to load EPUB navigation');
       setIsProgressLoaded(true); // Set loaded even on error
     } finally {
-      setLoading(false);
+      if (seq === epubLoadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -670,7 +721,7 @@ export default function EPUBViewer({
       shouldRestoreScrollRef.current
     ) {
       // Small delay to ensure content is rendered
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (contentContainerRef.current && savedProgress.scroll_position > 0) {
           contentContainerRef.current.scrollTop = savedProgress.scroll_position;
           setScrollPosition(savedProgress.scroll_position);
@@ -682,6 +733,8 @@ export default function EPUBViewer({
       }, 100);
       // Only restore once
       shouldRestoreScrollRef.current = false;
+
+      return () => clearTimeout(timeoutId);
     }
   }, [currentContent, savedProgress]);
 
@@ -717,12 +770,14 @@ export default function EPUBViewer({
       currentContent.nav_id === pendingHighlightRef.current.nav_id
     ) {
       // Wait for highlights to be applied to the DOM
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (pendingHighlightRef.current) {
           scrollToHighlightElement(pendingHighlightRef.current);
           pendingHighlightRef.current = null;
         }
       }, 150); // Wait for applyHighlightsToContent to complete
+
+      return () => clearTimeout(timeoutId);
     }
   }, [currentContent, sectionHighlights]);
 
@@ -816,9 +871,16 @@ export default function EPUBViewer({
   const loadContent = async (navId: string, isInitialLoad: boolean = false) => {
     if (!epubId) return;
 
+    // Claim a new sequence so any slower, older request resolves as stale
+    // instead of overwriting this section's content
+    const seq = ++contentLoadSeqRef.current;
+
     try {
-      setCurrentNavId(navId);
       const contentData = await epubService.getContent(epubId, navId);
+      if (seq !== contentLoadSeqRef.current) return; // Stale: newer load started
+
+      // Set navId together with the content so they never transiently mismatch
+      setCurrentNavId(navId);
       setCurrentContent(contentData);
 
       // Save progress immediately when navigating (but not on initial restore)
@@ -830,7 +892,10 @@ export default function EPUBViewer({
       // Restore scroll position if it's an initial load with saved progress
       if (isInitialLoad && savedProgress?.scroll_position) {
         // Use a timeout to allow the content to render before scrolling
-        setTimeout(() => {
+        if (scrollRestoreTimerRef.current) {
+          clearTimeout(scrollRestoreTimerRef.current);
+        }
+        scrollRestoreTimerRef.current = setTimeout(() => {
           if (contentContainerRef.current) {
             contentContainerRef.current.scrollTop =
               savedProgress.scroll_position;
@@ -841,11 +906,14 @@ export default function EPUBViewer({
         contentContainerRef.current.scrollTop = 0;
       }
     } catch (err: unknown) {
+      if (seq !== contentLoadSeqRef.current) return; // Stale: newer load started
       console.error('Error loading content:', err);
       const message = err instanceof Error ? err.message : 'Unknown error';
       setError(`Error loading content: ${message}`);
     } finally {
-      setLoading(false);
+      if (seq === contentLoadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -969,7 +1037,10 @@ export default function EPUBViewer({
     setShowHighlightMenu(false);
 
     // Small delay to allow selection to complete
-    setTimeout(() => {
+    if (selectionTimeoutRef.current) {
+      clearTimeout(selectionTimeoutRef.current);
+    }
+    selectionTimeoutRef.current = setTimeout(() => {
       if (!currentNavId) {
         console.log('❌ No currentNavId');
         return;

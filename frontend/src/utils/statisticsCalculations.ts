@@ -14,6 +14,7 @@ import {
   isToday,
   isYesterday,
   differenceInDays,
+  subDays,
 } from 'date-fns';
 
 /**
@@ -83,7 +84,8 @@ export function calculateStreak(sessions: ReadingSession[]): StreakData {
   // Calculate current streak
   let currentStreak = 0;
   const today = format(new Date(), 'yyyy-MM-dd');
-  const yesterday = format(new Date(Date.now() - 86400000), 'yyyy-MM-dd');
+  // Use subDays (not now - 24h) so DST-transition days resolve correctly
+  const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
 
   // Check if we have activity today or yesterday (streak is still alive)
   if (uniqueDates[0] === today || uniqueDates[0] === yesterday) {

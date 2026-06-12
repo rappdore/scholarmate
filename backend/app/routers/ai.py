@@ -9,18 +9,15 @@ from pydantic import BaseModel
 from ..services.dual_chat_service import dual_chat_service
 from ..services.epub.epub_chat_context_service import EPUBChatContextService
 from ..services.epub_documents_service import EPUBDocumentsService
-from ..services.epub_service import EPUBService
+from ..services.instances import epub_service, pdf_service
 from ..services.ollama_service import ollama_service
 from ..services.pdf_documents_service import PDFDocumentsService
-from ..services.pdf_service import PDFService
 from ..services.request_tracking_service import request_tracking_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
-# Initialize services
-pdf_service = PDFService()
-epub_service = EPUBService()
+# Initialize services (pdf_service/epub_service are shared singletons)
 epub_chat_context_service = EPUBChatContextService(epub_service.content_processor)
 pdf_documents_service = PDFDocumentsService()
 epub_documents_service = EPUBDocumentsService()

@@ -37,7 +37,6 @@ class RequestTrackingService:
 
     def __init__(self):
         self._active_requests: dict[str, ActiveRequest] = {}
-        self._cleanup_interval = 3600  # Cleanup every hour
         self._max_request_age = timedelta(hours=2)  # Remove requests older than 2 hours
 
     def generate_request_id(self) -> str:
@@ -65,6 +64,11 @@ class RequestTrackingService:
         Returns:
             The request ID for this request
         """
+        # Opportunistically purge stale entries so the registry is self-bounding
+        # even if a request is registered but never completed (e.g. an exception
+        # occurs before a streaming generator's first iteration).
+        self.cleanup_old_requests()
+
         if request_id is None:
             request_id = self.generate_request_id()
 

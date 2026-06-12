@@ -94,6 +94,8 @@ Hydration happens in an effect while a save effect writes `defaultSettings` to l
 
 ## B. Backend bugs
 
+> ✅ **Bug burn-down completed 2026-06-12** (parallel agents, all fixes verified): B-1..B-13 and B-15 below are fixed with regression tests (~130 new backend tests; suite now 270). Remaining open from B-15: none. F-side: F-1..F-10, F-14, F-16 fixed (+28 frontend tests, suite now 48). Still open: F-11 (EPUBHighlight type split — folded into A-2 typed-models work), F-13 remainder (single color model — folded into A-1), F-15 (DualChat Stop button — awaiting wire-vs-delete decision, open question 3).
+
 **B-1. 404s swallowed into 500s in notes router** — `routers/notes.py:108-121, 124-138, 141-158`: three handlers raise `HTTPException(404)` inside `try` with no `except HTTPException: raise` before the bare `except Exception` → "not found" returns 500. *(S)*
 
 **B-2. `BaseDatabaseService` never closes connections and conflates errors with empty results** — `base_database_service.py:49-91`: `with conn:` manages only the transaction, not closure; every query opens a connection reclaimed only by GC, and SELECTs hold their implicit transaction open. `execute_query` returns `None` on *any* exception — callers can't distinguish "no rows" from "DB broken" (this is what hides C-1). `PDFDocumentsService`/`LLMConfigService` already have the correct close-in-`finally` pattern. *(S — high leverage)*

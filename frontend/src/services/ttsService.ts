@@ -200,7 +200,14 @@ class TTSService {
       this.ws.send(JSON.stringify({ type: 'stop' }));
     }
 
-    this.cleanupPromise = this.cleanup();
+    // Clear cleanupPromise via .finally() so it is reliably reset after the
+    // cleanup settles. (Clearing it inside cleanup() doesn't work: cleanup()
+    // has no awaits, so its body runs synchronously BEFORE this assignment,
+    // which would leave a stale resolved promise behind and turn every
+    // subsequent stop() into a no-op.)
+    this.cleanupPromise = this.cleanup().finally(() => {
+      this.cleanupPromise = null;
+    });
     await this.cleanupPromise;
   }
 
@@ -211,7 +218,6 @@ class TTSService {
     }
     this.currentSentences = [];
     this.setState('idle');
-    this.cleanupPromise = null;
   }
 }
 

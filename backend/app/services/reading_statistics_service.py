@@ -193,6 +193,9 @@ class ReadingStatisticsService(BaseDatabaseService):
                 if limit is not None:
                     sessions_query += " LIMIT ?"
                     params.append(limit)
+                elif offset is not None:
+                    # SQLite requires LIMIT before OFFSET; LIMIT -1 means "no limit"
+                    sessions_query += " LIMIT -1"
 
                 if offset is not None:
                     sessions_query += " OFFSET ?"
@@ -229,3 +232,23 @@ class ReadingStatisticsService(BaseDatabaseService):
                 "total_sessions": 0,
                 "sessions": [],
             }
+
+    def delete_sessions_by_pdf_id(self, pdf_id: int) -> bool:
+        """
+        Delete all reading sessions for a specific PDF.
+
+        Args:
+            pdf_id (int): ID of the PDF document
+
+        Returns:
+            bool: True if sessions were deleted, False otherwise
+        """
+        try:
+            query = "DELETE FROM reading_sessions WHERE pdf_id = ?"
+            result = self.execute_update_delete(query, (pdf_id,))
+            if result:
+                logger.info(f"Deleted all sessions for pdf_id={pdf_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Error deleting sessions for pdf_id={pdf_id}: {e}")
+            return False

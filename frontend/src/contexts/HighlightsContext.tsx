@@ -52,31 +52,41 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [currentPdfId, setCurrentPdfId] = useState<number | null>(null);
 
-  // Load highlights for the current PDF
-  const loadHighlights = useCallback(async () => {
-    if (!currentPdfId) {
-      setHighlights([]);
-      return;
-    }
+  // Load highlights for the current PDF.
+  // `isCancelled` lets the loading effect drop stale responses (e.g. a slow
+  // response for a previous PDF arriving after the user switched documents).
+  const loadHighlights = useCallback(
+    async (isCancelled?: () => boolean) => {
+      // Use === null: 0 is a valid PDF id
+      if (currentPdfId === null) {
+        setHighlights([]);
+        return;
+      }
 
-    setIsLoading(true);
-    setError(null);
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const loadedHighlights = await highlightService.getHighlightsForPdf(
-        currentPdfId
-        // Don't filter by pageNumber to get all highlights
-      );
-      setHighlights(loadedHighlights);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load highlights'
-      );
-      console.error('Error loading highlights:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPdfId]);
+      try {
+        const loadedHighlights = await highlightService.getHighlightsForPdf(
+          currentPdfId
+          // Don't filter by pageNumber to get all highlights
+        );
+        if (isCancelled?.()) return;
+        setHighlights(loadedHighlights);
+      } catch (err) {
+        console.error('Error loading highlights:', err);
+        if (isCancelled?.()) return;
+        setError(
+          err instanceof Error ? err.message : 'Failed to load highlights'
+        );
+      } finally {
+        if (!isCancelled?.()) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [currentPdfId]
+  );
 
   // Create a new highlight
   const createHighlight = useCallback(
@@ -171,9 +181,14 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
     [highlights]
   );
 
-  // Load highlights when filename changes
+  // Load highlights when the current PDF changes; cancel in-flight requests
+  // so a stale response cannot overwrite a newer one.
   useEffect(() => {
-    loadHighlights();
+    let cancelled = false;
+    loadHighlights(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [loadHighlights]);
 
   const value: HighlightsContextType = {

@@ -22,7 +22,12 @@ export default function SimpleResizablePanels({
     const savedLeftWidth = localStorage.getItem('pdf-reader-simple-left-width');
 
     if (savedLeftWidth) {
-      setLeftWidth(Number(savedLeftWidth));
+      const parsed = Number(savedLeftWidth);
+      // Guard against corrupted values (NaN/Infinity would yield `width: NaN%`);
+      // clamp to the same 20-80% range the splitter enforces
+      if (Number.isFinite(parsed)) {
+        setLeftWidth(Math.max(20, Math.min(80, parsed)));
+      }
     }
   }, []);
 

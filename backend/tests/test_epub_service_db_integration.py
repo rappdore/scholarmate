@@ -105,7 +105,6 @@ class TestEPUBServiceInitialization:
         assert service.epub_dir is not None
         assert service.thumbnails_dir is not None
         assert service.base_url is not None
-        assert service.metadata_extractor is not None
         assert service.navigation_service is not None
         assert service.content_processor is not None
         assert service.image_service is not None

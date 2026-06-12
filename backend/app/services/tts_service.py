@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import threading
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
 
@@ -38,12 +39,8 @@ DEFAULT_SPEED = 1.5
 MAX_SPEED = 3.0
 MIN_SPEED = 0.1
 
-# Audio format constants (Kokoro pipeline output format)
-# Not yet used programmatically but reserved for WAV encoding, client negotiation, etc.
-SAMPLE_RATE = 24000  # Hz
-CHANNELS = 1  # Mono
-SAMPLE_FORMAT = "float32"  # 32-bit floating point
-BYTE_ORDER = "little"  # Little endian
+# Sentinel signalling the end of audio production in the async streaming bridge
+_STREAM_DONE = object()
 
 
 @dataclass
@@ -209,29 +206,6 @@ class TTSService:
             logger.error(f"Audio pipeline failed: {e}")
             raise RuntimeError(f"Audio generation failed: {e}") from e
 
-    def _generate_audio_chunks_sync(
-        self, text: str, voice: str, speed: float
-    ) -> list[bytes]:
-        """Collect all audio chunks synchronously.
-
-        This method runs the entire pipeline and collects all chunks
-        into a list. Use this for thread pool execution where generators
-        cannot cross thread boundaries.
-
-        Args:
-            text: Text to convert to speech
-            voice: Voice identifier (already validated)
-            speed: Speech speed multiplier (already validated)
-
-        Returns:
-            list[bytes]: All audio data chunks
-
-        Raises:
-            AudioConversionError: If audio conversion fails
-            RuntimeError: If audio generation fails
-        """
-        return list(self._generate_audio_chunks(text, voice, speed))
-
     def generate_audio(
         self, text: str, voice: str = "af_heart", speed: float = DEFAULT_SPEED
     ) -> Generator[bytes, None, None]:
@@ -246,7 +220,7 @@ class TTSService:
         Args:
             text: Text to convert to speech
             voice: Voice identifier (must be one of the supported voices)
-            speed: Speech speed multiplier (0.1 to 3.0, default 1.0)
+            speed: Speech speed multiplier (0.1 to 3.0, default 1.5)
 
         Yields:
             bytes: Raw PCM audio data chunks
@@ -261,7 +235,11 @@ class TTSService:
     async def generate_audio_async(
         self, text: str, voice: str = "af_heart", speed: float = DEFAULT_SPEED
     ) -> AsyncGenerator[bytes, None]:
-        """Async wrapper for audio generation.
+        """Async wrapper for audio generation that streams chunks as produced.
+
+        The CPU-bound synthesis pipeline runs in a worker thread that feeds an
+        asyncio.Queue; chunks are yielded as soon as they are produced, so
+        first-byte latency is one chunk rather than the full synthesis time.
 
         Audio format:
         - Sample rate: 24000 Hz
@@ -272,7 +250,7 @@ class TTSService:
         Args:
             text: Text to convert to speech
             voice: Voice identifier (must be one of the supported voices)
-            speed: Speech speed multiplier (0.1 to 3.0, default 1.0)
+            speed: Speech speed multiplier (0.1 to 3.0, default 1.5)
 
         Yields:
             bytes: Raw PCM audio data chunks
@@ -283,20 +261,37 @@ class TTSService:
         """
         self._validate_parameters(voice, speed)
 
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        # Signals the worker thread to stop producing (e.g. consumer cancelled)
+        stop_producing = threading.Event()
+
+        def produce() -> None:
+            try:
+                for chunk in self._generate_audio_chunks(text, voice, speed):
+                    if stop_producing.is_set():
+                        break
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
+            except BaseException as e:  # propagate to the consumer
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, _STREAM_DONE)
+
+        loop.run_in_executor(None, produce)
         try:
-            # Run the CPU-bound pipeline in a thread pool to avoid blocking the event loop
-            chunks = await asyncio.to_thread(
-                self._generate_audio_chunks_sync, text, voice, speed
-            )
-
-            # Yield each chunk with async sleep to allow event loop control
-            for chunk in chunks:
-                yield chunk
-                await asyncio.sleep(0)  # Yield control to allow cancellation checks
-
-        except Exception as e:
-            logger.error(f"Async audio generation failed: {e}")
-            raise RuntimeError(f"Audio generation failed: {e}") from e
+            while True:
+                item = await queue.get()
+                if item is _STREAM_DONE:
+                    break
+                if isinstance(item, BaseException):
+                    logger.error(f"Async audio generation failed: {item}")
+                    raise RuntimeError(f"Audio generation failed: {item}") from item
+                yield item
+        finally:
+            # Signal the worker to stop on consumer cancellation/early exit.
+            # Exceptions inside `produce` are routed through the queue, so the
+            # executor future never holds an unretrieved exception.
+            stop_producing.set()
 
 
 # Singleton instance

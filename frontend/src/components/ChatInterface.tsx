@@ -67,6 +67,7 @@ interface Message {
   thinkingContent: string;
   responseContent: string;
   isThinkingComplete: boolean;
+  isResponseComplete: boolean;
   hasThinking: boolean;
 
   // DEPRECATED: Keep for backward compatibility with user messages
@@ -273,6 +274,7 @@ export default function ChatInterface({
       thinkingContent: '',
       responseContent: '',
       isThinkingComplete: false,
+      isResponseComplete: true, // User messages are always complete
       hasThinking: false,
     };
 
@@ -293,6 +295,7 @@ export default function ChatInterface({
       thinkingContent: '',
       responseContent: '',
       isThinkingComplete: false,
+      isResponseComplete: false,
       hasThinking: false,
       isUser: false,
       timestamp: new Date(),
@@ -341,11 +344,17 @@ export default function ChatInterface({
 
         // Handle cancellation
         if (data.cancelled) {
-          const cancelText = 'Message generation stopped by user.';
+          const cancelText = '*Message generation stopped by user.*';
           setMessages(prev =>
             prev.map(msg =>
               msg.id === aiMessageId
-                ? { ...msg, responseContent: cancelText }
+                ? {
+                    ...msg,
+                    // Keep any partial answer and append the notice visibly
+                    responseContent: msg.responseContent
+                      ? `${msg.responseContent}\n\n${cancelText}`
+                      : cancelText,
+                  }
                 : msg
             )
           );
@@ -401,22 +410,46 @@ export default function ChatInterface({
       console.error('Chat failed:', error);
 
       // Check if the error is due to abort
+      // Write the notice into responseContent (not the legacy text field):
+      // the render ignores text when responseContent is non-empty, so a
+      // partial stream would otherwise be silently truncated.
       if (error instanceof Error && error.name === 'AbortError') {
-        const abortText = 'Message generation stopped by user.';
+        const abortText = '*Message generation stopped by user.*';
         setMessages(prev =>
           prev.map(msg =>
-            msg.id === aiMessageId ? { ...msg, text: abortText } : msg
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  responseContent: msg.responseContent
+                    ? `${msg.responseContent}\n\n${abortText}`
+                    : abortText,
+                }
+              : msg
           )
         );
       } else {
         const errorText = `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please make sure the AI service is running.`;
         setMessages(prev =>
           prev.map(msg =>
-            msg.id === aiMessageId ? { ...msg, text: errorText } : msg
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  responseContent: msg.responseContent
+                    ? `${msg.responseContent}\n\n${errorText}`
+                    : errorText,
+                }
+              : msg
           )
         );
       }
     } finally {
+      // Mark the message complete so it renders as markdown even while a
+      // newer message streams (covers done, cancel, abort and error paths)
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === aiMessageId ? { ...msg, isResponseComplete: true } : msg
+        )
+      );
       setLoading(false);
       setStreaming(false);
       setAbortController(null);
@@ -656,7 +689,7 @@ export default function ChatInterface({
                     )}
                     {/* Show response content */}
                     {message.responseContent ? (
-                      streaming && !message.isUser ? (
+                      !message.isResponseComplete ? (
                         // Show plain text while streaming for performance
                         <div className="whitespace-pre-wrap">
                           {message.responseContent}

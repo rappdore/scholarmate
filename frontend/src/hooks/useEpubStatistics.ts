@@ -42,6 +42,10 @@ export function useEpubStatistics(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Cancellation guard: a slow response for a previous epubId must not
+    // overwrite newer state (and no setState after unmount).
+    let cancelled = false;
+
     const fetchStatistics = async () => {
       if (epubId === undefined) {
         setLoading(false);
@@ -63,14 +67,18 @@ export function useEpubStatistics(
         console.log('[useEpubStatistics] Document Info:', epubInfo);
         console.log('[useEpubStatistics] Progress:', epubProgress);
 
+        if (cancelled) return;
         setSessionsData(sessionsResponse);
         setDocumentInfo(epubInfo);
         setProgress(epubProgress);
       } catch (err) {
         console.error('[useEpubStatistics] Error fetching statistics:', err);
+        if (cancelled) return;
         setError('Failed to load statistics');
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
@@ -79,6 +87,10 @@ export function useEpubStatistics(
     } else {
       setLoading(false);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [epubId]);
 
   // Calculate derived data using memoization

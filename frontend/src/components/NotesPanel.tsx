@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -58,6 +58,15 @@ export default function NotesPanel({
   const [error, setError] = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<number | null>(null);
   const [copiedNoteId, setCopiedNoteId] = useState<number | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the pending "copied" timer on unmount so it doesn't setState
+  // after the panel is removed
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   // Load notes for the current document (PDF or EPUB)
   useEffect(() => {
@@ -95,7 +104,8 @@ export default function NotesPanel({
     try {
       await navigator.clipboard.writeText(content);
       setCopiedNoteId(noteId);
-      setTimeout(() => setCopiedNoteId(null), 2000);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopiedNoteId(null), 2000);
     } catch (err) {
       console.error('Failed to copy note:', err);
     }
@@ -108,7 +118,7 @@ export default function NotesPanel({
       } else if (documentType === 'epub') {
         await epubNotesService.deleteChatNote(noteId);
       }
-      setNotes(notes.filter(note => note.id !== noteId));
+      setNotes(prev => prev.filter(note => note.id !== noteId));
       if (expandedNote === noteId) {
         setExpandedNote(null);
       }

@@ -16,6 +16,12 @@ DEFAULT_BASE_URL = "http://localhost:1234/v1"
 DEFAULT_API_KEY = "not-needed"
 DEFAULT_MODEL = ""
 
+# Number of chat history messages sent to the LLM for context
+CHAT_HISTORY_LIMIT = 10
+
+# Maximum reasoning traces kept per file to bound memory usage
+MAX_REASONING_PER_FILE = 50
+
 
 class OllamaService:
     def __init__(self, db_path: str = "data/reading_progress.db") -> None:
@@ -82,6 +88,69 @@ class OllamaService:
             self.always_starts_with_thinking = False
 
             self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
+
+    def _clear_reasoning_session(self, filename: str) -> None:
+        """Drop any stored reasoning traces for a file (called on new chats)."""
+        if filename in self._reasoning_sessions:
+            logger.debug(f"Clearing reasoning session for {filename}")
+            del self._reasoning_sessions[filename]
+        else:
+            logger.debug(f"Starting new chat for {filename} (no existing session)")
+
+    def _store_reasoning(self, filename: str, reasoning_details) -> None:
+        """Store a reasoning trace (or None placeholder) for a file, capped in size."""
+        session = self._reasoning_sessions.setdefault(filename, [])
+        session.append(reasoning_details)
+        if len(session) > MAX_REASONING_PER_FILE:
+            del session[: len(session) - MAX_REASONING_PER_FILE]
+
+    @staticmethod
+    def _reconstruct_history_with_reasoning(
+        chat_history: list,
+        stored_reasoning: list,
+        history_limit: int = CHAT_HISTORY_LIMIT,
+    ) -> list:
+        """
+        Build the message list for the LLM from chat history, re-attaching stored
+        reasoning traces to assistant messages.
+
+        Reasoning traces are stored append-only per response, so the most recent
+        trace belongs to the most recent assistant message. Because the history
+        is truncated to the last `history_limit` messages, alignment must be done
+        from the END: the last min(len) stored reasonings are zipped with the
+        last assistant messages in the truncated slice.
+        """
+        history = chat_history[-history_limit:]
+        assistant_indices = [
+            i for i, msg in enumerate(history) if msg.get("role") == "assistant"
+        ]
+
+        pair_count = min(len(assistant_indices), len(stored_reasoning))
+        reasoning_by_index: dict[int, object] = {}
+        if pair_count:
+            for idx, reasoning in zip(
+                assistant_indices[-pair_count:], stored_reasoning[-pair_count:]
+            ):
+                reasoning_by_index[idx] = reasoning
+
+        messages: list = []
+        for i, msg in enumerate(history):
+            reasoning = reasoning_by_index.get(i)
+            if reasoning:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.get("content", ""),
+                        "reasoning_details": reasoning,
+                    }
+                )
+                logger.debug(
+                    f"Attached reasoning_details to assistant message at index {i}"
+                )
+            else:
+                messages.append(msg)
+
+        return messages
 
     def reload_configuration(self) -> None:
         """
@@ -227,15 +296,7 @@ Provide a helpful analysis that will aid in understanding this content."""
 
         # Clear reasoning session if this is a new chat
         if is_new_chat:
-            if filename in self._reasoning_sessions:
-                print(f"[DEBUG] Clearing reasoning session for {filename}")
-                del self._reasoning_sessions[filename]
-            else:
-                print(f"[DEBUG] Starting new chat for {filename} (no existing session)")
-
-        # Initialize session storage if it doesn't exist
-        if filename not in self._reasoning_sessions:
-            self._reasoning_sessions[filename] = []
+            self._clear_reasoning_session(filename)
 
         system_prompt = f"""
         You are an intelligent study assistant helping a user understand a PDF document.
@@ -258,32 +319,11 @@ Keep responses conversational but informative. When explaining a concept, emphas
 
         # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:
-            stored_reasoning = self._reasoning_sessions[filename]
-            assistant_msg_count = 0
-
-            for msg in chat_history[-10:]:  # Keep last 10 messages for context
-                if msg.get("role") == "assistant":
-                    # Try to match this assistant message with stored reasoning
-                    if assistant_msg_count < len(stored_reasoning):
-                        reasoning = stored_reasoning[assistant_msg_count]
-                        if reasoning:
-                            messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": msg.get("content", ""),
-                                    "reasoning_details": reasoning,
-                                }
-                            )
-                            print(
-                                f"[DEBUG] Added assistant message {assistant_msg_count} with reasoning_details: {reasoning}"
-                            )
-                        else:
-                            messages.append(msg)
-                        assistant_msg_count += 1
-                    else:
-                        messages.append(msg)
-                else:
-                    messages.append(msg)
+            messages.extend(
+                self._reconstruct_history_with_reasoning(
+                    chat_history, self._reasoning_sessions.get(filename, [])
+                )
+            )
 
         # Add current message
         messages.append({"role": "user", "content": message})
@@ -340,14 +380,13 @@ Keep responses conversational but informative. When explaining a concept, emphas
             async for final_chunk in parser.finalize():
                 yield final_chunk
 
-            # Store the reasoning_details for this response
-            if reasoning_details:
-                self._reasoning_sessions[filename].append(reasoning_details)
-                logger.debug(f"[LLM] Stored reasoning_details for {filename}")
-            else:
-                # Store None to keep indexing aligned
-                self._reasoning_sessions[filename].append(None)
-                logger.debug(f"[LLM] No reasoning_details in response for {filename}")
+            # Store the reasoning_details (or None to keep alignment) for this response
+            self._store_reasoning(filename, reasoning_details)
+            logger.debug(
+                f"[LLM] Stored reasoning_details for {filename}"
+                if reasoning_details
+                else f"[LLM] No reasoning_details in response for {filename}"
+            )
 
             logger.info(f"[LLM] Stream complete for {filename}")
 
@@ -390,15 +429,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
 
         # Clear reasoning session if this is a new chat
         if is_new_chat:
-            if filename in self._reasoning_sessions:
-                print(f"[DEBUG] Clearing reasoning session for {filename}")
-                del self._reasoning_sessions[filename]
-            else:
-                print(f"[DEBUG] Starting new chat for {filename} (no existing session)")
-
-        # Initialize session storage if it doesn't exist
-        if filename not in self._reasoning_sessions:
-            self._reasoning_sessions[filename] = []
+            self._clear_reasoning_session(filename)
 
         # Use the structured context from EPUBChatContextService
         formatted_context = epub_context.format_for_llm()
@@ -424,32 +455,11 @@ Keep responses conversational but informative."""
 
         # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:
-            stored_reasoning = self._reasoning_sessions[filename]
-            assistant_msg_count = 0
-
-            for msg in chat_history[-10:]:  # Keep last 10 messages for context
-                if msg.get("role") == "assistant":
-                    # Try to match this assistant message with stored reasoning
-                    if assistant_msg_count < len(stored_reasoning):
-                        reasoning = stored_reasoning[assistant_msg_count]
-                        if reasoning:
-                            messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": msg.get("content", ""),
-                                    "reasoning_details": reasoning,
-                                }
-                            )
-                            print(
-                                f"[DEBUG] Added assistant message {assistant_msg_count} with reasoning_details: {reasoning}"
-                            )
-                        else:
-                            messages.append(msg)
-                        assistant_msg_count += 1
-                    else:
-                        messages.append(msg)
-                else:
-                    messages.append(msg)
+            messages.extend(
+                self._reconstruct_history_with_reasoning(
+                    chat_history, self._reasoning_sessions.get(filename, [])
+                )
+            )
 
         # Add current message
         messages.append({"role": "user", "content": message})
@@ -505,14 +515,13 @@ Keep responses conversational but informative."""
             async for final_chunk in parser.finalize():
                 yield final_chunk
 
-            # Store the reasoning_details for this response
-            if reasoning_details:
-                self._reasoning_sessions[filename].append(reasoning_details)
-                logger.debug(f"[LLM] Stored reasoning_details for {filename}")
-            else:
-                # Store None to keep indexing aligned
-                self._reasoning_sessions[filename].append(None)
-                logger.debug(f"[LLM] No reasoning_details in response for {filename}")
+            # Store the reasoning_details (or None to keep alignment) for this response
+            self._store_reasoning(filename, reasoning_details)
+            logger.debug(
+                f"[LLM] Stored reasoning_details for {filename}"
+                if reasoning_details
+                else f"[LLM] No reasoning_details in response for {filename}"
+            )
 
             logger.info(f"[LLM] EPUB stream complete for {filename}")
 

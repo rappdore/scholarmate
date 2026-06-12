@@ -19,7 +19,9 @@ export default function Library() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | BookStatus>('reading');
-  const [hoveredBook, setHoveredBook] = useState<number | null>(null);
+  // Composite key (`${doc.type}-${doc.id}`): a PDF and an EPUB can share the
+  // same numeric id, so keying by id alone would open both hover menus
+  const [hoveredBook, setHoveredBook] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
@@ -410,7 +412,7 @@ export default function Library() {
               <div
                 key={`${doc.type}-${doc.id}`}
                 className="relative group bg-slate-800/60 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 cursor-pointer border border-slate-700/50 hover:border-purple-500/50 overflow-hidden transform hover:scale-105 flex flex-col"
-                onMouseEnter={() => setHoveredBook(doc.id)}
+                onMouseEnter={() => setHoveredBook(`${doc.type}-${doc.id}`)}
                 onMouseLeave={() => setHoveredBook(null)}
               >
                 {/* Book Action Menu */}
@@ -418,7 +420,7 @@ export default function Library() {
                   pdf={doc as any} // Temporary fix until BookActionMenu is updated to support Document type
                   onStatusChange={status => handleStatusChange(doc, status)}
                   onDelete={() => handleDeleteBook(doc)}
-                  isVisible={hoveredBook === doc.id}
+                  isVisible={hoveredBook === `${doc.type}-${doc.id}`}
                 />
 
                 <div

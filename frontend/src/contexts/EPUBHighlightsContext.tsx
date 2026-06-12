@@ -64,36 +64,47 @@ export const EPUBHighlightsProvider: React.FC<EPUBHighlightsProviderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [currentEpubId, setCurrentEpubId] = useState<number | null>(null);
 
-  // Load highlights for the current EPUB
-  const loadHighlights = useCallback(async () => {
-    if (!currentEpubId) {
-      setHighlights([]);
-      return;
-    }
+  // Load highlights for the current EPUB.
+  // `isCancelled` lets the loading effect drop stale responses (e.g. a slow
+  // response for a previous EPUB arriving after the user switched documents).
+  const loadHighlights = useCallback(
+    async (isCancelled?: () => boolean) => {
+      // Use === null: 0 is a valid EPUB id
+      if (currentEpubId === null) {
+        setHighlights([]);
+        return;
+      }
 
-    setIsLoading(true);
-    setError(null);
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const loadedHighlights =
-        await epubService.getAllHighlights(currentEpubId);
-      setHighlights(loadedHighlights);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load EPUB highlights'
-      );
-      console.error('Error loading EPUB highlights:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentEpubId]);
+      try {
+        const loadedHighlights =
+          await epubService.getAllHighlights(currentEpubId);
+        if (isCancelled?.()) return;
+        setHighlights(loadedHighlights);
+      } catch (err) {
+        console.error('Error loading EPUB highlights:', err);
+        if (isCancelled?.()) return;
+        setError(
+          err instanceof Error ? err.message : 'Failed to load EPUB highlights'
+        );
+      } finally {
+        if (!isCancelled?.()) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [currentEpubId]
+  );
 
   // Create a new highlight
   const createHighlight = useCallback(
     async (
       highlightData: EPUBHighlightRequest
     ): Promise<EPUBHighlight | null> => {
-      if (!currentEpubId) {
+      // Use === null: 0 is a valid EPUB id
+      if (currentEpubId === null) {
         setError('No EPUB selected');
         return null;
       }
@@ -187,9 +198,14 @@ export const EPUBHighlightsProvider: React.FC<EPUBHighlightsProviderProps> = ({
     [highlights]
   );
 
-  // Load highlights when epubId changes
+  // Load highlights when epubId changes; cancel in-flight requests so a
+  // stale response cannot overwrite a newer one.
   useEffect(() => {
-    loadHighlights();
+    let cancelled = false;
+    loadHighlights(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [loadHighlights]);
 
   const value: EPUBHighlightsContextType = {

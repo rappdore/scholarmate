@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
 import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
 import type { Highlight } from '../types/highlights';
@@ -530,6 +530,15 @@ function HighlightItem({
 }: HighlightItemProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the pending "copied" timer on unmount so it doesn't setState
+  // after the item is removed
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   // Close color picker when clicking outside
   useEffect(() => {
@@ -597,7 +606,13 @@ function HighlightItem({
                   e.stopPropagation();
                   navigator.clipboard.writeText(selectedText).then(() => {
                     setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
+                    if (copiedTimerRef.current) {
+                      clearTimeout(copiedTimerRef.current);
+                    }
+                    copiedTimerRef.current = setTimeout(
+                      () => setCopied(false),
+                      2000
+                    );
                   });
                 }}
                 className="p-1 hover:bg-gray-600 rounded transition-colors"

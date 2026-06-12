@@ -8,6 +8,8 @@ for all specialized database services in the application.
 import logging
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -46,14 +48,25 @@ class BaseDatabaseService:
         if data_dir and not os.path.exists(data_dir):
             os.makedirs(data_dir)
 
-    def get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def get_connection(self) -> Iterator[sqlite3.Connection]:
         """
-        Get a database connection.
+        Context manager yielding a database connection.
 
-        Returns:
+        The connection wraps the block in a transaction (commit on success,
+        rollback on exception — the same semantics callers previously got
+        from ``with conn:``) and is always closed afterwards, fixing the
+        connection leak where connections were only reclaimed by GC.
+
+        Yields:
             sqlite3.Connection: Database connection object
         """
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def execute_query(
         self,

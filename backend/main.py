@@ -35,8 +35,6 @@ app = FastAPI(title="PDF AI Reader API", version="1.0.0")
 async def log_requests(request: Request, call_next):
     start_time = datetime.now()
     logger.info(f">>> Incoming request: {request.method} {request.url.path}")
-    logger.info(f">>> Headers: {dict(request.headers)}")
-    logger.info(f">>> Client: {request.client.host}:{request.client.port}")
 
     try:
         response = await call_next(request)
@@ -51,15 +49,22 @@ async def log_requests(request: Request, call_next):
             f"!!! Request failed: {request.method} {request.url.path} - Duration: {duration:.3f}s - Error: {str(e)}",
             exc_info=True,
         )
+        # Return a generic body to the client; details stay in the server log above
         return JSONResponse(
-            status_code=500, content={"detail": f"Internal server error: {str(e)}"}
+            status_code=500, content={"detail": "Internal server error"}
         )
 
 
+# Localhost-only single-user app: allow the Vite dev server origins explicitly.
+# "null" is included because the packaged Electron app loads the UI via file://,
+# which browsers report as the "null" Origin (non-browser/file origins are not
+# subject to CORS preflight the same way, but this keeps it explicit and safe).
+# Nothing sends credentials, so allow_credentials stays False (wildcard or broad
+# origins combined with allow_credentials=True is invalid/unsafe).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "null"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

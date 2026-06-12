@@ -46,6 +46,12 @@ export default function AIPanel({
   // Track last analyzed scroll position for EPUB auto-analyze on scroll
   const lastAnalyzedScrollProgressRef = useRef<number>(0);
 
+  // Request token: incremented for each new analysis (and on page/section
+  // change) so chunks from a stale stream are dropped instead of being
+  // appended into the new page's panel. The streaming service does not accept
+  // an AbortSignal, so we invalidate by token instead.
+  const analysisRequestIdRef = useRef(0);
+
   // Threshold for triggering auto-analyze on scroll (~20% of section ≈ 2k chars in typical section)
   const SCROLL_THRESHOLD = 0.2;
 
@@ -62,6 +68,14 @@ export default function AIPanel({
     setIsThinkingComplete(false);
     // Reset scroll tracking when section changes
     lastAnalyzedScrollProgressRef.current = 0;
+
+    return () => {
+      // Invalidate any in-flight analysis stream so it stops writing into
+      // the next page/section's panel (also covers unmount)
+      analysisRequestIdRef.current++;
+      setLoading(false);
+      setStreaming(false);
+    };
   }, [pdfId, epubId, currentPage, currentNavId, documentType]);
 
   // Auto-analyze for PDF (on page change) and EPUB (on section change)
@@ -127,6 +141,10 @@ export default function AIPanel({
     if (documentType === 'pdf' && (!pdfId || !currentPage)) return;
     if (documentType === 'epub' && (!epubId || !currentNavId)) return;
 
+    // Invalidate any previous in-flight analysis and claim this request
+    const requestId = ++analysisRequestIdRef.current;
+    const isStale = () => analysisRequestIdRef.current !== requestId;
+
     setLoading(true);
     setStreaming(true);
     setResponseContent('');
@@ -147,6 +165,12 @@ export default function AIPanel({
           : aiService.streamAnalyzePage(pdfId!, currentPage);
 
       for await (const chunk of analysisStream) {
+        // Drop chunks from a stale request (page/section changed or a newer
+        // analysis started while this one was streaming)
+        if (isStale()) {
+          return;
+        }
+
         if (chunk.error) {
           throw new Error(chunk.error);
         }
@@ -172,7 +196,7 @@ export default function AIPanel({
         }
       }
 
-      if (!textExtracted) {
+      if (!textExtracted && !isStale()) {
         setResponseContent(
           prev =>
             prev +
@@ -181,14 +205,19 @@ export default function AIPanel({
       }
     } catch (error) {
       console.error('Analysis failed:', error);
-      setResponseContent(
-        'Failed to analyze content. Please check if the AI service is running and try again.'
-      );
-      setThinkingContent('');
-      setHasThinking(false);
+      if (!isStale()) {
+        setResponseContent(
+          'Failed to analyze content. Please check if the AI service is running and try again.'
+        );
+        setThinkingContent('');
+        setHasThinking(false);
+      }
     } finally {
-      setLoading(false);
-      setStreaming(false);
+      // Only the latest request may clear the loading indicators
+      if (!isStale()) {
+        setLoading(false);
+        setStreaming(false);
+      }
     }
   };
 

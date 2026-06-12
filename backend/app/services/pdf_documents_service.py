@@ -13,7 +13,6 @@ import logging
 import os
 import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 
 from app.models.pdf_responses import PDFDocumentRecord
 
@@ -288,90 +287,3 @@ class PDFDocumentsService:
                 """
             )
             return [PDFDocumentRecord(**dict(row)) for row in cursor.fetchall()]
-
-    def sync_from_filesystem(self, pdfs_dir: str) -> dict[str, int]:
-        """
-        Sync database with filesystem.
-
-        This method:
-        - Adds new PDFs found in filesystem to database
-        - Updates metadata for existing PDFs
-        - Removes PDFs from database that no longer exist in filesystem
-
-        Args:
-            pdfs_dir: Directory containing PDF files
-
-        Returns:
-            Dictionary with sync statistics:
-            {'added': count, 'removed': count, 'updated': count}
-        """
-        # Validate directory exists to prevent mass deletion on misconfiguration
-        pdfs_path = Path(pdfs_dir)
-        if not pdfs_path.exists() or not pdfs_path.is_dir():
-            raise FileNotFoundError(f"PDF directory not found: {pdfs_dir}")
-
-        # Import here to avoid circular dependency
-        from .pdf_service import PDFService
-
-        pdf_service = PDFService(pdf_dir=pdfs_dir, db_path=self.db_path)
-        stats = {"added": 0, "removed": 0, "updated": 0}
-
-        # Get all PDFs from filesystem
-        filesystem_pdfs = {f.name for f in pdfs_path.glob("*.pdf")}
-
-        # Get all PDFs from database
-        db_pdfs = {doc.filename: doc.id for doc in self.list_all()}
-
-        # Add/update PDFs from filesystem
-        for pdf_filename in filesystem_pdfs:
-            try:
-                # Get PDF metadata
-                pdf_info = pdf_service.cache.get_pdf_info(pdf_filename)
-                file_path = pdfs_path / pdf_filename
-                file_size = os.path.getsize(file_path) if file_path.exists() else None
-
-                # Get thumbnail path if it exists
-                thumbnail_path = None
-                try:
-                    thumb_path = pdf_service.cache.get_thumbnail_path(pdf_filename)
-                    thumbnail_path = str(thumb_path) if thumb_path else None
-                except Exception:
-                    pass  # Thumbnail may not exist yet
-
-                is_new = pdf_filename not in db_pdfs
-                self.create_or_update(
-                    filename=pdf_filename,
-                    num_pages=pdf_info.num_pages,
-                    title=pdf_info.title,
-                    author=pdf_info.author,
-                    subject=pdf_info.subject,
-                    creator=pdf_info.creator,
-                    producer=pdf_info.producer,
-                    file_size=file_size,
-                    file_path=str(file_path),
-                    thumbnail_path=thumbnail_path,
-                    created_date=pdf_info.created_date,
-                    modified_date=pdf_info.modified_date,
-                    metadata=pdf_info.model_dump(),
-                )
-
-                if is_new:
-                    stats["added"] += 1
-                else:
-                    stats["updated"] += 1
-
-            except Exception as e:
-                logger.error(f"Error syncing PDF {pdf_filename}: {e}")
-
-        # Remove PDFs from database that no longer exist
-        for db_filename, pdf_id in db_pdfs.items():
-            if db_filename not in filesystem_pdfs:
-                self.delete_by_filename(db_filename)
-                stats["removed"] += 1
-                logger.info(f"Removed missing PDF from DB: {db_filename}")
-
-        logger.info(
-            f"Filesystem sync complete: {stats['added']} added, "
-            f"{stats['updated']} updated, {stats['removed']} removed"
-        )
-        return stats

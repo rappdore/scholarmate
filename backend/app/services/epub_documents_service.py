@@ -13,7 +13,6 @@ import logging
 import os
 import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -286,90 +285,3 @@ class EPUBDocumentsService:
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
-
-    def sync_from_filesystem(self, epubs_dir: str) -> dict[str, int]:
-        """
-        Sync database with filesystem.
-
-        This method:
-        - Adds new EPUBs found in filesystem to database
-        - Updates metadata for existing EPUBs
-        - Removes EPUBs from database that no longer exist in filesystem
-
-        Args:
-            epubs_dir: Directory containing EPUB files
-
-        Returns:
-            Dictionary with sync statistics:
-            {'added': count, 'removed': count, 'updated': count}
-        """
-        # Validate directory exists to prevent mass deletion on misconfiguration
-        epubs_path = Path(epubs_dir)
-        if not epubs_path.exists() or not epubs_path.is_dir():
-            raise FileNotFoundError(f"EPUB directory not found: {epubs_dir}")
-
-        # Import here to avoid circular dependency
-        from .epub_service import EPUBService
-
-        epub_service = EPUBService(epub_dir=epubs_dir, db_path=self.db_path)
-        stats = {"added": 0, "removed": 0, "updated": 0}
-
-        # Get all EPUBs from filesystem
-        filesystem_epubs = {f.name for f in epubs_path.glob("*.epub")}
-
-        # Get all EPUBs from database
-        db_epubs = {doc["filename"]: doc["id"] for doc in self.list_all()}
-
-        # Add/update EPUBs from filesystem
-        for epub_filename in filesystem_epubs:
-            try:
-                # Get EPUB metadata
-                epub_info = epub_service.cache.get_epub_info(epub_filename)
-                file_path = epubs_path / epub_filename
-                file_size = os.path.getsize(file_path) if file_path.exists() else None
-
-                # Get thumbnail path if it exists
-                thumbnail_path = None
-                try:
-                    thumb_path = epub_service.cache.get_thumbnail_path(epub_filename)
-                    thumbnail_path = str(thumb_path) if thumb_path else None
-                except Exception:
-                    pass  # Thumbnail may not exist yet
-
-                is_new = epub_filename not in db_epubs
-                self.create_or_update(
-                    filename=epub_filename,
-                    chapters=epub_info.chapters,
-                    title=epub_info.title,
-                    author=epub_info.author,
-                    subject=epub_info.subject,
-                    publisher=epub_info.publisher,
-                    language=epub_info.language,
-                    file_size=file_size,
-                    file_path=str(file_path),
-                    thumbnail_path=thumbnail_path,
-                    created_date=epub_info.created_date,
-                    modified_date=epub_info.modified_date,
-                    metadata=epub_info.model_dump(),
-                )
-
-                if is_new:
-                    stats["added"] += 1
-                else:
-                    stats["updated"] += 1
-
-            except Exception as e:
-                logger.error(f"Error syncing EPUB {epub_filename}: {e}")
-
-        # Remove EPUBs from database that no longer exist
-        for db_filename, epub_id in db_epubs.items():
-            if db_filename not in filesystem_epubs:
-                self.delete_by_filename(db_filename)
-                stats["removed"] += 1
-                logger.info(f"Removed missing EPUB from DB: {db_filename}")
-
-        logger.info(
-            f"Filesystem sync complete: {stats['added']} added, "
-            f"{stats['updated']} updated, {stats['removed']} removed"
-        )
-        return stats

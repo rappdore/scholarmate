@@ -2,6 +2,7 @@
  * Dual Chat Service - Handles communication with backend for dual LLM chat
  */
 import { API_BASE_URL } from './config';
+import { parseSSELine } from './api';
 
 /** Structured chunk for one LLM within a dual-chat SSE event (mirrors the
  * backend StreamParser events: thinking/response/metadata). */
@@ -89,23 +90,22 @@ export const dualChatService = {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
+            // Only JSON parsing is guarded (inside parseSSELine); backend
+            // errors must propagate to the generator's consumer.
+            const data = parseSSELine(line);
+            if (data === null) {
+              continue;
+            }
 
-                if (data.error) {
-                  throw new Error(data.error);
-                }
+            if (data.error) {
+              throw new Error(data.error);
+            }
 
-                // Yield the entire data object
-                yield data;
+            // Yield the entire data object
+            yield data;
 
-                if (data.done) {
-                  return;
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
+            if (data.done) {
+              return;
             }
           }
         }

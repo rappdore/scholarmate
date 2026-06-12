@@ -1,4 +1,5 @@
 import io
+import logging
 import zipfile
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from ebooklib import epub
 from PIL import Image
 
 from .epub_url_helper import EPUBURLHelper
+
+logger = logging.getLogger(__name__)
 
 
 class EPUBImageService:
@@ -254,7 +257,7 @@ class EPUBImageService:
                                     return cover_item
 
             except Exception as e:
-                print(f"OPF parsing failed: {e}")
+                logger.warning(f"OPF parsing failed: {e}")
 
         # Method 2: Filename-based detection (more reliable than size-based)
         cover_candidates = []

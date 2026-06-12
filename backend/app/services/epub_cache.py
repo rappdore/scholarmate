@@ -100,9 +100,13 @@ class EPUBCache:
         Only extracts metadata and generates thumbnails for new EPUBs not in database.
 
         Leverages database backing for fast cache initialization.
+
+        The new cache is built into a local dict and swapped in atomically at
+        the end, so concurrent readers keep seeing the complete old cache
+        while a (potentially slow) rebuild is in progress.
         """
         start_time = datetime.now()
-        self._cache = {}
+        cache: dict[str, EPUBBasicMetadata | EPUBExtendedMetadata] = {}
 
         logger.info(f"Scanning EPUB directory: {self.epub_dir}")
 
@@ -122,8 +126,8 @@ class EPUBCache:
                 # Load from database (fast path)
                 logger.debug(f"Loading from database: {filename}")
 
-                # Get thumbnail path from database
-                thumbnail_path_str = db_record.get("thumbnail_path", "")
+                # Get thumbnail path from database (column may exist with NULL)
+                thumbnail_path_str = db_record.get("thumbnail_path") or ""
 
                 # Only generate thumbnail if DB has no path or file doesn't exist
                 if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
@@ -168,19 +172,22 @@ class EPUBCache:
                         )
                         thumbnail_path_str = ""
 
+                # NOTE: the DB row always contains these keys, possibly with
+                # NULL values, so `dict.get(key, default)` never applies the
+                # default. Use `or` so NULLs fall back too (matches pdf_cache).
                 epub_info = EPUBBasicMetadata(
                     filename=filename,
                     type="epub",
-                    title=db_record.get("title", file_path.stem),
-                    author=db_record.get("author", "Unknown"),
-                    chapters=db_record.get("chapters", 0),
-                    file_size=db_record.get("file_size", 0),
-                    modified_date=db_record.get("modified_date", ""),
-                    created_date=db_record.get("created_date", ""),
+                    title=db_record.get("title") or file_path.stem,
+                    author=db_record.get("author") or "Unknown",
+                    chapters=db_record.get("chapters") or 0,
+                    file_size=db_record.get("file_size") or 0,
+                    modified_date=db_record.get("modified_date") or "",
+                    created_date=db_record.get("created_date") or "",
                     thumbnail_path=thumbnail_path_str,
                     error=None,
                 )
-                self._cache[filename] = epub_info
+                cache[filename] = epub_info
                 db_hits += 1
 
             else:
@@ -242,7 +249,7 @@ class EPUBCache:
                         error=None,
                     )
 
-                    self._cache[file_path.name] = epub_info
+                    cache[file_path.name] = epub_info
 
                     # Persist to database
                     try:
@@ -284,10 +291,11 @@ class EPUBCache:
                         thumbnail_path="",
                         error=f"Could not read EPUB: {str(e)}",
                     )
-                    self._cache[file_path.name] = epub_info
+                    cache[file_path.name] = epub_info
                     db_misses += 1
 
-        # Update cache metadata
+        # Atomically swap in the new cache and update cache metadata
+        self._cache = cache
         self._cache_built_at = datetime.now().isoformat()
         self._cache_epub_count = len(self._cache)
 
@@ -416,6 +424,22 @@ class EPUBCache:
             raise FileNotFoundError(f"EPUB {filename} not found in cache")
 
         return self._cache[filename].thumbnail_path
+
+    def remove(self, filename: str) -> bool:
+        """
+        Evict a single EPUB from the in-memory cache (e.g. after deletion).
+
+        Args:
+            filename: Name of the EPUB file to evict
+
+        Returns:
+            True if an entry was removed, False if it was not cached
+        """
+        if self._cache.pop(filename, None) is None:
+            return False
+        self._cache_epub_count = len(self._cache)
+        logger.info(f"Removed {filename} from EPUB cache")
+        return True
 
     def refresh(self) -> None:
         """

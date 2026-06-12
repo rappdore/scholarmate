@@ -128,25 +128,6 @@ class EPUBReadingStatisticsService(BaseDatabaseService):
                 )
                 return True
 
-            # Check if session already exists to log insert vs update
-            with self.get_connection() as conn:
-                existing = conn.execute(
-                    "SELECT words_read, time_spent_seconds FROM epub_reading_sessions WHERE session_id = ?",
-                    (session_id,),
-                ).fetchone()
-
-                if existing:
-                    logger.info(
-                        f"[SESSION_UPDATE] Updating existing session: "
-                        f"old_words={existing[0]}, new_words={words_read}, "
-                        f"old_time={existing[1]:.2f}s, new_time={time_spent_seconds:.2f}s"
-                    )
-                else:
-                    logger.info(
-                        f"[SESSION_UPDATE] Creating new session: "
-                        f"words={words_read}, time={time_spent_seconds:.2f}s"
-                    )
-
             query = """
                 INSERT INTO epub_reading_sessions
                     (session_id, epub_id, words_read, time_spent_seconds, last_updated)
@@ -254,6 +235,9 @@ class EPUBReadingStatisticsService(BaseDatabaseService):
                 if limit is not None:
                     sessions_query += " LIMIT ?"
                     params.append(limit)
+                elif offset is not None:
+                    # SQLite requires LIMIT before OFFSET; LIMIT -1 means "no limit"
+                    sessions_query += " LIMIT -1"
 
                 if offset is not None:
                     sessions_query += " OFFSET ?"

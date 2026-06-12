@@ -105,46 +105,32 @@ class ReadingProgressService(BaseDatabaseService):
             # Phase 2a: Look up pdf_id for this filename
             pdf_id = self._get_pdf_id(pdf_filename)
 
-            # Check if record exists
-            existing = self.get_progress(pdf_filename)
+            # Single-statement upsert (B-8): avoids the SELECT-then-INSERT/UPDATE
+            # race. On update, status fields are preserved and pdf_id is only
+            # overwritten when the lookup succeeded (B-6).
+            query = """
+                INSERT INTO reading_progress
+                (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pdf_filename) DO UPDATE SET
+                    last_page = excluded.last_page,
+                    total_pages = excluded.total_pages,
+                    last_updated = excluded.last_updated,
+                    pdf_id = COALESCE(excluded.pdf_id, pdf_id)
+            """
+            params = (
+                pdf_filename,
+                last_page,
+                total_pages,
+                self.get_current_timestamp(),
+                "new",  # Default status for new records
+                self.get_current_timestamp(),
+                False,  # Default manually_set for new records
+                pdf_id,  # Phase 2a: Auto-populate pdf_id
+            )
+            result = self.execute_update_delete(query, params)
 
-            if existing:
-                # Update existing record, preserving status fields
-                # Phase 2a: Also update pdf_id if it's not set
-                query = """
-                    UPDATE reading_progress
-                    SET last_page = ?, total_pages = ?, last_updated = ?, pdf_id = ?
-                    WHERE pdf_filename = ?
-                """
-                params = (
-                    last_page,
-                    total_pages,
-                    self.get_current_timestamp(),
-                    pdf_id,
-                    pdf_filename,
-                )
-                result = self.execute_update_delete(query, params)
-            else:
-                # Insert new record with default status values
-                # Phase 2a: Include pdf_id in insert
-                query = """
-                    INSERT INTO reading_progress
-                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """
-                params = (
-                    pdf_filename,
-                    last_page,
-                    total_pages,
-                    self.get_current_timestamp(),
-                    "new",  # Default status for new records
-                    self.get_current_timestamp(),
-                    False,  # Default manually_set for new records
-                    pdf_id,  # Phase 2a: Auto-populate pdf_id
-                )
-                result = self.execute_insert(query, params)
-
-            if result is not None:
+            if result:
                 logger.info(
                     f"Saved reading progress for {pdf_filename}: page {last_page}"
                     + (f" (pdf_id: {pdf_id})" if pdf_id else "")
@@ -284,55 +270,30 @@ class ReadingProgressService(BaseDatabaseService):
             # Phase 2a: Look up pdf_id for this filename
             pdf_id = self._get_pdf_id(pdf_filename)
 
-            # Check if record exists, create if not
-            existing = self.get_progress(pdf_filename)
-            logger.info(
-                f"Looking for existing record for {pdf_filename}, found: {existing}"
+            # Single-statement upsert (B-8): creates the row with defaults when
+            # missing, otherwise only touches the status fields. pdf_id is only
+            # overwritten when the lookup succeeded (B-6).
+            query = """
+                INSERT INTO reading_progress
+                (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pdf_filename) DO UPDATE SET
+                    status = excluded.status,
+                    status_updated_at = excluded.status_updated_at,
+                    manually_set = excluded.manually_set,
+                    pdf_id = COALESCE(excluded.pdf_id, pdf_id)
+            """
+            params = (
+                pdf_filename,
+                0,  # Default last_page for new records
+                0,  # Default total_pages (will be updated when PDF is opened)
+                self.get_current_timestamp(),
+                status,
+                self.get_current_timestamp(),
+                manual,
+                pdf_id,  # Phase 2a: Auto-populate pdf_id
             )
-
-            if not existing:
-                # Create a new record with default values if it doesn't exist
-                logger.info(f"Creating new record for {pdf_filename}")
-                # Phase 2a: Include pdf_id in insert
-                query = """
-                    INSERT INTO reading_progress
-                    (pdf_filename, last_page, total_pages, last_updated, status, status_updated_at, manually_set, pdf_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """
-                params = (
-                    pdf_filename,
-                    0,  # Default last_page
-                    0,  # Default total_pages (will be updated when PDF is opened)
-                    self.get_current_timestamp(),
-                    status,
-                    self.get_current_timestamp(),
-                    manual,
-                    pdf_id,  # Phase 2a: Auto-populate pdf_id
-                )
-                result = self.execute_insert(query, params)
-                logger.info(f"Insert result: {result}")
-            else:
-                # Update existing record
-                logger.info(f"Updating existing record for {pdf_filename}")
-                # Phase 2a: Also update pdf_id if it's not set
-                query = """
-                    UPDATE reading_progress
-                    SET status = ?,
-                        status_updated_at = ?,
-                        manually_set = ?,
-                        pdf_id = ?
-                    WHERE pdf_filename = ?
-                """
-                params = (
-                    status,
-                    self.get_current_timestamp(),
-                    manual,
-                    pdf_id,
-                    pdf_filename,
-                )
-                logger.info(f"Update query: {query}, params: {params}")
-                result = self.execute_update_delete(query, params)
-                logger.info(f"Update result: {result}")
+            result = self.execute_update_delete(query, params)
 
             if result:
                 logger.info(

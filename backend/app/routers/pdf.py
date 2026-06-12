@@ -23,15 +23,14 @@ from ..models.pdf_responses import (
     StatusUpdateResponse,
 )
 from ..services.database_service import db_service
+from ..services.instances import pdf_service
 from ..services.pdf_documents_service import PDFDocumentsService
-from ..services.pdf_service import PDFService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
 
 logger = logging.getLogger(__name__)
 
-# Initialize services
-pdf_service = PDFService()
+# Initialize services (pdf_service is the shared singleton from instances.py)
 pdf_documents_service = PDFDocumentsService()
 
 
@@ -216,6 +215,14 @@ async def update_book_status_by_id(
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
+        # Validate status (mirrors the EPUB status endpoint)
+        valid_statuses = [status.value for status in BookStatus]
+        if status_request.status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status. Must be one of: {valid_statuses}",
+            )
+
         success = db_service.update_book_status(
             pdf_filename=pdf_doc.filename,
             status=status_request.status,
@@ -262,8 +269,8 @@ async def delete_book_by_id(pdf_id: int) -> BookDeletionResponse:
             if pdf_file_path.exists():
                 pdf_file_path.unlink()
                 pdf_file_deleted = True
-        except Exception as e:
-            print(f"Warning: Could not delete PDF file {filename}: {e}")
+        except Exception:
+            logger.warning("Could not delete PDF file %s", filename, exc_info=True)
 
         # Delete thumbnail
         thumbnail_deleted = False
@@ -272,11 +279,30 @@ async def delete_book_by_id(pdf_id: int) -> BookDeletionResponse:
             if thumbnail_path.exists():
                 thumbnail_path.unlink()
                 thumbnail_deleted = True
-        except Exception as e:
-            print(f"Warning: Could not delete thumbnail for {filename}: {e}")
+        except Exception:
+            logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
         db_results = db_service.delete_all_book_data(filename)
+
+        # Delete reading sessions tied to this PDF
+        try:
+            db_service.reading_statistics.delete_sessions_by_pdf_id(pdf_id)
+        except Exception:
+            logger.warning(
+                "Could not delete reading sessions for PDF ID %s", pdf_id, exc_info=True
+            )
+
+        # Remove the registry row so the ID can no longer resolve
+        try:
+            pdf_documents_service.delete_by_filename(filename)
+        except Exception:
+            logger.warning(
+                "Could not delete registry row for %s", filename, exc_info=True
+            )
+
+        # Evict from the shared in-memory cache so listings update immediately
+        pdf_service.cache.remove(filename)
 
         # Create deletion results
         deletion_details = DeletionResults(

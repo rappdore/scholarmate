@@ -29,6 +29,10 @@ export function useStatistics(pdfId: number | undefined) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Cancellation guard: a slow response for a previous pdfId must not
+    // overwrite newer state (and no setState after unmount).
+    let cancelled = false;
+
     const fetchStatistics = async () => {
       if (pdfId === undefined) {
         setLoading(false);
@@ -93,13 +97,17 @@ export function useStatistics(pdfId: number | undefined) {
         console.log('[useStatistics] Session Response:', sessionResponse.data);
         console.log('[useStatistics] Document Info:', documentData);
 
+        if (cancelled) return;
         setSessionsData(sessionResponse.data);
         setDocumentInfo(documentData);
       } catch (err) {
         console.error('[useStatistics] Error fetching statistics:', err);
+        if (cancelled) return;
         setError('Failed to load statistics');
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
@@ -108,6 +116,10 @@ export function useStatistics(pdfId: number | undefined) {
     } else {
       setLoading(false);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [pdfId]);
 
   // Calculate derived data using memoization

@@ -67,9 +67,13 @@ class PDFCache:
         Only extracts metadata and generates thumbnails for new PDFs not in database.
 
         Phase 1a: Leverages database backing for fast cache initialization.
+
+        The new cache is built into a local dict and swapped in atomically at
+        the end, so concurrent readers keep seeing the complete old cache
+        while a (potentially slow) rebuild is in progress.
         """
         start_time = datetime.now()
-        self._cache = {}
+        cache: dict[str, PDFBasicMetadata | PDFExtendedMetadata] = {}
 
         logger.info(f"Scanning PDF directory: {self.pdf_dir}")
 
@@ -133,7 +137,7 @@ class PDFCache:
                     thumbnail_path=thumbnail_path_str,
                     error=None,
                 )
-                self._cache[filename] = pdf_info
+                cache[filename] = pdf_info
                 db_hits += 1
 
             else:
@@ -179,7 +183,7 @@ class PDFCache:
                         error=None,
                     )
 
-                    self._cache[file_path.name] = pdf_info
+                    cache[file_path.name] = pdf_info
 
                     # Persist to database
                     try:
@@ -218,10 +222,11 @@ class PDFCache:
                         thumbnail_path="",
                         error=f"Could not read PDF: {str(e)}",
                     )
-                    self._cache[file_path.name] = pdf_info
+                    cache[file_path.name] = pdf_info
                     db_misses += 1
 
-        # Update cache metadata
+        # Atomically swap in the new cache and update cache metadata
+        self._cache = cache
         self._cache_built_at = datetime.now().isoformat()
         self._cache_pdf_count = len(self._cache)
 
@@ -358,6 +363,22 @@ class PDFCache:
             raise FileNotFoundError(f"PDF {filename} not found in cache")
 
         return self._cache[filename].thumbnail_path
+
+    def remove(self, filename: str) -> bool:
+        """
+        Evict a single PDF from the in-memory cache (e.g. after deletion).
+
+        Args:
+            filename: Name of the PDF file to evict
+
+        Returns:
+            True if an entry was removed, False if it was not cached
+        """
+        if self._cache.pop(filename, None) is None:
+            return False
+        self._cache_pdf_count = len(self._cache)
+        logger.info(f"Removed {filename} from PDF cache")
+        return True
 
     def refresh(self) -> None:
         """

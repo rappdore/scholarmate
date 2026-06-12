@@ -8,14 +8,13 @@ from pydantic import BaseModel
 from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
 from ..services.database_service import db_service
 from ..services.epub_documents_service import EPUBDocumentsService
-from ..services.epub_service import EPUBService
+from ..services.instances import epub_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/epub", tags=["epub"])
 
-# Initialize services
-epub_service = EPUBService()
+# Initialize services (epub_service is the shared singleton from instances.py)
 epub_documents_service = EPUBDocumentsService()
 
 
@@ -396,9 +395,37 @@ async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
             deletion_results["thumbnail"] = False
             logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
-        # Delete all database data
+        # Delete all database data (must run before the registry row is
+        # removed: highlight deletion looks up the epub_id by filename)
         db_deletion_results = db_service.delete_all_epub_data(filename)
         deletion_results.update(db_deletion_results)
+
+        # Delete reading sessions tied to this EPUB
+        try:
+            deletion_results["epub_reading_sessions"] = (
+                db_service.epub_reading_statistics.delete_sessions_by_epub_id(epub_id)
+            )
+        except Exception:
+            deletion_results["epub_reading_sessions"] = False
+            logger.warning(
+                "Could not delete reading sessions for EPUB ID %s",
+                epub_id,
+                exc_info=True,
+            )
+
+        # Remove the registry row so the ID can no longer resolve
+        try:
+            deletion_results["epub_document"] = (
+                epub_documents_service.delete_by_filename(filename)
+            )
+        except Exception:
+            deletion_results["epub_document"] = False
+            logger.warning(
+                "Could not delete registry row for %s", filename, exc_info=True
+            )
+
+        # Evict from the shared in-memory cache so listings update immediately
+        epub_service.cache.remove(filename)
 
         # Check if any critical operations failed
         critical_failures = []

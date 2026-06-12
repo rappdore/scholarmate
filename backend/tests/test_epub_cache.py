@@ -628,6 +628,117 @@ class TestCacheOperations:
         assert "built_at" in cache_info or cache_info is not None
 
 
+class TestNullDatabaseFields:
+    """
+    Regression tests for B-5: DB rows contain every column key, so
+    dict.get(key, default) never applied the default for NULL values and
+    EPUBBasicMetadata(title=None) blew up the whole cache build at startup.
+    """
+
+    def test_db_record_with_null_fields_builds_entry(
+        self, temp_dirs, temp_db, mock_epub_service
+    ):
+        epub_file = temp_dirs["epub_dir"] / "untitled.epub"
+        epub_file.write_bytes(b"epub")
+
+        # Existing thumbnail so the fast path needs no regeneration
+        thumb = temp_dirs["thumb_dir"] / "untitled.png"
+        thumb.write_bytes(b"png")
+
+        # Pre-seed a registry row where nullable columns are NULL
+        docs = EPUBDocumentsService(temp_db)
+        docs.create_or_update(
+            filename="untitled.epub", chapters=4, thumbnail_path=str(thumb)
+        )
+
+        # Cache build must not raise even though title/author/etc are NULL
+        cache = EPUBCache(
+            epub_dir=temp_dirs["epub_dir"],
+            thumbnails_dir=temp_dirs["thumb_dir"],
+            epub_service=mock_epub_service,
+            db_path=temp_db,
+        )
+
+        info = cache._cache["untitled.epub"]
+        assert info.title == "untitled"
+        assert info.author == "Unknown"
+        assert info.chapters == 4
+        assert info.file_size == 0
+        assert info.modified_date == ""
+        assert info.created_date == ""
+
+
+class TestRemove:
+    """Test cache eviction after a book is deleted (B-12)"""
+
+    def _build_cache_with_book(self, temp_dirs, temp_db, mock_epub_service):
+        epub_file = temp_dirs["epub_dir"] / "book.epub"
+        epub_file.write_bytes(b"epub")
+
+        mock_book = Mock()
+        mock_book.get_metadata.return_value = [("Test",)]
+        mock_book.get_items_of_type = Mock(return_value=[])
+
+        with patch("app.services.epub_cache.epub.read_epub", return_value=mock_book):
+            return EPUBCache(
+                epub_dir=temp_dirs["epub_dir"],
+                thumbnails_dir=temp_dirs["thumb_dir"],
+                epub_service=mock_epub_service,
+                db_path=temp_db,
+            )
+
+    def test_remove_evicts_entry(self, temp_dirs, temp_db, mock_epub_service):
+        cache = self._build_cache_with_book(temp_dirs, temp_db, mock_epub_service)
+        assert "book.epub" in cache._cache
+
+        assert cache.remove("book.epub") is True
+
+        assert "book.epub" not in cache._cache
+        assert cache.get_all_epubs() == []
+        assert cache.get_cache_info()["epub_count"] == 0
+        with pytest.raises(FileNotFoundError):
+            cache.get_epub_info("book.epub")
+
+    def test_remove_missing_entry_returns_false(
+        self, temp_dirs, temp_db, mock_epub_service
+    ):
+        cache = self._build_cache_with_book(temp_dirs, temp_db, mock_epub_service)
+        assert cache.remove("nope.epub") is False
+
+
+class TestAtomicRebuild:
+    """Test that refresh swaps in a new cache dict atomically (B-4)"""
+
+    def test_refresh_swaps_cache_dict_instead_of_clearing(
+        self, temp_dirs, temp_db, mock_epub_service
+    ):
+        epub_file = temp_dirs["epub_dir"] / "book.epub"
+        epub_file.write_bytes(b"epub")
+
+        mock_book = Mock()
+        mock_book.get_metadata.return_value = [("Test",)]
+        mock_book.get_items_of_type = Mock(return_value=[])
+
+        with patch("app.services.epub_cache.epub.read_epub", return_value=mock_book):
+            cache = EPUBCache(
+                epub_dir=temp_dirs["epub_dir"],
+                thumbnails_dir=temp_dirs["thumb_dir"],
+                epub_service=mock_epub_service,
+                db_path=temp_db,
+            )
+
+            old_cache = cache._cache
+            assert "book.epub" in old_cache
+
+            cache.refresh()
+
+        # The rebuild must swap in a new dict; the dict concurrent readers
+        # hold a reference to is never cleared or mutated mid-rebuild.
+        assert cache._cache is not old_cache
+        assert "book.epub" in old_cache
+        assert "book.epub" in cache._cache
+
+
 class TestEdgeCases:
     """Test edge cases and error scenarios"""
 

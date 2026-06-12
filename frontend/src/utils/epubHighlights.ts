@@ -556,7 +556,13 @@ export function extractChapterIdFromNavId(navId: string): string {
 
   // Fallback for other patterns
   if (navId.includes('chapter')) {
-    return navId.split('_')[0] + '_' + navId.split('_')[1];
+    const chapterParts = navId.split('_');
+    // Guard against navIds without an underscore-separated number
+    // (e.g. 'chapter') which would otherwise produce 'chapter_undefined'
+    if (chapterParts.length >= 2) {
+      return `${chapterParts[0]}_${chapterParts[1]}`;
+    }
+    return navId;
   }
 
   return navId;

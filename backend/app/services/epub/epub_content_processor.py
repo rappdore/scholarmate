@@ -2,7 +2,7 @@ import re
 from typing import Any
 
 import ebooklib
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Doctype, Tag
 
 from .epub_navigation_service import EPUBNavigationService
 from .epub_url_helper import EPUBURLHelper
@@ -233,77 +233,57 @@ class EPUBContentProcessor:
     def _sanitize_html(self, html_content: str) -> str:
         """
         Sanitize HTML content to remove potentially harmful elements
-        and extract only the body content for proper container styling
+        and extract only the body content for proper container styling.
+
+        Uses BeautifulSoup (a real HTML parser) rather than regexes so that
+        evasions such as unclosed <script> tags or attributes split across
+        whitespace cannot bypass sanitization.
         """
-        # Remove script tags and their content
-        html_content = re.sub(
-            r"<script[^>]*>.*?</script>",
-            "",
-            html_content,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
+        soup = BeautifulSoup(html_content, "html.parser")
 
-        # Remove inline event handlers
-        html_content = re.sub(
-            r'\s+on\w+\s*=\s*[\'"][^\'"]*[\'"]', "", html_content, flags=re.IGNORECASE
-        )
-        html_content = re.sub(
-            r"\s+on\w+\s*=\s*[^\s>]+", "", html_content, flags=re.IGNORECASE
-        )
+        # Remove script tags and their content (handles unclosed/malformed tags)
+        for script in soup.find_all("script"):
+            script.decompose()
 
-        # Remove javascript: protocols from href and src attributes
-        html_content = re.sub(
-            r'(href|src)\s*=\s*[\'"]javascript:[^\'"]*[\'"]',
-            "",
-            html_content,
-            flags=re.IGNORECASE,
-        )
+        # Strip inline event handlers and javascript: URLs from all tags
+        for tag in soup.find_all(True):
+            if not isinstance(tag, Tag):
+                continue
 
-        # Extract content from body tag if it exists
-        # This prevents EPUB body/html styles from interfering with our container
-        body_match = re.search(
-            r"<body[^>]*>(.*?)</body>", html_content, flags=re.DOTALL | re.IGNORECASE
-        )
+            # Remove on* event handler attributes (onclick, onload, ...)
+            for attr_name in [
+                name for name in tag.attrs if name.lower().startswith("on")
+            ]:
+                del tag.attrs[attr_name]
 
-        if body_match:
-            # Use only the content inside the body tag
-            html_content = body_match.group(1)
+            # Remove href/src attributes using the javascript: protocol,
+            # including evasions with embedded whitespace/newlines
+            for attr_name in ("href", "src"):
+                value = tag.attrs.get(attr_name)
+                if isinstance(value, str) and re.sub(
+                    r"\s+", "", value
+                ).lower().startswith("javascript:"):
+                    del tag.attrs[attr_name]
+
+        # Extract content from body tag if it exists.
+        # This prevents EPUB body/html styles from interfering with our container.
+        body = soup.find("body")
+        if body is not None:
+            html_content = body.decode_contents()
         else:
-            # If no body tag, remove html and head tags if present
-            # Remove head section entirely
-            html_content = re.sub(
-                r"<head[^>]*>.*?</head>",
-                "",
-                html_content,
-                flags=re.DOTALL | re.IGNORECASE,
-            )
-
-            # Remove html and body opening/closing tags but keep content
-            html_content = re.sub(
-                r"</?html[^>]*>",
-                "",
-                html_content,
-                flags=re.IGNORECASE,
-            )
-            html_content = re.sub(
-                r"</?body[^>]*>",
-                "",
-                html_content,
-                flags=re.IGNORECASE,
-            )
-
-        # Remove any remaining doctype declarations
-        html_content = re.sub(
-            r"<!DOCTYPE[^>]*>",
-            "",
-            html_content,
-            flags=re.IGNORECASE,
-        )
+            # No body tag: drop head entirely, unwrap html/body wrappers,
+            # and remove any doctype declarations
+            for head in soup.find_all("head"):
+                head.decompose()
+            for wrapper_name in ("html", "body"):
+                for wrapper in soup.find_all(wrapper_name):
+                    wrapper.unwrap()
+            for doctype in soup.find_all(string=lambda s: isinstance(s, Doctype)):
+                doctype.extract()
+            html_content = soup.decode()
 
         # Clean up extra whitespace
-        html_content = html_content.strip()
-
-        return html_content
+        return html_content.strip()
 
     def _rewrite_image_paths(
         self, content: str, filename: str, epub_id: int | None = None

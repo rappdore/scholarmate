@@ -17,7 +17,6 @@ from openai import AsyncOpenAI
 from app.models.llm_types import LLMConfiguration
 
 from .llm_config_service import LLMConfigService
-from .pdf_service import PDFService
 from .stream_parser import ThinkingStreamParser
 
 # Configure logger
@@ -51,7 +50,15 @@ class DualChatService:
         self.db_path = db_path
         self.active_sessions: dict[str, DualChatSession] = {}
         self.llm_config_service = LLMConfigService(db_path)
-        self.pdf_service = PDFService()
+        # Use the shared PDFService singleton instead of building a second
+        # service (and a second in-memory cache) just for dual chat.
+        # Imported lazily to avoid import cycles at module load time.
+        from .instances import pdf_service
+
+        self.pdf_service = pdf_service
+        # Reuse AsyncOpenAI clients per endpoint+key instead of creating (and
+        # never closing) a new client for every streamed request.
+        self._llm_clients: dict[tuple[str, str], AsyncOpenAI] = {}
 
     async def stream_dual_chat_response(
         self,
@@ -264,15 +271,24 @@ class DualChatService:
         # Final done signal
         yield {"done": True}
 
+    def _get_client(self, llm_config: LLMConfiguration) -> AsyncOpenAI:
+        """Get (or create) the cached OpenAI-compatible client for a config."""
+        key = (llm_config.base_url, llm_config.api_key)
+        client = self._llm_clients.get(key)
+        if client is None:
+            client = AsyncOpenAI(
+                base_url=llm_config.base_url, api_key=llm_config.api_key
+            )
+            self._llm_clients[key] = client
+        return client
+
     async def _call_llm_stream(
         self, llm_config: LLMConfiguration, messages: list[dict]
     ) -> AsyncGenerator[str, None]:
         """Call LLM API and stream response chunks"""
         try:
-            # Create OpenAI-compatible client
-            client = AsyncOpenAI(
-                base_url=llm_config.base_url, api_key=llm_config.api_key
-            )
+            # Reuse the cached OpenAI-compatible client for this endpoint+key
+            client = self._get_client(llm_config)
 
             # Make streaming request
             stream = await client.chat.completions.create(

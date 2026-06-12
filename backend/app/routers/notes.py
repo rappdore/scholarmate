@@ -101,6 +101,8 @@ async def get_chat_note_by_id(note_id: int) -> ChatNoteResponse:
             return ChatNoteResponse(**note)
         else:
             raise HTTPException(status_code=404, detail="Chat note not found")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error getting chat note: {str(e)}"
@@ -121,6 +123,8 @@ async def delete_chat_note(note_id: int) -> Dict[str, Any]:
             }
         else:
             raise HTTPException(status_code=404, detail="Chat note not found")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error deleting chat note: {str(e)}"

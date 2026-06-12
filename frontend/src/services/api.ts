@@ -14,10 +14,37 @@ const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+// Verbose request/response logging is only enabled in development builds to
+// avoid dumping full payloads to the console in production.
+const devLog = (...args: unknown[]): void => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
+
+/**
+ * Parse a single SSE line of the form `data: {...}`.
+ * Returns the parsed payload, or null when the line is not a data line or
+ * contains malformed JSON (malformed lines are logged and skipped so a single
+ * bad chunk doesn't kill the stream).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseSSELine(line: string): Record<string, any> | null {
+  if (!line.startsWith('data: ')) {
+    return null;
+  }
+  try {
+    return JSON.parse(line.slice(6));
+  } catch (e) {
+    console.error('Error parsing SSE data:', e, line);
+    return null;
+  }
+}
+
 // Extensive logging interceptor
 api.interceptors.request.use(
   config => {
-    console.log('🚀 [API REQUEST]', {
+    devLog('🚀 [API REQUEST]', {
       method: config.method?.toUpperCase(),
       url: config.url,
       fullURL: `${config.baseURL}${config.url}`,
@@ -39,7 +66,7 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   response => {
-    console.log('✅ [API RESPONSE]', {
+    devLog('✅ [API RESPONSE]', {
       status: response.status,
       statusText: response.statusText,
       url: response.config.url,
@@ -249,7 +276,7 @@ export const aiService = {
     unknown
   > {
     const url = `${API_BASE_URL}/ai/analyze/stream`;
-    console.log('🚀 [FETCH REQUEST - STREAM ANALYZE]', {
+    devLog('🚀 [FETCH REQUEST - STREAM ANALYZE]', {
       url,
       method: 'POST',
       pdfId,
@@ -271,7 +298,7 @@ export const aiService = {
         }),
       });
 
-      console.log('✅ [FETCH RESPONSE - STREAM ANALYZE]', {
+      devLog('✅ [FETCH RESPONSE - STREAM ANALYZE]', {
         url,
         status: response.status,
         statusText: response.statusText,
@@ -314,7 +341,7 @@ export const aiService = {
           chunkCount++;
 
           if (done) {
-            console.log('✅ [STREAM ANALYZE COMPLETE]', {
+            devLog('✅ [STREAM ANALYZE COMPLETE]', {
               totalChunks: chunkCount,
               timestamp: new Date().toISOString(),
             });
@@ -326,24 +353,17 @@ export const aiService = {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                console.log('📦 [STREAM CHUNK - ANALYZE]', {
-                  chunkNum: chunkCount,
-                  data,
-                });
-                yield data;
-                if (data.done) {
-                  return;
-                }
-              } catch (e) {
-                console.error('❌ [SSE PARSE ERROR]', {
-                  line,
-                  error: e,
-                  timestamp: new Date().toISOString(),
-                });
-              }
+            const data = parseSSELine(line);
+            if (data === null) {
+              continue;
+            }
+            devLog('📦 [STREAM CHUNK - ANALYZE]', {
+              chunkNum: chunkCount,
+              data,
+            });
+            yield data;
+            if (data.done) {
+              return;
             }
           }
         }
@@ -423,16 +443,13 @@ export const aiService = {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                yield data;
-                if (data.done) {
-                  return;
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
+            const data = parseSSELine(line);
+            if (data === null) {
+              continue;
+            }
+            yield data;
+            if (data.done) {
+              return;
             }
           }
         }
@@ -494,7 +511,7 @@ export const chatService = {
     unknown
   > {
     const url = `${API_BASE_URL}/ai/chat`;
-    console.log('🚀 [FETCH REQUEST - STREAM CHAT]', {
+    devLog('🚀 [FETCH REQUEST - STREAM CHAT]', {
       url,
       method: 'POST',
       message,
@@ -522,7 +539,7 @@ export const chatService = {
         signal: abortSignal,
       });
 
-      console.log('✅ [FETCH RESPONSE - STREAM CHAT]', {
+      devLog('✅ [FETCH RESPONSE - STREAM CHAT]', {
         url,
         status: response.status,
         statusText: response.statusText,
@@ -563,22 +580,22 @@ export const chatService = {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.error) {
-                  throw new Error(data.error);
-                }
+            // Only JSON parsing is guarded (inside parseSSELine); backend
+            // errors must propagate to the generator's consumer.
+            const data = parseSSELine(line);
+            if (data === null) {
+              continue;
+            }
 
-                // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
-                yield data;
+            if (data.error) {
+              throw new Error(data.error);
+            }
 
-                if (data.done || data.cancelled) {
-                  return;
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
+            // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
+            yield data;
+
+            if (data.done || data.cancelled) {
+              return;
             }
           }
         }
@@ -657,22 +674,22 @@ export const chatService = {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.error) {
-                  throw new Error(data.error);
-                }
+            // Only JSON parsing is guarded (inside parseSSELine); backend
+            // errors must propagate to the generator's consumer.
+            const data = parseSSELine(line);
+            if (data === null) {
+              continue;
+            }
 
-                // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
-                yield data;
+            if (data.error) {
+              throw new Error(data.error);
+            }
 
-                if (data.done || data.cancelled) {
-                  return;
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
+            // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
+            yield data;
+
+            if (data.done || data.cancelled) {
+              return;
             }
           }
         }
@@ -723,7 +740,7 @@ export const highlightService = {
     highlightData: HighlightRequest
   ): Promise<Highlight> => {
     const url = `${API_BASE_URL}/highlights/`;
-    console.log('🚀 [FETCH REQUEST - CREATE HIGHLIGHT]', {
+    devLog('🚀 [FETCH REQUEST - CREATE HIGHLIGHT]', {
       url,
       method: 'POST',
       highlightData,
@@ -747,7 +764,7 @@ export const highlightService = {
         }),
       });
 
-      console.log('✅ [FETCH RESPONSE - CREATE HIGHLIGHT]', {
+      devLog('✅ [FETCH RESPONSE - CREATE HIGHLIGHT]', {
         url,
         status: response.status,
         statusText: response.statusText,
@@ -772,7 +789,7 @@ export const highlightService = {
       const highlight =
         highlightService._convertBackendHighlight(backendHighlight);
 
-      console.log('✅ [HIGHLIGHT CREATED]', highlight);
+      devLog('✅ [HIGHLIGHT CREATED]', highlight);
       return highlight;
     } catch (error) {
       console.error('❌ [CREATE HIGHLIGHT FAILED]', {
@@ -795,7 +812,7 @@ export const highlightService = {
         ? `${API_BASE_URL}/highlights/pdf/${pdfId}/page/${pageNumber}`
         : `${API_BASE_URL}/highlights/pdf/${pdfId}`;
 
-    console.log('🚀 [FETCH REQUEST - GET HIGHLIGHTS]', {
+    devLog('🚀 [FETCH REQUEST - GET HIGHLIGHTS]', {
       url,
       pdfId,
       pageNumber,
@@ -805,7 +822,7 @@ export const highlightService = {
     try {
       const response = await fetch(url);
 
-      console.log('✅ [FETCH RESPONSE - GET HIGHLIGHTS]', {
+      devLog('✅ [FETCH RESPONSE - GET HIGHLIGHTS]', {
         url,
         status: response.status,
         statusText: response.statusText,
@@ -831,7 +848,7 @@ export const highlightService = {
         highlightService._convertBackendHighlight
       );
 
-      console.log('✅ [HIGHLIGHTS RETRIEVED]', {
+      devLog('✅ [HIGHLIGHTS RETRIEVED]', {
         count: highlights.length,
         pdfId,
         pageNumber,
@@ -859,7 +876,7 @@ export const highlightService = {
       );
 
       if (response.status === 404) {
-        console.log('Highlight not found:', highlightId);
+        devLog('Highlight not found:', highlightId);
         return null;
       }
 
@@ -871,7 +888,7 @@ export const highlightService = {
       const highlight =
         highlightService._convertBackendHighlight(backendHighlight);
 
-      console.log('Retrieved highlight by ID:', highlight);
+      devLog('Retrieved highlight by ID:', highlight);
       return highlight;
     } catch (error) {
       console.error('Error retrieving highlight by ID:', error);
@@ -891,7 +908,7 @@ export const highlightService = {
       );
 
       if (response.status === 404) {
-        console.log('Highlight not found for deletion:', highlightId);
+        devLog('Highlight not found for deletion:', highlightId);
         return false;
       }
 
@@ -899,7 +916,7 @@ export const highlightService = {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      console.log('Deleted highlight:', highlightId);
+      devLog('Deleted highlight:', highlightId);
       return true;
     } catch (error) {
       console.error('Error deleting highlight:', error);
@@ -928,7 +945,7 @@ export const highlightService = {
       );
 
       if (response.status === 404) {
-        console.log('Highlight not found for color update:', highlightId);
+        devLog('Highlight not found for color update:', highlightId);
         return false;
       }
 
@@ -936,7 +953,7 @@ export const highlightService = {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      console.log('Updated highlight color:', highlightId, color);
+      devLog('Updated highlight color:', highlightId, color);
       return true;
     } catch (error) {
       console.error('Error updating highlight color:', error);
@@ -956,7 +973,7 @@ export const highlightService = {
       }
 
       const stats = await response.json();
-      console.log('Retrieved highlight statistics:', stats);
+      devLog('Retrieved highlight statistics:', stats);
       return stats;
     } catch (error) {
       console.error('Error retrieving highlight statistics:', error);

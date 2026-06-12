@@ -8,7 +8,6 @@ from app.models.epub_metadata import EPUBBasicMetadata, EPUBExtendedMetadata
 from .epub import (
     EPUBContentProcessor,
     EPUBImageService,
-    EPUBMetadataExtractor,
     EPUBNavigationService,
     EPUBStyleProcessor,
 )
@@ -35,7 +34,6 @@ class EPUBService:
             self.thumbnails_dir.mkdir(exist_ok=True)
 
         # Initialize component services
-        self.metadata_extractor = EPUBMetadataExtractor(epub_dir)
         self.navigation_service = EPUBNavigationService()
         self.content_processor = EPUBContentProcessor(self.base_url)
         self.image_service = EPUBImageService("thumbnails")

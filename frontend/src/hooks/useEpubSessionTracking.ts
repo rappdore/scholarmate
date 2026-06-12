@@ -56,8 +56,14 @@ export function useEpubSessionTracking({
   // Track scroll progress per section
   const sectionProgressRef = useRef<Map<string, number>>(new Map());
 
-  // Session start time for calculating time spent
-  const sessionStartTimeRef = useRef<number>(Date.now());
+  // Active reading time tracking. Only time while the tab is visible counts:
+  // accumulatedActiveMsRef holds the sum of completed visible spans, and
+  // activeSpanStartRef marks the start of the current visible span (null
+  // while the tab is hidden).
+  const accumulatedActiveMsRef = useRef<number>(0);
+  const activeSpanStartRef = useRef<number | null>(
+    typeof document !== 'undefined' && document.hidden ? null : Date.now()
+  );
 
   // Track previous nav ID to detect section changes
   const prevNavIdRef = useRef<string | null>(null);
@@ -112,12 +118,21 @@ export function useEpubSessionTracking({
     return totalWords;
   }, [navSections]);
 
+  // Total active (visible) time spent this session, in seconds
+  const getTimeSpentSeconds = useCallback((): number => {
+    const activeSpanMs =
+      activeSpanStartRef.current !== null
+        ? Date.now() - activeSpanStartRef.current
+        : 0;
+    return (accumulatedActiveMsRef.current + activeSpanMs) / 1000;
+  }, []);
+
   // Send update to backend
   const sendUpdate = useCallback(async () => {
     if (!trackingEnabled || !epubId) return;
 
     const wordsRead = calculateWordsRead();
-    const timeSpentSeconds = (Date.now() - sessionStartTimeRef.current) / 1000;
+    const timeSpentSeconds = getTimeSpentSeconds();
 
     // Skip trivial sessions (less than 5 seconds and no words)
     if (wordsRead === 0 && timeSpentSeconds < 5) return;
@@ -137,7 +152,13 @@ export function useEpubSessionTracking({
       // Fire-and-forget: log but don't throw
       console.error('[EPUB Session] Failed to update:', error);
     }
-  }, [sessionId, epubId, trackingEnabled, calculateWordsRead]);
+  }, [
+    sessionId,
+    epubId,
+    trackingEnabled,
+    calculateWordsRead,
+    getTimeSpentSeconds,
+  ]);
 
   // Trigger: Section change
   useEffect(() => {
@@ -174,8 +195,13 @@ export function useEpubSessionTracking({
         }
       }
 
+      // Only active (visible) time counts, mirroring getTimeSpentSeconds
+      const activeSpanMs =
+        activeSpanStartRef.current !== null
+          ? Date.now() - activeSpanStartRef.current
+          : 0;
       const timeSpentSeconds =
-        (Date.now() - sessionStartTimeRef.current) / 1000;
+        (accumulatedActiveMsRef.current + activeSpanMs) / 1000;
 
       if (wordsRead === 0 && timeSpentSeconds < 5) return;
 
@@ -208,17 +234,40 @@ export function useEpubSessionTracking({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Trigger: Visibility change (user switches tabs/minimizes)
+  // Trigger: Visibility change (user switches tabs/minimizes).
+  // On hide: fold the current visible span into the accumulator (so hidden
+  // time is never counted as reading) and flush. On show: start a new span.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        if (activeSpanStartRef.current !== null) {
+          accumulatedActiveMsRef.current +=
+            Date.now() - activeSpanStartRef.current;
+          activeSpanStartRef.current = null;
+        }
         sendUpdate();
+      } else if (activeSpanStartRef.current === null) {
+        activeSpanStartRef.current = Date.now();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [sendUpdate]);
+
+  // Trigger: Low-frequency periodic flush (only while visible) so a crash or
+  // killed tab doesn't lose the whole session.
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (!document.hidden) {
+        sendUpdate();
+      }
+    }, 60_000);
+
+    return () => {
+      clearInterval(intervalId);
     };
   }, [sendUpdate]);
 
