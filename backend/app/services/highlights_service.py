@@ -56,7 +56,8 @@ class HighlightsService(BaseDatabaseService):
                     color TEXT NOT NULL DEFAULT '#ffff00', -- Highlight color in hex format
                     coordinates TEXT NOT NULL,            -- JSON string with bounding box data array
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the highlight was created
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP   -- When the highlight was last modified
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the highlight was last modified
+                    pdf_id INTEGER                        -- ID from pdf_documents registry
                 )
             """)
 
@@ -71,49 +72,10 @@ class HighlightsService(BaseDatabaseService):
                 ON highlights(pdf_filename)
             """)
 
-            # Phase 3c: Add pdf_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(highlights)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "pdf_id" not in columns:
-                logger.info("Adding pdf_id column to highlights table...")
-                conn.execute("ALTER TABLE highlights ADD COLUMN pdf_id INTEGER")
-                logger.info("pdf_id column added successfully")
-
-            # Create index on pdf_id if it doesn't exist
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_highlights_pdf_id
                 ON highlights(pdf_id)
             """)
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate pdf_id for existing highlights rows
-            #
-            # Unlike reading_progress which gets updated on access, highlights only
-            # receives INSERTs, so existing rows would never get their pdf_id populated.
-            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute("""
-                UPDATE highlights
-                SET pdf_id = (
-                    SELECT id FROM pdf_documents
-                    WHERE pdf_documents.filename = highlights.pdf_filename
-                )
-                WHERE pdf_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM pdf_documents
-                    WHERE pdf_documents.filename = highlights.pdf_filename
-                )
-            """)
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled pdf_id for {backfilled} existing highlights rows"
-                )
 
             conn.commit()
 

@@ -52,59 +52,21 @@ class ChatNotesService(BaseDatabaseService):
                     title TEXT,                           -- Optional title for the note
                     chat_content TEXT NOT NULL,           -- The actual conversation/note content
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the note was created
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP   -- When the note was last modified
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the note was last modified
+                    pdf_id INTEGER                        -- ID from pdf_documents registry
                 )
             """)
 
-            # Create index for faster lookups
+            # Create indexes for faster lookups
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chat_notes_pdf_page
                 ON chat_notes(pdf_filename, page_number)
             """)
 
-            # Phase 3b: Add pdf_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(chat_notes)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "pdf_id" not in columns:
-                logger.info("Adding pdf_id column to chat_notes table...")
-                conn.execute("ALTER TABLE chat_notes ADD COLUMN pdf_id INTEGER")
-                logger.info("pdf_id column added successfully")
-
-            # Create index on pdf_id if it doesn't exist
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chat_notes_pdf_id
                 ON chat_notes(pdf_id)
             """)
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate pdf_id for existing chat_notes rows
-            #
-            # Unlike reading_progress which gets updated on access, chat_notes only
-            # receives INSERTs, so existing rows would never get their pdf_id populated.
-            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute("""
-                UPDATE chat_notes
-                SET pdf_id = (
-                    SELECT id FROM pdf_documents
-                    WHERE pdf_documents.filename = chat_notes.pdf_filename
-                )
-                WHERE pdf_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM pdf_documents
-                    WHERE pdf_documents.filename = chat_notes.pdf_filename
-                )
-            """)
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled pdf_id for {backfilled} existing chat_notes rows"
-                )
 
             conn.commit()
 

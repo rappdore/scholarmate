@@ -62,21 +62,11 @@ class EPUBProgressService(BaseDatabaseService):
                     manually_set BOOLEAN DEFAULT FALSE,      -- Whether status was manually set by user
 
                     -- EPUB-specific metadata for progress calculation
-                    nav_metadata TEXT                         -- JSON metadata about navigation structure
+                    nav_metadata TEXT,                        -- JSON metadata about navigation structure
+
+                    epub_id INTEGER                           -- ID from epub_documents registry
                 )
             """)
-
-            # Phase 2b: Add epub_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(epub_reading_progress)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "epub_id" not in columns:
-                logger.info("Adding epub_id column to epub_reading_progress table...")
-                conn.execute(
-                    "ALTER TABLE epub_reading_progress ADD COLUMN epub_id INTEGER"
-                )
-                logger.info("epub_id column added successfully")
 
             # Create indexes for performance
             conn.execute("""
@@ -89,7 +79,6 @@ class EPUBProgressService(BaseDatabaseService):
                 ON epub_reading_progress(status, status_updated_at)
             """)
 
-            # Phase 2b: Create index on epub_id if it doesn't exist
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_progress_epub_id
                 ON epub_reading_progress(epub_id)

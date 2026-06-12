@@ -35,6 +35,10 @@ class EPUBDocumentsService:
             db_path: Path to the SQLite database file
         """
         self.db_path = db_path
+        data_dir = os.path.dirname(db_path)
+        if data_dir:
+            os.makedirs(data_dir, exist_ok=True)
+        self._init_table()
 
     @contextmanager
     def get_connection(self):
@@ -45,6 +49,57 @@ class EPUBDocumentsService:
             yield conn
         finally:
             conn.close()
+
+    def _init_table(self):
+        """
+        Initialize the epub_documents table and indexes.
+
+        This service owns the epub_documents schema; the CREATE TABLE statement
+        is the single source of truth for it.
+        """
+        with self.get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS epub_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL UNIQUE,
+
+                    -- Basic metadata (loaded on cache initialization)
+                    title TEXT,
+                    author TEXT,
+                    chapters INTEGER NOT NULL DEFAULT 0,
+
+                    -- Extended metadata (lazy-loaded on first request)
+                    subject TEXT,
+                    publisher TEXT,
+                    language TEXT,
+
+                    -- File information
+                    file_size INTEGER,
+                    file_path TEXT,
+                    thumbnail_path TEXT,
+
+                    -- Timestamps
+                    created_date TEXT,          -- ISO format datetime from filesystem
+                    modified_date TEXT,         -- ISO format datetime from filesystem
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- Extensibility
+                    metadata_json TEXT          -- Full EPUB metadata as JSON for future use
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_documents_filename
+                ON epub_documents(filename)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_epub_documents_accessed
+                ON epub_documents(last_accessed)
+            """)
+
+            conn.commit()
 
     def get_by_filename(self, filename: str) -> dict | None:
         """

@@ -1,0 +1,142 @@
+"""
+Regression tests for fresh-database schema creation (audit C-1).
+
+Historically the schema was defined twice (in the DatabaseService facade and
+in each specialized service) and the copies drifted: a fresh database was
+created without the reading_progress status columns, so every PDF status
+operation failed silently on a clean install. These tests construct every
+schema-owning service against a brand-new database file and verify that the
+resulting schema is complete and that the previously-broken operations work.
+"""
+
+import sqlite3
+
+import pytest
+
+from app.services.database_service import DatabaseService
+from app.services.epub_documents_service import EPUBDocumentsService
+from app.services.llm_config_service import LLMConfigService
+from app.services.pdf_documents_service import PDFDocumentsService
+
+
+@pytest.fixture
+def db_path(tmp_path):
+    """Path to a database file that does not exist yet."""
+    return str(tmp_path / "fresh.db")
+
+
+@pytest.fixture
+def db_service(db_path):
+    """A DatabaseService (and therefore all its specialized services) on a fresh DB."""
+    # The documents and LLM-config services own their tables and are
+    # constructed independently of the facade, exactly like at app startup.
+    PDFDocumentsService(db_path)
+    EPUBDocumentsService(db_path)
+    LLMConfigService(db_path)
+    return DatabaseService(db_path)
+
+
+def _tables(db_path: str) -> set[str]:
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _columns(db_path: str, table: str) -> set[str]:
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row[1] for row in rows}
+
+
+class TestFreshSchemaIsComplete:
+    def test_all_tables_created(self, db_service, db_path):
+        expected = {
+            "reading_progress",
+            "epub_reading_progress",
+            "chat_notes",
+            "epub_chat_notes",
+            "highlights",
+            "epub_highlights",
+            "reading_sessions",
+            "epub_reading_sessions",
+            "pdf_documents",
+            "epub_documents",
+            "llm_configurations",
+        }
+        missing = expected - _tables(db_path)
+        assert not missing, f"Tables missing on a fresh database: {missing}"
+
+    def test_reading_progress_has_status_and_id_columns(self, db_service, db_path):
+        # The original C-1 bug: these columns were referenced by every status
+        # operation but absent from the fresh-database DDL.
+        columns = _columns(db_path, "reading_progress")
+        assert {"status", "status_updated_at", "manually_set", "pdf_id"} <= columns
+
+    def test_id_columns_present_everywhere(self, db_service, db_path):
+        assert "pdf_id" in _columns(db_path, "chat_notes")
+        assert "pdf_id" in _columns(db_path, "highlights")
+        assert "epub_id" in _columns(db_path, "epub_reading_progress")
+        assert "epub_id" in _columns(db_path, "epub_chat_notes")
+
+    def test_llm_config_table_complete_with_trigger(self, db_service, db_path):
+        assert "always_starts_with_thinking" in _columns(db_path, "llm_configurations")
+        with sqlite3.connect(db_path) as conn:
+            triggers = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+                )
+            }
+        assert "enforce_single_active_llm" in triggers
+
+
+class TestFreshDatabaseOperations:
+    """Exercise the operations that silently failed on a fresh DB before the fix."""
+
+    def test_pdf_progress_and_status_roundtrip(self, db_service):
+        assert db_service.reading_progress.save_progress("book.pdf", 5, 100) is True
+
+        progress = db_service.reading_progress.get_progress("book.pdf")
+        assert progress is not None
+        assert progress.last_page == 5
+        assert progress.status.value == "new"
+
+        assert (
+            db_service.reading_progress.update_book_status("book.pdf", "reading")
+            is True
+        )
+        progress = db_service.reading_progress.get_progress("book.pdf")
+        assert progress is not None
+        assert progress.status.value == "reading"
+        assert progress.manually_set is True
+
+    def test_status_on_previously_unseen_book(self, db_service):
+        # update_book_status must be able to create the row from scratch
+        assert (
+            db_service.reading_progress.update_book_status("unseen.pdf", "finished")
+            is True
+        )
+        progress = db_service.reading_progress.get_progress("unseen.pdf")
+        assert progress is not None
+        assert progress.status.value == "finished"
+
+    def test_epub_progress_roundtrip(self, db_service):
+        assert (
+            db_service.epub_progress.save_progress(
+                "book.epub",
+                current_nav_id="section_1",
+                chapter_id="chapter_1",
+                chapter_title="Chapter One",
+            )
+            is True
+        )
+        progress = db_service.epub_progress.get_progress("book.epub")
+        assert progress is not None
+        assert progress["current_nav_id"] == "section_1"
+        assert progress["status"] == "new"
+
+    def test_status_counts_on_fresh_db(self, db_service):
+        counts = db_service.reading_progress.get_status_counts()
+        assert counts.get("all", 0) == 0

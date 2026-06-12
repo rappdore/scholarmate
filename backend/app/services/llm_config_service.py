@@ -6,6 +6,7 @@ Supports CRUD operations and ensures only one configuration is active at a time.
 """
 
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Any
@@ -38,6 +39,10 @@ class LLMConfigService:
             db_path (str): Path to the SQLite database file
         """
         self.db_path = db_path
+        data_dir = os.path.dirname(db_path)
+        if data_dir:
+            os.makedirs(data_dir, exist_ok=True)
+        self._init_table()
 
     @contextmanager
     def get_connection(self):
@@ -51,6 +56,46 @@ class LLMConfigService:
             yield conn
         finally:
             conn.close()
+
+    def _init_table(self):
+        """
+        Initialize the llm_configurations table, index, and single-active trigger.
+
+        This service owns the llm_configurations schema; the CREATE TABLE
+        statement is the single source of truth for it.
+        """
+        with self.get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS llm_configurations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,                -- User-friendly name
+                    description TEXT,                         -- Optional description
+                    base_url TEXT NOT NULL,                   -- API endpoint URL
+                    api_key TEXT NOT NULL,                    -- Authentication key
+                    model_name TEXT NOT NULL,                 -- Model identifier
+                    is_active BOOLEAN DEFAULT FALSE,          -- Active configuration flag
+                    always_starts_with_thinking BOOLEAN NOT NULL DEFAULT 0,  -- Whether model always starts with thinking block
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_llm_config_active
+                ON llm_configurations(is_active) WHERE is_active = TRUE
+            """)
+
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS enforce_single_active_llm
+                BEFORE UPDATE ON llm_configurations
+                FOR EACH ROW
+                WHEN NEW.is_active = 1
+                BEGIN
+                    UPDATE llm_configurations SET is_active = 0 WHERE id != NEW.id;
+                END
+            """)
+
+            conn.commit()
 
     def mask_api_key(self, api_key: str) -> str:
         """

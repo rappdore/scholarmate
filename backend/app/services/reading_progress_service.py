@@ -40,61 +40,31 @@ class ReadingProgressService(BaseDatabaseService):
     def _init_table(self):
         """
         Initialize the reading progress table and indexes.
+
+        The CREATE TABLE statement is the single source of truth for this
+        table's schema; a fresh database gets the complete schema from it.
         """
         with self.get_connection() as conn:
-            # Create reading progress table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS reading_progress (
                     pdf_filename TEXT PRIMARY KEY,        -- Unique identifier for each PDF
                     last_page INTEGER NOT NULL,           -- Last page the user was reading
                     total_pages INTEGER,                   -- Total number of pages in the PDF
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- When this record was last modified
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When this record was last modified
+
+                    -- Book status management
+                    status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reading', 'finished')),
+                    status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    manually_set BOOLEAN DEFAULT FALSE,   -- Whether status was manually set by user
+
+                    pdf_id INTEGER                         -- ID from pdf_documents registry
                 )
             """)
 
-            # Phase 2a: Add pdf_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(reading_progress)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "pdf_id" not in columns:
-                logger.info("Adding pdf_id column to reading_progress table...")
-                conn.execute("ALTER TABLE reading_progress ADD COLUMN pdf_id INTEGER")
-                logger.info("pdf_id column added successfully")
-
-            # Create index on pdf_id if it doesn't exist
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reading_progress_pdf_id
                 ON reading_progress(pdf_id)
             """)
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate pdf_id for existing reading_progress rows
-            #
-            # This backfill runs once on startup and updates all rows where pdf_id IS NULL.
-            # While reading_progress does get updated on access (via save_progress and
-            # update_book_status), this ensures immediate consistency for all existing rows.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL pdf_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute("""
-                UPDATE reading_progress
-                SET pdf_id = (
-                    SELECT id FROM pdf_documents
-                    WHERE pdf_documents.filename = reading_progress.pdf_filename
-                )
-                WHERE pdf_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM pdf_documents
-                    WHERE pdf_documents.filename = reading_progress.pdf_filename
-                )
-            """)
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled pdf_id for {backfilled} existing reading_progress rows"
-                )
 
             conn.commit()
 

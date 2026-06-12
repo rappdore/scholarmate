@@ -60,7 +60,8 @@ class EPUBChatNotesService(BaseDatabaseService):
                     context_sections TEXT,                    -- JSON array of sections that provided context
                     scroll_position INTEGER DEFAULT 0,        -- Scroll position within the section when note was created
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    epub_id INTEGER                           -- ID from epub_documents registry
                 )
             """)
 
@@ -76,49 +77,10 @@ class EPUBChatNotesService(BaseDatabaseService):
                 ON epub_chat_notes(epub_filename, chapter_id)
             """)
 
-            # Phase 4b: Add epub_id column if it doesn't exist (backward compatible migration)
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(epub_chat_notes)")
-            columns = [column[1] for column in cursor.fetchall()]
-
-            if "epub_id" not in columns:
-                logger.info("Adding epub_id column to epub_chat_notes table...")
-                conn.execute("ALTER TABLE epub_chat_notes ADD COLUMN epub_id INTEGER")
-                logger.info("epub_id column added successfully")
-
-            # Create index on epub_id if it doesn't exist
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_epub_chat_notes_epub_id
                 ON epub_chat_notes(epub_id)
             """)
-
-            # =============================================================================
-            # ONE-TIME BACKFILL: Populate epub_id for existing epub_chat_notes rows
-            #
-            # Unlike epub_reading_progress which gets updated on access, epub_chat_notes only
-            # receives INSERTs, so existing rows would never get their epub_id populated.
-            # This backfill runs once on startup and updates all rows where epub_id IS NULL.
-            #
-            # TODO: This backfill can be removed after all environments have been updated
-            #       and no NULL epub_id values remain. Safe to remove after ~March 2026.
-            # =============================================================================
-            cursor.execute("""
-                UPDATE epub_chat_notes
-                SET epub_id = (
-                    SELECT id FROM epub_documents
-                    WHERE epub_documents.filename = epub_chat_notes.epub_filename
-                )
-                WHERE epub_id IS NULL
-                AND EXISTS (
-                    SELECT 1 FROM epub_documents
-                    WHERE epub_documents.filename = epub_chat_notes.epub_filename
-                )
-            """)
-            backfilled = cursor.rowcount
-            if backfilled > 0:
-                logger.info(
-                    f"Backfilled epub_id for {backfilled} existing epub_chat_notes rows"
-                )
 
             conn.commit()
 
