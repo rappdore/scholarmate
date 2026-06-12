@@ -2,23 +2,31 @@
 
 Scope: application code only (backend Python + frontend TypeScript). Docker/Electron packaging config and CI were out of scope, though several findings touch the Electron *runtime* because app code breaks under it.
 
-Produced by six parallel audit passes (knowledge-feature inventory, backend services, backend routers/models, frontend components, frontend hooks/services/state, architecture). Findings that appear in multiple passes are merged; each was verified against the code, with `file:line` references. **No code has been changed.**
+Produced by six parallel audit passes (knowledge-feature inventory, backend services, backend routers/models, frontend components, frontend hooks/services/state, architecture). Findings that appear in multiple passes are merged; each was verified against the code, with `file:line` references. Originally written before any changes; per-finding status markers below track remediation.
 
 Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 
 ---
 
-## Executive summary
+## STATUS DASHBOARD (last updated 2026-06-12, after commit 2c17ca9)
 
-1. **The production build is broken.** `npm run build` fails on ~18 tsc errors; nothing in dev, pre-commit, or CI runs `tsc`, `eslint`, or `mypy`, so type errors accumulate silently. (C-3)
-2. **A fresh install is broken.** The migration system was deleted, but `reading_progress`'s CREATE TABLE lacks the `status`/`status_updated_at`/`manually_set` columns the code reads and writes. Existing DBs work only because a now-deleted migration added them. Errors are silently swallowed. (C-1)
-3. **Path traversal** in every filename-based file access path (PDF and EPUB), including an unauthenticated file-serving endpoint. (C-2)
-4. **Async endpoints block the event loop** — whole-book PDF/EPUB parsing and all SQLite work run synchronously inside `async def`. One chat request on a large book stalls every concurrent request. (C-4)
-5. **The new Electron packaging doesn't work with the app code as written** — hardcoded/proxy-relative URLs, an invalid WebSocket URL, and `BrowserRouter` under `file://`. (C-5)
-6. **The PDF/EPUB duality is the dominant structural problem**: ~8 near-duplicate backend service pairs (up to 91% similar), 4 duplicate router pairs, duplicate frontend contexts/hooks/clients, 54 `documentType` branch sites. Several confirmed bugs are copy-paste drift between the twins. A unified document abstraction is proposed below. (A-1)
-7. The **knowledge/concepts feature removal** is fully mapped and is a clean, safe first step. (K)
+**✅ Done (commits on main):**
+- **K** — knowledge/concepts feature removed (`38fa2fd`)
+- **C-3** — tsc errors fixed, build restored, typecheck gated in pre-commit; includes F-2, F-12, F-17–F-20 (`273002e`)
+- **C-1** — single-source-of-truth schema, fresh-install fixed, no migration framework per owner decision (`aa1b1bf`)
+- **C-2 + B-14** — path-traversal containment + legacy/dead routes removed (`b007792`)
+- **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16, all with regression tests; backend suite 155→270, frontend 20→48 (`2c17ca9`)
 
-Suggested order of work is at the end.
+**⬜ Open — next up (audit sequencing steps 6-10):**
+- **C-5 + A-4** — unified frontend config/API client; makes packaged Electron work ← **NEXT**
+- **C-6** — SettingsContext wipes saved settings (was NOT part of the burn-down; still unfixed)
+- **A-3** — settings module + DI (instances.py singletons from B-3 are a stepping stone)
+- **C-4** — thread-offload parse/DB work in async endpoints
+- **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder)
+- **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
+- **Tooling:** eslint at 45 errors/27 warnings (gate after burn-down to zero); mypy not yet gated (tracked under A-2)
+
+**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), highlights storage shape under A-1, statistics unification scope, TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?).
 
 ---
 
@@ -75,18 +83,18 @@ The old `migration_service.py` was deleted (commit `0c273aa`), but the `reading_
 - `useStatistics.ts:86` (`string` vs `BookStatus`), `Reader.tsx:71` (wrong annotation vs `api.ts:79` return type), `HighlightsPanel.tsx:197` (two incompatible `HighlightColor` types, F-13), unused props (TS6133)
 **Fix:** repair the ~18 errors (most are small), add `"typecheck": "tsc -b --noEmit"` and wire tsc + eslint (+ mypy backend-side, once A-4 shrinks the count) into pre-commit. *(S/M)*
 
-**C-4. Event-loop blocking in async paths** — `backend/app/services/dual_chat_service.py:318-365`, `routers/ai.py:417, 520`, plus every sync SQLite call from `async def` endpoints
+**C-4. Event-loop blocking in async paths** — ⬜ OPEN — `backend/app/services/dual_chat_service.py:318-365`, `routers/ai.py:417, 520`, plus every sync SQLite call from `async def` endpoints
 `pdfplumber` full-document parsing, `epub.read_epub()` (full ZIP+XML parse), and all `BaseDatabaseService` SQLite calls run synchronously on the event loop (FastAPI only thread-offloads sync `def` endpoints, and these are all `async def`). One chat request on a large book freezes all concurrent requests including in-flight SSE streams.
 **Fix:** `await asyncio.to_thread(...)` around parse/DB calls (pattern already exists in `tts_service.generate_audio_async`), or make endpoints sync `def` where they don't stream. *(M)*
 
-**C-5. Packaged Electron app is broken by app-code assumptions** — multiple files
-- `useStatistics.ts:42-46` uses bare `axios.get('/api/...')` (dev-proxy-only); `PDFViewer.tsx:202` hardcodes `fetch('/api/reading-statistics/session/update')` — both 404 under `file://`
+**C-5. Packaged Electron app is broken by app-code assumptions** — ⬜ OPEN (NEXT UP) — multiple files
+- `useStatistics.ts:42-46` uses bare `axios.get('/api/...')` (dev-proxy-only); `PDFViewer.tsx:202` hardcodes `fetch('/api/reading-statistics/session/update')` — both 404 under `file://`. Note: PDFViewer's `file=` URL for react-pdf is also `/api/...`-relative (left that way deliberately during C-2).
 - `ttsService.ts:38-43` builds `ws://${window.location.hostname}:8000` → `ws://:8000` under `file://`
 - `main.tsx:12` uses `BrowserRouter`; under `loadFile` the pathname is the file path, no route matches → likely blank window (`vite.config.ts` sets `base: './'` for exactly this case but the router wasn't switched)
 - Root cause: backend URL resolution is fragmented across 4 strategies/3 defaults (`services/config.ts`, `api/llmConfig.ts:16`, `ttsService.ts`, dev proxy)
 **Fix:** one config module exporting HTTP + WS base URLs with a `VITE_API_URL` override; route everything through it; switch to `HashRouter` (or conditionally in Electron). *(S/M)*
 
-**C-6. SettingsContext wipes saved settings** — `frontend/src/contexts/SettingsContext.tsx:64-79`
+**C-6. SettingsContext wipes saved settings** — ⬜ OPEN (was not in the burn-down batch; quick S-sized fix) — `frontend/src/contexts/SettingsContext.tsx:64-79`
 Hydration happens in an effect while a save effect writes `defaultSettings` to localStorage before hydration flushes. Under `<StrictMode>` (on, `main.tsx:11`) user settings reset to defaults on every dev reload; in prod there's a loss window.
 **Fix:** lazy `useState(() => loadFromLocalStorage())`, delete the load effect (or gate first save behind a hydrated ref). *(S)*
 
@@ -224,22 +232,22 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 
 ## Suggested sequencing
 
-1. **K** — remove the knowledge feature (clean, mapped, independent).
-2. **C-3** — fix the ~18 tsc errors, add tsc (+eslint) to pre-commit. Restores the build gate so later refactors are checked. Includes deleting dead files F-17–F-20 that carry errors.
-3. **C-1** — reinstate migrations, fix `reading_progress` DDL, single source of truth per table, with a fresh-DB regression test.
-4. **C-2 + B-14** — path containment + delete legacy filename routes/fields.
-5. **Bug burn-down** — B-1..B-13, F-1..F-16 (mostly S-sized, independent; write tests alongside per repo rules).
-6. **C-5 + A-4** — unified frontend config/client; makes the Electron build actually work.
-7. **A-3** — settings + DI (fixes B-3 structurally).
-8. **C-4** — thread-offload parse/DB work.
-9. **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice.
-10. **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles.
+1. ✅ **K** — remove the knowledge feature (commit `38fa2fd`).
+2. ✅ **C-3** — tsc errors fixed, typecheck gated in pre-commit, dead files F-17–F-20 deleted (`273002e`). eslint gating still pending (45 errors).
+3. ✅ **C-1** — single-source-of-truth DDL per service, fresh-DB regression tests; no migration framework per owner decision (`aa1b1bf`).
+4. ✅ **C-2 + B-14** — path containment + legacy filename routes/fields deleted (`b007792`).
+5. ✅ **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16 with ~155 new regression tests (`2c17ca9`).
+6. ⬜ **C-5 + A-4** — unified frontend config/client; makes the Electron build actually work. Fold in **C-6** (small, same area). ← **NEXT**
+7. ⬜ **A-3** — settings + DI (services/instances.py from the burn-down is the stepping stone).
+8. ⬜ **C-4** — thread-offload parse/DB work.
+9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder).
+10. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.
 
 ## Open questions for review
 
 1. **Highlights storage under A-1:** one table with a discriminated-union anchor column, or two tables behind one service interface? (Anchors are genuinely structurally different.)
 2. **Migrations:** hand-rolled ordered SQL scripts (lighter, matches current style) or Alembic+SQLAlchemy (heavier, more conventional)? A-1's table merges make this choice load-bearing.
 3. **DualChat Stop (F-15):** wire up the missing Stop button (plumbing exists) or delete the dead machinery?
-4. **Security posture:** this is a local-first app — do we treat C-2/B-13 (traversal, plaintext API keys, CORS) as hardening-now or accept-and-document? Recommendation: fix traversal now (cheap), document the rest.
+4. **Security posture:** ~~traversal and CORS~~ (fixed in C-2/B-13). Remaining: `llm_configurations.api_key` stored plaintext — accept-and-document for a local-first app, or encrypt at rest?
 5. **Statistics unification:** A-1 proposes unified session storage with format-specific semantics (pages vs words). OK, or keep statistics fully separate?
 6. **TabbedRightPanel mounts all panels permanently** (state preservation vs eager fetching) — keep or lazy-mount?
