@@ -107,6 +107,7 @@ export default function PDFViewer({
       // Clear session ID when no file is selected (returned to library)
       setSessionId('');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionId is read only to avoid regenerating; the session must be created/cleared strictly on filename changes
   }, [filename]); // Only depend on filename
 
   // Text selection state
@@ -219,6 +220,7 @@ export default function PDFViewer({
     }
 
     lastPageRef.current = currentPage;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pdfId/sessionId/sessionPagesRead are read inside but the timing logic must run only on page turns; re-running on those state changes would double-fire the tracking
   }, [currentPage, lastPageTurnTime, averagePageTime, numTimeSamples]);
 
   // Reset timer and session counter when document changes
@@ -253,6 +255,7 @@ export default function PDFViewer({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleHighlightDelete is recreated every render; adding it would re-register the keydown listener every render
   }, [selectedHighlight]);
 
   const onDocumentLoadSuccess = useCallback(
@@ -427,6 +430,7 @@ export default function PDFViewer({
       console.error('Error processing text selection:', error);
       return null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- calculateSelectionCoordinates is a plain function recreated every render; adding it would defeat this useCallback's memoization
   }, [currentPage, viewMode]);
 
   const calculateSelectionCoordinates = (

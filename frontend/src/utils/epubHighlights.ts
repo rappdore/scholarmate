@@ -27,9 +27,8 @@ export interface EPUBTextRange {
 /**
  * Selection captured from user interaction (before saving)
  */
-export interface EPUBSelection extends EPUBTextRange {
-  // No additional fields - just the range data
-}
+// No additional fields - just the range data
+export type EPUBSelection = EPUBTextRange;
 
 /**
  * Highlight as stored in the database and returned by the API (snake_case
@@ -429,7 +428,7 @@ function applyMultiNodeHighlight(
 
     try {
       nodeRange.surroundContents(span);
-    } catch (e) {
+    } catch {
       // surroundContents can fail if range crosses element boundaries
       // Use extractContents + insertNode as fallback
       const fragment = nodeRange.extractContents();

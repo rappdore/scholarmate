@@ -31,6 +31,52 @@ export interface EPUBNavigationResponse {
   has_toc: boolean;
 }
 
+// Chapter content payload returned by GET /epub/{id}/content/{nav_id}
+export interface EPUBContentResponse {
+  nav_id: string;
+  title: string;
+  content: string;
+  spine_position: number;
+  total_sections: number;
+  progress_percentage: number;
+  previous_nav_id: string | null;
+  next_nav_id: string | null;
+}
+
+// Sanitized stylesheet payload returned by GET /epub/{id}/styles
+export interface EPUBStylesResponse {
+  styles: Array<{
+    id: string;
+    name: string;
+    content: string;
+  }>;
+  count: number;
+}
+
+export interface EPUBProgressSaveResponse {
+  success: boolean;
+  message: string;
+  id: number;
+  current_nav_id: string;
+  progress_percentage: number;
+}
+
+export interface EPUBStatusUpdateResponse {
+  success: boolean;
+  message: string;
+  id: number;
+  status: string;
+  manually_set: boolean;
+}
+
+export interface EPUBBookDeletionResponse {
+  success: boolean;
+  message: string;
+  id: number;
+  filename: string;
+  deletion_details: Record<string, boolean>;
+}
+
 // EPUB Progress interfaces
 export interface EPUBProgressRequest {
   current_nav_id: string;
@@ -39,7 +85,7 @@ export interface EPUBProgressRequest {
   scroll_position?: number;
   total_sections?: number;
   progress_percentage?: number;
-  nav_metadata?: Record<string, any>;
+  nav_metadata?: Record<string, unknown>;
 }
 
 export interface EPUBProgress {
@@ -55,7 +101,7 @@ export interface EPUBProgress {
   status: string;
   status_updated_at: string | null;
   manually_set: boolean;
-  nav_metadata?: Record<string, any>;
+  nav_metadata?: Record<string, unknown>;
 }
 
 export const epubService = {
@@ -78,14 +124,17 @@ export const epubService = {
     return response.data;
   },
 
-  getContent: async (epubId: number, navId: string): Promise<any> => {
+  getContent: async (
+    epubId: number,
+    navId: string
+  ): Promise<EPUBContentResponse> => {
     const response = await api.get(
       `/epub/${epubId}/content/${encodeURIComponent(navId)}`
     );
     return response.data;
   },
 
-  getStyles: async (epubId: number): Promise<any> => {
+  getStyles: async (epubId: number): Promise<EPUBStylesResponse> => {
     const response = await api.get(`/epub/${epubId}/styles`);
     return response.data;
   },
@@ -97,7 +146,7 @@ export const epubService = {
   saveEPUBProgress: async (
     epubId: number,
     progressData: EPUBProgressRequest
-  ): Promise<any> => {
+  ): Promise<EPUBProgressSaveResponse> => {
     const response = await api.put(`/epub/${epubId}/progress`, progressData);
     return response.data;
   },
@@ -108,7 +157,7 @@ export const epubService = {
   },
 
   getAllEPUBProgress: async (): Promise<{
-    epub_progress: Record<string, any>;
+    epub_progress: Record<string, unknown>;
   }> => {
     const response = await api.get('/epub/progress/all');
     return response.data;
@@ -118,7 +167,7 @@ export const epubService = {
     epubId: number,
     status: string,
     manually_set: boolean = true
-  ): Promise<any> => {
+  ): Promise<EPUBStatusUpdateResponse> => {
     const response = await api.put(`/epub/${epubId}/status`, {
       status,
       manually_set,
@@ -131,7 +180,7 @@ export const epubService = {
     return response.data;
   },
 
-  deleteEPUBBook: async (epubId: number): Promise<any> => {
+  deleteEPUBBook: async (epubId: number): Promise<EPUBBookDeletionResponse> => {
     const response = await api.delete(`/epub/${epubId}`);
     return response.data;
   },

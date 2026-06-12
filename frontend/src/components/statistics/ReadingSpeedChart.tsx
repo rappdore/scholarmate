@@ -59,9 +59,21 @@ export default function ReadingSpeedChart({
   }));
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  interface TooltipEntry {
+    dataKey?: string | number;
+    value?: number | string;
+    payload: { fullDate: string };
+  }
+
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: TooltipEntry[];
+  }) => {
     if (active && payload && payload.length) {
-      const speedData = payload.find((p: any) => p.dataKey === 'speed');
+      const speedData = payload.find(p => p.dataKey === 'speed');
       if (speedData) {
         return (
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 shadow-lg">

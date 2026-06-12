@@ -189,6 +189,7 @@ export function useEpubSessionTracking({
       let wordsRead = 0;
       if (sections && sections.length > 0) {
         for (const section of sections) {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: unmount flush must read the latest progress from the ref, not a stale snapshot
           const progress = sectionProgressRef.current.get(section.id) || 0;
           const wordCount = section.word_count || 0;
           wordsRead += Math.floor(wordCount * progress);
@@ -223,7 +224,6 @@ export function useEpubSessionTracking({
         // Ignore errors on unmount
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   // Trigger: Visibility change (user switches tabs/minimizes).

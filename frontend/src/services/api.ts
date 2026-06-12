@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { PDF, PDFInfo } from '../types/pdf';
+import type { PDF, PDFInfo, ReadingProgress } from '../types/pdf';
 import type {
   Highlight,
   HighlightCoordinates,
@@ -9,6 +9,133 @@ import type {
 import { highlightColorHex, toHighlightColor } from '../types/highlights';
 import { API_BASE_URL } from './config';
 import { api, devLog, streamSSE } from './http';
+import type { ReadingSession } from '../types/statistics';
+
+// ============================================
+// Wire-shape types (mirror backend responses)
+// ============================================
+
+export interface ProgressSaveResponse {
+  success: boolean;
+  message: string;
+  pdf_id: number;
+  last_page: number;
+}
+
+export interface StatusUpdateResponse {
+  success: boolean;
+  message: string;
+  pdf_id: number;
+  filename: string;
+  status: string;
+  manually_set: boolean;
+}
+
+export interface BookDeletionDetails {
+  reading_progress: boolean;
+  notes: boolean;
+  highlights: boolean;
+  pdf_file: boolean;
+  thumbnail: boolean;
+}
+
+export interface BookDeletionResponse {
+  success: boolean;
+  message: string;
+  pdf_id: number;
+  filename: string;
+  deletion_details: BookDeletionDetails;
+}
+
+export interface ReadingSessionsResponse {
+  pdf_id: number;
+  total_sessions: number;
+  sessions: ReadingSession[];
+}
+
+export interface SessionUpdateResponse {
+  message: string;
+  session_id: string;
+}
+
+export interface ChatNote {
+  id: number;
+  pdf_filename: string;
+  page_number: number;
+  title: string;
+  chat_content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatNoteSaveResponse {
+  success: boolean;
+  message: string;
+  note_id: number;
+}
+
+export interface ChatNoteDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface EPUBChatNote {
+  id: number;
+  epub_filename: string;
+  nav_id: string;
+  chapter_id: string;
+  chapter_title: string;
+  title: string;
+  chat_content: string;
+  context_sections: string[] | null;
+  scroll_position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EPUBChatNoteSaveResponse {
+  note_id: number;
+  message: string;
+  epub_id: number;
+  epub_filename: string;
+  nav_id: string;
+  chapter_id: string;
+}
+
+export interface EPUBChatNoteDeleteResponse {
+  success: boolean;
+  message: string;
+  note_id: number;
+}
+
+/** Per-document note statistics, keyed by filename. */
+export interface NotesStats {
+  notes_count: number;
+  latest_note_date: string | null;
+  latest_note_title: string | null;
+}
+
+/** Per-document highlight statistics, keyed by filename. */
+export interface HighlightStats {
+  highlights_count: number;
+  latest_highlight_date: string | null;
+  latest_highlight_text: string | null;
+}
+
+/** Snake_case highlight payload as returned by the backend API. */
+export interface BackendHighlight {
+  id: number;
+  pdf_id: number;
+  pdf_filename: string;
+  page_number: number;
+  selected_text: string;
+  start_offset: number;
+  end_offset: number;
+  color: string;
+  coordinates: string | HighlightCoordinates[];
+  created_at: string;
+  updated_at: string;
+}
 
 export const pdfService = {
   listPDFs: async (status?: string): Promise<PDF[]> => {
@@ -31,7 +158,7 @@ export const pdfService = {
     pdfId: number,
     lastPage: number,
     totalPages: number
-  ): Promise<any> => {
+  ): Promise<ProgressSaveResponse> => {
     const response = await api.put(`/pdf/${pdfId}/progress`, {
       last_page: lastPage,
       total_pages: totalPages,
@@ -56,7 +183,7 @@ export const pdfService = {
   },
 
   getAllReadingProgress: async (): Promise<{
-    progress: Record<string, any>;
+    progress: Record<string, ReadingProgress>;
   }> => {
     const response = await api.get('/pdf/progress/all');
     return response.data;
@@ -66,7 +193,7 @@ export const pdfService = {
     pdfId: number,
     status: string,
     manually_set: boolean = true
-  ): Promise<any> => {
+  ): Promise<StatusUpdateResponse> => {
     const response = await api.put(`/pdf/${pdfId}/status`, {
       status,
       manually_set,
@@ -74,7 +201,7 @@ export const pdfService = {
     return response.data;
   },
 
-  deleteBook: async (pdfId: number): Promise<any> => {
+  deleteBook: async (pdfId: number): Promise<BookDeletionResponse> => {
     const response = await api.delete(`/pdf/${pdfId}`);
     return response.data;
   },
@@ -107,7 +234,9 @@ export const pdfService = {
     return response.data;
   },
 
-  getReadingSessions: async (pdfId: number): Promise<any> => {
+  getReadingSessions: async (
+    pdfId: number
+  ): Promise<ReadingSessionsResponse> => {
     const response = await api.get(`/reading-statistics/sessions/pdf/${pdfId}`);
     return response.data;
   },
@@ -117,7 +246,7 @@ export const pdfService = {
     pdfId: number,
     pagesRead: number,
     averageTimePerPage: number
-  ): Promise<any> => {
+  ): Promise<SessionUpdateResponse> => {
     const response = await api.put('/reading-statistics/session/update', {
       session_id: sessionId,
       pdf_id: pdfId,
@@ -134,7 +263,7 @@ export const notesService = {
     pageNumber: number,
     title: string,
     chatContent: string
-  ): Promise<any> => {
+  ): Promise<ChatNoteSaveResponse> => {
     const response = await api.post('/notes/chat', {
       pdf_id: pdfId,
       page_number: pageNumber,
@@ -147,18 +276,18 @@ export const notesService = {
   getChatNotesForPdf: async (
     pdfId: number,
     pageNumber?: number
-  ): Promise<any[]> => {
+  ): Promise<ChatNote[]> => {
     const params = pageNumber ? `?page_number=${pageNumber}` : '';
     const response = await api.get(`/notes/chat/pdf/${pdfId}${params}`);
     return response.data;
   },
 
-  getChatNoteById: async (noteId: number): Promise<any> => {
+  getChatNoteById: async (noteId: number): Promise<ChatNote> => {
     const response = await api.get(`/notes/chat/id/${noteId}`);
     return response.data;
   },
 
-  deleteChatNote: async (noteId: number): Promise<any> => {
+  deleteChatNote: async (noteId: number): Promise<ChatNoteDeleteResponse> => {
     const response = await api.delete(`/notes/chat/${noteId}`);
     return response.data;
   },
@@ -382,7 +511,7 @@ const isStatus = (error: unknown, status: number): boolean =>
 // Real Highlight Service - Connects to backend API
 export const highlightService = {
   // Helper function to convert backend response to frontend format
-  _convertBackendHighlight: (backendHighlight: any): Highlight => {
+  _convertBackendHighlight: (backendHighlight: BackendHighlight): Highlight => {
     let coordinates: HighlightCoordinates[] = [];
 
     // Parse coordinates from JSON string
@@ -509,7 +638,7 @@ export const highlightService = {
   },
 
   // Get highlight statistics for all PDFs
-  getHighlightStats: async (): Promise<Record<string, any>> => {
+  getHighlightStats: async (): Promise<Record<string, HighlightStats>> => {
     try {
       const response = await api.get('/highlights/stats/count');
       return response.data;
@@ -532,7 +661,7 @@ export const epubNotesService = {
     chatContent: string,
     contextSections?: string[],
     scrollPosition?: number
-  ): Promise<any> => {
+  ): Promise<EPUBChatNoteSaveResponse> => {
     const response = await api.post('/epub-notes/chat', {
       epub_id: epubId,
       nav_id: navId,
@@ -550,7 +679,7 @@ export const epubNotesService = {
     epubId: number,
     navId?: string,
     chapterId?: string
-  ): Promise<any[]> => {
+  ): Promise<EPUBChatNote[]> => {
     const params = new URLSearchParams();
     if (navId) params.append('nav_id', navId);
     if (chapterId) params.append('chapter_id', chapterId);
@@ -563,22 +692,24 @@ export const epubNotesService = {
 
   getChatNotesByChapter: async (
     epubId: number
-  ): Promise<Record<string, any[]>> => {
+  ): Promise<Record<string, EPUBChatNote[]>> => {
     const response = await api.get(`/epub-notes/chat/${epubId}/by-chapter`);
     return response.data;
   },
 
-  getChatNoteById: async (noteId: number): Promise<any> => {
+  getChatNoteById: async (noteId: number): Promise<EPUBChatNote> => {
     const response = await api.get(`/epub-notes/chat/id/${noteId}`);
     return response.data;
   },
 
-  deleteChatNote: async (noteId: number): Promise<any> => {
+  deleteChatNote: async (
+    noteId: number
+  ): Promise<EPUBChatNoteDeleteResponse> => {
     const response = await api.delete(`/epub-notes/chat/${noteId}`);
     return response.data;
   },
 
-  getNotesStatistics: async (): Promise<Record<string, any>> => {
+  getNotesStatistics: async (): Promise<Record<string, NotesStats>> => {
     const response = await api.get('/epub-notes/stats');
     return response.data;
   },

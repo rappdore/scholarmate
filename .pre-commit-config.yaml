@@ -41,6 +41,12 @@ repos:
         language: system
         files: ^frontend/.*\.(ts|tsx)$
         pass_filenames: false
+      - id: frontend-lint
+        name: frontend lint
+        entry: bash -c 'cd frontend && npx eslint . --max-warnings 0'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
       - id: frontend-tests
         name: frontend tests
         entry: bash -c 'cd frontend && npm run test'

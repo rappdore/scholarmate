@@ -89,7 +89,21 @@ export default function PagesPerSessionChart({
     viewMode === VIEW_MODE.SESSION ? getSessionData() : getDayData();
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  interface ChartDatum {
+    label: string;
+    fullDate: string;
+    pages: number;
+    sessions: number;
+    sessionTimes?: string;
+  }
+
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: Array<{ payload: ChartDatum }>;
+  }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (

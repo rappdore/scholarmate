@@ -92,9 +92,8 @@ export default function DualChatInterface({
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null);
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+  const [, setAbortController] = useState<AbortController | null>(null);
+  const [, setCurrentRequestId] = useState<string | null>(null);
 
   // Save note dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);

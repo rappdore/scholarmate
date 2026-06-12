@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { HIGHLIGHT_COLORS } from '../types/highlights';
 import { useSettings } from '../contexts/SettingsContext';
-import type { LLMConfiguration, LLMConfigCreate } from '../types/llm';
+import type {
+  LLMConfiguration,
+  LLMConfigCreate,
+  LLMConfigUpdate,
+} from '../types/llm';
 import {
   listLLMConfigurations,
   activateLLMConfiguration,
@@ -99,7 +103,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     try {
       // Only send fields that have values (for partial update)
-      const updates: any = {
+      const updates: LLMConfigUpdate = {
         name: config.name,
         description: config.description,
         base_url: config.base_url,

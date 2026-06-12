@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS-only module loaded at Electron main startup; the standard electron-squirrel-startup idiom
 if (require('electron-squirrel-startup')) {
   app.quit();
 }

@@ -218,14 +218,13 @@ export default function EPUBViewer({
     | 'finished';
 
   // Session tracking hook
-  const { trackingEnabled, setTrackingEnabled, wordsRead } =
-    useEpubSessionTracking({
-      epubId,
-      navSections,
-      currentNavId,
-      scrollProgress: scrollProgressRatio,
-      bookStatus,
-    });
+  const { trackingEnabled, setTrackingEnabled } = useEpubSessionTracking({
+    epubId,
+    navSections,
+    currentNavId,
+    scrollProgress: scrollProgressRatio,
+    bookStatus,
+  });
 
   // Monotonic request sequences used to drop stale async resolutions:
   // a slow response for a previous EPUB/section must not overwrite state
@@ -243,9 +242,12 @@ export default function EPUBViewer({
 
     return () => {
       // Invalidate in-flight loads on EPUB change or unmount
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: the sequence ref must be bumped (latest value) at cleanup to mark in-flight loads stale
       epubLoadSeqRef.current++;
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: same staleness-counter pattern as above
       contentLoadSeqRef.current++;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadNavigation/loadStyles/loadProgress are recreated every render; effect must run only when the EPUB changes (refetch storm otherwise)
   }, [epubId]);
 
   // Persist reader settings to sessionStorage
@@ -281,6 +283,7 @@ export default function EPUBViewer({
     }, 50);
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyHighlightsToContent is recreated every render; HTML must be re-injected only when the chapter content changes
   }, [currentContent]);
 
   // Re-apply highlights whenever the section highlights change (e.g. after creating a new one or color update)
@@ -299,6 +302,7 @@ export default function EPUBViewer({
     }, 20);
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyHighlightsToContent is recreated every render; currentContent changes are handled by the injection effect above — this one must fire only on highlight changes
   }, [sectionHighlights]);
 
   // Load saved progress and restore position
@@ -383,6 +387,7 @@ export default function EPUBViewer({
     }, 1000); // Debounce scroll saves
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- saveProgress is recreated every render; adding it would re-arm the debounce on every render
   }, [epubId, currentNavId, scrollPosition, isProgressLoaded, currentContent]);
 
   // Handle scroll position tracking
@@ -701,6 +706,7 @@ export default function EPUBViewer({
       loadContent(navIdToLoad, true); // Pass true to indicate this is initial load
       setInitialLoadDone(true); // Mark initial load as complete
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadContent is recreated every render; epubId changes already reset initialLoadDone via the load effect, so the initial load must key off navigation/progress only
   }, [
     navigation,
     isProgressLoaded,
@@ -760,6 +766,7 @@ export default function EPUBViewer({
     };
 
     navigateToHighlight();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadContent is recreated every render; currentNavId is read for an "already there" check only — re-running on nav changes would re-trigger highlight navigation
   }, [targetHighlight, epubId]);
 
   // Scroll to pending highlight after content loads
@@ -928,6 +935,7 @@ export default function EPUBViewer({
       const chapterTitle = getCurrentChapterTitle();
       onChapterInfoChange(chapterId, chapterTitle);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getCurrentChapterTitle is recreated every render; parent must be notified only on nav changes
   }, [currentNavId, onNavIdChange, onChapterInfoChange]);
 
   const handleChapterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -1133,12 +1141,14 @@ export default function EPUBViewer({
 
     return () => {
       clearTimeout(timeoutId);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- the listener is attached after a timeout, so cleanup must read the container ref's latest value
       const container = contentContainerRef.current;
       if (container) {
         console.log('🧹 Cleaning up mouseup event listener');
         container.removeEventListener('mouseup', handleTextSelection);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleTextSelection is recreated every render; the listener must be (re)attached only when content/section changes
   }, [currentContent, currentNavId]);
 
   // TTS service setup

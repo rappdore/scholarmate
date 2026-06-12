@@ -44,8 +44,7 @@ export default function Library() {
 
       // Check for books that should prompt for finished status
       enhancedDocuments.forEach(doc => {
-        if (shouldPromptFinished(doc as any)) {
-          // Use 'as any' for now since shouldPromptFinished expects PDF
+        if (shouldPromptFinished(doc)) {
           console.log(`Book "${doc.title}" is ready to be marked as finished!`);
           // TODO: Show notification or prompt in a future enhancement
         }
@@ -348,7 +347,7 @@ export default function Library() {
               >
                 {/* Book Action Menu */}
                 <BookActionMenu
-                  pdf={doc as any} // Temporary fix until BookActionMenu is updated to support Document type
+                  pdf={doc}
                   onStatusChange={status => handleStatusChange(doc, status)}
                   onDelete={() => handleDeleteBook(doc)}
                   isVisible={hoveredBook === `${doc.type}-${doc.id}`}

@@ -29,5 +29,13 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
     },
+  },
+  {
+    // Context modules idiomatically export a Provider component alongside
+    // their hooks/constants; fast-refresh granularity is not a concern here.
+    files: ['src/contexts/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
   }
 );

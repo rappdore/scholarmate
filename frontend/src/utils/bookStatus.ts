@@ -1,9 +1,18 @@
 import type { BookStatus, PDF } from '../types/pdf';
 
 /**
+ * The subset of fields the status helpers actually read.
+ * Satisfied by both PDF and the unified Document types.
+ */
+type BookStatusFields = Pick<
+  PDF,
+  'reading_progress' | 'manual_status' | 'computed_status'
+>;
+
+/**
  * Determines the computed status of a book based on its reading progress
  */
-export function computeBookStatus(pdf: PDF): BookStatus {
+export function computeBookStatus(pdf: BookStatusFields): BookStatus {
   // If there's no reading progress, it's a new book
   if (!pdf.reading_progress) {
     return 'new';
@@ -28,7 +37,7 @@ export function computeBookStatus(pdf: PDF): BookStatus {
 /**
  * Gets the effective book status, prioritizing manual status over computed status
  */
-export function getBookStatus(pdf: PDF): BookStatus {
+export function getBookStatus(pdf: BookStatusFields): BookStatus {
   // If there's a manual status set, use that
   if (pdf.manual_status) {
     return pdf.manual_status;
@@ -45,7 +54,7 @@ export function getBookStatus(pdf: PDF): BookStatus {
  * 2. The current effective status is not already 'finished'
  * 3. The status hasn't been manually set (to avoid re-prompting)
  */
-export function shouldPromptFinished(pdf: PDF): boolean {
+export function shouldPromptFinished(pdf: BookStatusFields): boolean {
   const computedStatus = computeBookStatus(pdf);
   const currentStatus = getBookStatus(pdf);
   const isManuallySet = pdf.reading_progress?.manually_set || false;

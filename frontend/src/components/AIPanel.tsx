@@ -72,6 +72,7 @@ export default function AIPanel({
     return () => {
       // Invalidate any in-flight analysis stream so it stops writing into
       // the next page/section's panel (also covers unmount)
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: the request-sequence ref must be bumped (latest value) at cleanup to invalidate in-flight streams
       analysisRequestIdRef.current++;
       setLoading(false);
       setStreaming(false);
@@ -93,6 +94,7 @@ export default function AIPanel({
       analyzeDocument();
       lastAnalyzedScrollProgressRef.current = scrollProgress ?? 0;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- analyzeDocument is recreated every render (would re-analyze each render); scrollProgress is handled by the dedicated scroll effect below
   }, [pdfId, epubId, currentPage, currentNavId, autoAnalyze, documentType]);
 
   // EPUB-specific: Auto-analyze on significant scroll progress (forward only)
@@ -116,6 +118,7 @@ export default function AIPanel({
       analyzeDocument();
       lastAnalyzedScrollProgressRef.current = currentProgress;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- analyzeDocument is recreated every render; adding it would trigger an analysis on every render
   }, [
     scrollProgress,
     autoAnalyze,

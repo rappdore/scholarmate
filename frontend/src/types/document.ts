@@ -1,6 +1,4 @@
 import type {
-  PDF,
-  PDFInfo,
   BookStatus,
   ReadingProgress,
   NotesInfo,
@@ -57,9 +55,8 @@ export interface PDFDocumentInfo extends PDFDocument {
   modification_date?: string;
 }
 
-export interface EPUBDocumentInfo extends EPUBDocument {
-  // EPUB info is already included in the base interface
-}
+// EPUB info is already included in the base interface
+export type EPUBDocumentInfo = EPUBDocument;
 
 export type DocumentInfo = PDFDocumentInfo | EPUBDocumentInfo;
 
