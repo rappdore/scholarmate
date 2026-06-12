@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { pdfService } from '../services/api';
-import { epubService } from '../services/epubService';
-import type { PDF, BookStatus } from '../types/pdf';
+import { documentApi } from '../services/documentApi';
+import type { BookStatus } from '../types/pdf';
 import type { Document } from '../types/document';
 import {
   isPDFDocument,
-  isEPUBDocument,
   getDocumentLength,
   getDocumentLengthUnit,
 } from '../types/document';
@@ -41,36 +39,7 @@ export default function Library() {
       setLoading(true);
       setError(null);
 
-      // Call both services in parallel
-      const [pdfData, epubData] = await Promise.all([
-        pdfService.listPDFs().catch(() => []), // Return empty array if service fails
-        epubService.listEPUBs().catch(() => []), // Return empty array if service fails
-      ]);
-
-      // Convert PDFs to Document format and merge with EPUBs
-      const pdfDocuments: Document[] = pdfData.map(pdf => ({
-        ...pdf,
-        type: 'pdf' as const,
-        num_pages: pdf.num_pages,
-      }));
-
-      const allDocuments: Document[] = [...pdfDocuments, ...epubData];
-
-      // The backend now provides status information directly in reading_progress
-      // No need for complex status computation - just use what the backend provides
-      const enhancedDocuments = allDocuments.map(doc => {
-        // Get status from reading progress or default to 'new'
-        const status = doc.reading_progress?.status || 'new';
-
-        return {
-          ...doc,
-          computed_status: status as BookStatus,
-          manual_status: doc.reading_progress?.manually_set
-            ? (status as BookStatus)
-            : undefined,
-        };
-      });
-
+      const enhancedDocuments = await documentApi.listAll();
       setDocuments(enhancedDocuments);
 
       // Check for books that should prompt for finished status
@@ -91,31 +60,7 @@ export default function Library() {
 
   const loadStatusCounts = async () => {
     try {
-      // Load status counts from both PDF and EPUB services in parallel
-      const [pdfCounts, epubCounts] = await Promise.all([
-        pdfService
-          .getStatusCounts()
-          .catch(() => ({ new: 0, reading: 0, finished: 0 })),
-        epubService
-          .getEPUBStatusCounts()
-          .catch(() => ({ new: 0, reading: 0, finished: 0 })),
-      ]);
-
-      // Combine the counts
-      const combinedCounts = {
-        all:
-          pdfCounts.new +
-          pdfCounts.reading +
-          pdfCounts.finished +
-          epubCounts.new +
-          epubCounts.reading +
-          epubCounts.finished,
-        new: pdfCounts.new + epubCounts.new,
-        reading: pdfCounts.reading + epubCounts.reading,
-        finished: pdfCounts.finished + epubCounts.finished,
-      };
-
-      setStatusCounts(combinedCounts);
+      setStatusCounts(await documentApi.statusCounts());
     } catch (err) {
       console.error('Error loading status counts:', err);
     }
@@ -126,17 +71,13 @@ export default function Library() {
     newStatus: BookStatus
   ) => {
     try {
-      // Update status via appropriate API based on document type
-      if (isPDFDocument(document)) {
-        await pdfService.updateBookStatus(document.id, newStatus, true);
-      } else if (isEPUBDocument(document)) {
-        await epubService.updateEPUBBookStatus(document.id, newStatus, true);
-      }
+      await documentApi.updateStatus(document.type, document.id, newStatus);
 
-      // Update local state
+      // Update local state (match on type + id: a PDF and an EPUB can share
+      // the same numeric id)
       setDocuments(prevDocs =>
         prevDocs.map(d =>
-          d.id === document.id
+          d.id === document.id && d.type === document.type
             ? {
                 ...d,
                 computed_status: newStatus,
@@ -165,15 +106,14 @@ export default function Library() {
 
   const handleDeleteBook = async (document: Document) => {
     try {
-      // Delete via appropriate API based on document type
-      if (isPDFDocument(document)) {
-        await pdfService.deleteBook(document.id);
-      } else if (isEPUBDocument(document)) {
-        await epubService.deleteEPUBBook(document.id);
-      }
+      await documentApi.deleteDocument(document.type, document.id);
 
-      // Remove from local state
-      setDocuments(prevDocs => prevDocs.filter(d => d.id !== document.id));
+      // Remove from local state (match on type + id, see handleStatusChange)
+      setDocuments(prevDocs =>
+        prevDocs.filter(
+          d => !(d.id === document.id && d.type === document.type)
+        )
+      );
 
       // Reload status counts
       await loadStatusCounts();
@@ -189,21 +129,14 @@ export default function Library() {
       setRefreshing(true);
       console.log('Refreshing library cache (PDFs and EPUBs)...');
 
-      // Refresh both PDF and EPUB caches in parallel
-      const [pdfResult, epubResult] = await Promise.all([
-        pdfService.refreshPDFCache(),
-        epubService.refreshEPUBCache(),
-      ]);
-
-      console.log('PDF cache refreshed:', pdfResult);
-      console.log('EPUB cache refreshed:', epubResult);
+      const { pdf_count, epub_count } = await documentApi.refreshCaches();
 
       // Reload documents and status counts
       await loadDocuments();
       await loadStatusCounts();
 
       console.log(
-        `✅ Library cache refreshed successfully! ${pdfResult.pdf_count} PDFs and ${epubResult.epub_count} EPUBs cached.`
+        `✅ Library cache refreshed successfully! ${pdf_count} PDFs and ${epub_count} EPUBs cached.`
       );
     } catch (err) {
       console.error('Error refreshing cache:', err);
@@ -260,9 +193,7 @@ export default function Library() {
   };
 
   const getThumbnailUrl = (document: Document): string => {
-    return isPDFDocument(document)
-      ? pdfService.getThumbnailUrl(document.id)
-      : epubService.getThumbnailUrl(document.id);
+    return documentApi.thumbnailUrl(document.type, document.id);
   };
 
   const getStatusBadge = (document: Document) => {

@@ -8,7 +8,7 @@ import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css';
 import '../styles/katex-dark.css';
 import type { Components } from 'react-markdown';
-import { notesService, epubNotesService } from '../services/api';
+import { documentApi } from '../services/documentApi';
 
 interface PDFNote {
   id: number;
@@ -71,7 +71,8 @@ export default function NotesPanel({
   // Load notes for the current document (PDF or EPUB)
   useEffect(() => {
     const documentId = documentType === 'pdf' ? pdfId : epubId;
-    if (!documentId) {
+    // === undefined: 0 is a valid document id
+    if (documentId === undefined) {
       setNotes([]);
       return;
     }
@@ -80,14 +81,10 @@ export default function NotesPanel({
       setLoading(true);
       setError(null);
       try {
-        let fetchedNotes;
-        if (documentType === 'pdf') {
-          fetchedNotes = await notesService.getChatNotesForPdf(pdfId!);
-        } else if (documentType === 'epub') {
-          fetchedNotes = await epubNotesService.getChatNotesForEpub(epubId!);
-        } else {
-          throw new Error(`Unsupported document type: ${documentType}`);
-        }
+        const fetchedNotes = await documentApi.getChatNotes(
+          documentType,
+          documentId
+        );
         setNotes(fetchedNotes);
       } catch (err) {
         console.error('Error loading notes:', err);
@@ -113,11 +110,7 @@ export default function NotesPanel({
 
   const deleteNote = async (noteId: number) => {
     try {
-      if (documentType === 'pdf') {
-        await notesService.deleteChatNote(noteId);
-      } else if (documentType === 'epub') {
-        await epubNotesService.deleteChatNote(noteId);
-      }
+      await documentApi.deleteChatNote(documentType, noteId);
       setNotes(prev => prev.filter(note => note.id !== noteId));
       if (expandedNote === noteId) {
         setExpandedNote(null);
