@@ -4,7 +4,7 @@ ScholarMate is an intelligent study assistant that transforms how you read and u
 
 - **Frontend**: React 19 + TypeScript + Vite, located in `./frontend`
 - **Backend**: FastAPI + Python 3.12, located in `./backend`
-- The backend uses SQLite databases stored in `./backend/data/` (`reading_progress.db`, `knowledge.db`)
+- The backend uses a SQLite database stored at `./backend/data/reading_progress.db`
 - Backend uses **uv** for environment management. Use uv to run any python commands.
 
 ## Working Agreements
