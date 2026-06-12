@@ -13,7 +13,10 @@ import sqlite3
 
 import pytest
 
+from app.models.documents import BookStatus, EpubDocumentUpsert, EpubPosition
+from app.services.documents_repository import DocumentsRepository
 from app.services.epub_reading_statistics_service import EPUBReadingStatisticsService
+from app.services.progress_service import ProgressService
 
 
 @pytest.fixture
@@ -26,17 +29,19 @@ def service(db_path):
     return EPUBReadingStatisticsService(db_path=db_path)
 
 
-def _insert_progress(db_path: str, epub_id: int, status: str = "reading"):
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO epub_reading_progress
-                (epub_filename, current_nav_id, status, epub_id)
-            VALUES (?, ?, ?, ?)
-            """,
-            (f"book-{epub_id}.epub", "s1", status, epub_id),
-        )
-        conn.commit()
+def _insert_progress(db_path: str, epub_id: int, status: str = "reading") -> int:
+    """Register a tracked EPUB with progress; returns its document id."""
+    repo = DocumentsRepository(db_path)
+    doc_id = repo.upsert(
+        EpubDocumentUpsert(filename=f"book-{epub_id}.epub", chapters=3)
+    )
+    progress = ProgressService(db_path)
+    progress.save_epub_progress(
+        doc_id, EpubPosition(current_nav_id="s1"), progress_percentage=10.0
+    )
+    if status != "reading":
+        progress.update_status(doc_id, BookStatus(status), manual=True)
+    return doc_id
 
 
 def _insert_sessions(db_path: str, epub_id: int, count: int):
@@ -89,20 +94,21 @@ class TestPagination:
 
 class TestUpsertSession:
     def test_insert_then_update_same_session(self, service, db_path):
-        _insert_progress(db_path, epub_id=1)
+        doc_id = _insert_progress(db_path, epub_id=1)
 
-        assert service.upsert_session("sess-a", 1, 100, 30.0) is True
-        assert service.upsert_session("sess-a", 1, 250, 75.0) is True
+        assert service.upsert_session("sess-a", doc_id, 100, 30.0) is True
+        assert service.upsert_session("sess-a", doc_id, 250, 75.0) is True
 
-        result = service.get_sessions_by_epub_id(1)
+        result = service.get_sessions_by_epub_id(doc_id)
         assert result["total_sessions"] == 1
         assert result["sessions"][0]["words_read"] == 250
         assert result["sessions"][0]["time_spent_seconds"] == 75.0
 
-    def test_upsert_uses_exactly_two_connections(self, service, db_path):
-        # B-15: a third connection (SELECT just for logging) was removed.
-        # Remaining: one for the progress lookup, one for the upsert itself.
-        _insert_progress(db_path, epub_id=1)
+    def test_upsert_uses_exactly_one_own_connection(self, service, db_path):
+        # B-15: a SELECT just for logging was removed. The progress lookup
+        # now lives in ProgressService, so this service opens exactly one
+        # connection: the upsert itself.
+        doc_id = _insert_progress(db_path, epub_id=1)
 
         original = service.get_connection
         calls = []
@@ -112,17 +118,17 @@ class TestUpsertSession:
             return original()
 
         service.get_connection = counting_get_connection
-        assert service.upsert_session("sess-a", 1, 100, 30.0) is True
-        assert len(calls) == 2
+        assert service.upsert_session("sess-a", doc_id, 100, 30.0) is True
+        assert len(calls) == 1
 
     def test_unknown_epub_raises_value_error(self, service):
         with pytest.raises(ValueError):
             service.upsert_session("sess-a", 999, 100, 30.0)
 
     def test_finished_book_skips_update(self, service, db_path):
-        _insert_progress(db_path, epub_id=2, status="finished")
-        assert service.upsert_session("sess-b", 2, 100, 30.0) is True
-        assert service.get_sessions_by_epub_id(2)["total_sessions"] == 0
+        doc_id = _insert_progress(db_path, epub_id=2, status="finished")
+        assert service.upsert_session("sess-b", doc_id, 100, 30.0) is True
+        assert service.get_sessions_by_epub_id(doc_id)["total_sessions"] == 0
 
 
 class TestDeleteSessionsByEpubId:

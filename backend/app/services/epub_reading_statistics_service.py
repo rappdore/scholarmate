@@ -7,8 +7,10 @@ It handles tracking session data including words read and time spent per session
 
 import logging
 
+from app.models.documents import BookStatus
+
 from .base_database_service import BaseDatabaseService
-from .epub_progress_service import EPUBProgressService
+from .progress_service import ProgressService
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ class EPUBReadingStatisticsService(BaseDatabaseService):
         """
         super().__init__(db_path)
         self._init_table()
-        self.progress_service = EPUBProgressService(db_path)
+        self.progress_service = ProgressService(db_path)
 
     def _init_table(self):
         """
@@ -108,21 +110,21 @@ class EPUBReadingStatisticsService(BaseDatabaseService):
 
         try:
             # Check if the EPUB exists and get its status
-            progress = self._get_progress_by_epub_id(epub_id)
+            progress = self.progress_service.get_progress(epub_id)
             if not progress:
                 logger.error(f"[SESSION_UPDATE] EPUB not found: epub_id={epub_id}")
                 raise ValueError(
-                    f"EPUB with id={epub_id} does not exist in epub_reading_progress table. "
+                    f"EPUB with id={epub_id} does not exist in the progress table. "
                     "Statistics updates are only allowed for tracked EPUBs."
                 )
 
             logger.info(
-                f"[SESSION_UPDATE] EPUB status: {progress.get('status')}, "
-                f"filename: {progress.get('epub_filename')}"
+                f"[SESSION_UPDATE] EPUB status: {progress.status}, "
+                f"filename: {progress.filename}"
             )
 
             # Check if the book status is "finished"
-            if progress.get("status") == "finished":
+            if progress.status == BookStatus.FINISHED:
                 logger.info(
                     f"[SESSION_UPDATE] Skipping - book is finished: epub_id={epub_id}"
                 )
@@ -164,35 +166,6 @@ class EPUBReadingStatisticsService(BaseDatabaseService):
                 f"epub_id={epub_id}, error={e}"
             )
             return False
-
-    def _get_progress_by_epub_id(self, epub_id: int) -> dict | None:
-        """
-        Get EPUB progress record by epub_id.
-
-        Args:
-            epub_id (int): ID of the EPUB document
-
-        Returns:
-            dict | None: Progress record or None if not found
-        """
-        try:
-            query = """
-                SELECT epub_filename, status, manually_set
-                FROM epub_reading_progress
-                WHERE epub_id = ?
-            """
-            with self.get_connection() as conn:
-                row = conn.execute(query, (epub_id,)).fetchone()
-                if row:
-                    return {
-                        "epub_filename": row[0],
-                        "status": row[1],
-                        "manually_set": bool(row[2]) if row[2] is not None else False,
-                    }
-            return None
-        except Exception as e:
-            logger.error(f"Error getting EPUB progress by id {epub_id}: {e}")
-            return None
 
     def get_sessions_by_epub_id(
         self, epub_id: int, limit: int | None = None, offset: int | None = None

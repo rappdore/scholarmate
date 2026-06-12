@@ -6,11 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..models.documents import DocumentType
+from ..models.documents import (
+    BookStatus,
+    DocumentProgress,
+    DocumentType,
+    PdfPosition,
+)
 from ..models.pdf_responses import (
     AllReadingProgressResponse,
     BookDeletionResponse,
-    BookStatus,
     CacheRefreshResponse,
     DeletionResults,
     HighlightsInfo,
@@ -19,6 +23,7 @@ from ..models.pdf_responses import (
     PDFDetailResponse,
     PDFListItemEnriched,
     ProgressSaveResponse,
+    ReadingProgress,
     ReadingProgressWithId,
     StatusCountsResponse,
     StatusUpdateResponse,
@@ -26,10 +31,12 @@ from ..models.pdf_responses import (
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.pdf_service import PDFService
+from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
     get_pdf_service,
+    get_progress_service,
 )
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
@@ -45,6 +52,20 @@ class ReadingProgressRequest(BaseModel):
 class BookStatusRequest(BaseModel):
     status: str
     manually_set: bool = True
+
+
+def _to_reading_progress(progress: DocumentProgress) -> ReadingProgress:
+    """Map a unified DocumentProgress to the PDF wire model."""
+    assert isinstance(progress.position, PdfPosition)
+    return ReadingProgress(
+        pdf_filename=progress.filename,
+        last_page=progress.position.last_page,
+        total_pages=progress.position.total_pages,
+        last_updated=progress.last_updated or "",
+        status=progress.status,
+        status_updated_at=progress.status_updated_at,
+        manually_set=progress.manually_set,
+    )
 
 
 @router.get("/{pdf_id:int}/info", response_model=PDFDetailResponse)
@@ -112,19 +133,18 @@ def save_reading_progress_by_id(
     pdf_id: int,
     progress: ReadingProgressRequest,
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> ProgressSaveResponse:
     """
     Save reading progress for a PDF by ID
     """
     try:
-        # Lookup filename from ID
         pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        success = db_service.save_reading_progress(
-            pdf_filename=pdf_doc.filename,
+        success = progress_service.save_pdf_progress(
+            document_id=pdf_id,
             last_page=progress.last_page,
             total_pages=progress.total_pages,
         )
@@ -153,7 +173,7 @@ def save_reading_progress_by_id(
 def get_reading_progress_by_id(
     pdf_id: int,
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> ReadingProgressWithId:
     """
     Get reading progress for a PDF by ID
@@ -164,11 +184,13 @@ def get_reading_progress_by_id(
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        progress = db_service.get_reading_progress(pdf_doc.filename)
+        progress = progress_service.get_progress(pdf_id)
 
         if progress:
             # Add ID to response
-            return ReadingProgressWithId(**progress.model_dump(), pdf_id=pdf_id)
+            return ReadingProgressWithId(
+                **_to_reading_progress(progress).model_dump(), pdf_id=pdf_id
+            )
         else:
             # Return default progress if none found
             return ReadingProgressWithId(
@@ -230,7 +252,7 @@ def update_book_status_by_id(
     pdf_id: int,
     status_request: BookStatusRequest,
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> StatusUpdateResponse:
     """
     Update the reading status of a book by ID
@@ -249,9 +271,9 @@ def update_book_status_by_id(
                 detail=f"Invalid status. Must be one of: {valid_statuses}",
             )
 
-        success = db_service.update_book_status(
-            pdf_filename=pdf_doc.filename,
-            status=status_request.status,
+        success = progress_service.update_status(
+            document_id=pdf_id,
+            status=BookStatus(status_request.status),
             manual=status_request.manually_set,
         )
 
@@ -314,7 +336,7 @@ def delete_book_by_id(
             logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
-        db_results = db_service.delete_all_book_data(filename)
+        db_results = db_service.delete_all_book_data(filename, pdf_id)
 
         # Delete reading sessions tied to this PDF
         try:
@@ -378,6 +400,7 @@ def list_pdfs(
     pdf_service: PDFService = Depends(get_pdf_service),
     db_service: DatabaseService = Depends(get_db_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> list[PDFListItemEnriched]:
     """
     List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
@@ -388,14 +411,21 @@ def list_pdfs(
 
         # Get reading progress with status information
         if status:
-            # Filter by status using the database service
-            books_by_status = db_service.get_books_by_status(status)
-            # Create a set of filenames that match the status
-            status_filenames = {book.pdf_filename for book in books_by_status}
+            # Filter by status (an unknown status matches nothing)
+            if status in BookStatus:
+                books_by_status = progress_service.get_books_by_status(
+                    BookStatus(status), DocumentType.PDF
+                )
+                status_filenames = {book.filename for book in books_by_status}
+            else:
+                status_filenames = set()
             # Filter PDFs to only include those with the matching status
             pdfs = [pdf for pdf in pdfs if pdf.filename in status_filenames]
 
-        all_progress = db_service.get_all_reading_progress()
+        all_progress = {
+            p.filename: _to_reading_progress(p)
+            for p in progress_service.get_all_progress(DocumentType.PDF)
+        }
         all_notes = db_service.get_notes_count_by_pdf()
         all_highlights = db_service.get_highlights_count_by_pdf()
 
@@ -484,13 +514,16 @@ def get_pdf_file(
 
 @router.get("/progress/all", response_model=AllReadingProgressResponse)
 def get_all_reading_progress(
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> AllReadingProgressResponse:
     """
     Get reading progress for all PDFs
     """
     try:
-        progress = db_service.get_all_reading_progress()
+        progress = {
+            p.filename: _to_reading_progress(p)
+            for p in progress_service.get_all_progress(DocumentType.PDF)
+        }
         return AllReadingProgressResponse(progress=progress)
     except Exception as e:
         raise HTTPException(
@@ -500,13 +533,13 @@ def get_all_reading_progress(
 
 @router.get("/status/counts", response_model=StatusCountsResponse)
 def get_status_counts(
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> StatusCountsResponse:
     """
     Get count of books for each status
     """
     try:
-        counts = db_service.get_status_counts()
+        counts = progress_service.get_status_counts(DocumentType.PDF)
         return StatusCountsResponse(**counts)
     except Exception as e:
         raise HTTPException(

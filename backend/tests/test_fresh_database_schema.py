@@ -13,6 +13,12 @@ import sqlite3
 
 import pytest
 
+from app.models.documents import (
+    BookStatus,
+    EpubDocumentUpsert,
+    EpubPosition,
+    PdfDocumentUpsert,
+)
 from app.services.database_service import DatabaseService
 from app.services.documents_repository import DocumentsRepository
 from app.services.llm_config_service import LLMConfigService
@@ -25,11 +31,15 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-def db_service(db_path):
+def repo(db_path):
+    return DocumentsRepository(db_path)
+
+
+@pytest.fixture
+def db_service(db_path, repo):
     """A DatabaseService (and therefore all its specialized services) on a fresh DB."""
     # The documents repository and LLM-config service own their tables and are
     # constructed independently of the facade, exactly like at app startup.
-    DocumentsRepository(db_path)
     LLMConfigService(db_path)
     return DatabaseService(db_path)
 
@@ -51,8 +61,7 @@ def _columns(db_path: str, table: str) -> set[str]:
 class TestFreshSchemaIsComplete:
     def test_all_tables_created(self, db_service, db_path):
         expected = {
-            "reading_progress",
-            "epub_reading_progress",
+            "document_progress",
             "chat_notes",
             "epub_chat_notes",
             "highlights",
@@ -65,16 +74,27 @@ class TestFreshSchemaIsComplete:
         missing = expected - _tables(db_path)
         assert not missing, f"Tables missing on a fresh database: {missing}"
 
-    def test_reading_progress_has_status_and_id_columns(self, db_service, db_path):
-        # The original C-1 bug: these columns were referenced by every status
+    def test_document_progress_has_status_and_position_columns(
+        self, db_service, db_path
+    ):
+        # The original C-1 bug: status columns were referenced by every status
         # operation but absent from the fresh-database DDL.
-        columns = _columns(db_path, "reading_progress")
-        assert {"status", "status_updated_at", "manually_set", "pdf_id"} <= columns
+        columns = _columns(db_path, "document_progress")
+        assert {
+            "document_id",
+            "status",
+            "status_updated_at",
+            "manually_set",
+            "last_page",
+            "total_pages",
+            "current_nav_id",
+            "nav_metadata",
+            "progress_percentage",
+        } <= columns
 
     def test_id_columns_present_everywhere(self, db_service, db_path):
         assert "pdf_id" in _columns(db_path, "chat_notes")
         assert "pdf_id" in _columns(db_path, "highlights")
-        assert "epub_id" in _columns(db_path, "epub_reading_progress")
         assert "epub_id" in _columns(db_path, "epub_chat_notes")
 
     def test_llm_config_table_complete_with_trigger(self, db_service, db_path):
@@ -92,48 +112,47 @@ class TestFreshSchemaIsComplete:
 class TestFreshDatabaseOperations:
     """Exercise the operations that silently failed on a fresh DB before the fix."""
 
-    def test_pdf_progress_and_status_roundtrip(self, db_service):
-        assert db_service.reading_progress.save_progress("book.pdf", 5, 100) is True
+    def test_pdf_progress_and_status_roundtrip(self, db_service, repo):
+        doc_id = repo.upsert(PdfDocumentUpsert(filename="book.pdf", num_pages=100))
+        assert db_service.progress.save_pdf_progress(doc_id, 5, 100) is True
 
-        progress = db_service.reading_progress.get_progress("book.pdf")
+        progress = db_service.progress.get_progress(doc_id)
         assert progress is not None
-        assert progress.last_page == 5
-        assert progress.status.value == "new"
+        assert progress.position.last_page == 5
+        assert progress.status == BookStatus.NEW
 
-        assert (
-            db_service.reading_progress.update_book_status("book.pdf", "reading")
-            is True
-        )
-        progress = db_service.reading_progress.get_progress("book.pdf")
+        assert db_service.progress.update_status(doc_id, BookStatus.READING) is True
+        progress = db_service.progress.get_progress(doc_id)
         assert progress is not None
-        assert progress.status.value == "reading"
+        assert progress.status == BookStatus.READING
         assert progress.manually_set is True
 
-    def test_status_on_previously_unseen_book(self, db_service):
-        # update_book_status must be able to create the row from scratch
-        assert (
-            db_service.reading_progress.update_book_status("unseen.pdf", "finished")
-            is True
-        )
-        progress = db_service.reading_progress.get_progress("unseen.pdf")
+    def test_status_on_previously_unseen_book(self, db_service, repo):
+        # update_status must be able to create the row from scratch
+        doc_id = repo.upsert(PdfDocumentUpsert(filename="unseen.pdf", num_pages=1))
+        assert db_service.progress.update_status(doc_id, BookStatus.FINISHED) is True
+        progress = db_service.progress.get_progress(doc_id)
         assert progress is not None
-        assert progress.status.value == "finished"
+        assert progress.status == BookStatus.FINISHED
 
-    def test_epub_progress_roundtrip(self, db_service):
+    def test_epub_progress_roundtrip(self, db_service, repo):
+        doc_id = repo.upsert(EpubDocumentUpsert(filename="book.epub", chapters=3))
         assert (
-            db_service.epub_progress.save_progress(
-                "book.epub",
-                current_nav_id="section_1",
-                chapter_id="chapter_1",
-                chapter_title="Chapter One",
+            db_service.progress.save_epub_progress(
+                doc_id,
+                EpubPosition(
+                    current_nav_id="section_1",
+                    chapter_id="chapter_1",
+                    chapter_title="Chapter One",
+                ),
             )
             is True
         )
-        progress = db_service.epub_progress.get_progress("book.epub")
+        progress = db_service.progress.get_progress(doc_id)
         assert progress is not None
-        assert progress["current_nav_id"] == "section_1"
-        assert progress["status"] == "new"
+        assert progress.position.current_nav_id == "section_1"
+        assert progress.status == BookStatus.NEW
 
     def test_status_counts_on_fresh_db(self, db_service):
-        counts = db_service.reading_progress.get_status_counts()
+        counts = db_service.progress.get_status_counts()
         assert counts.get("all", 0) == 0

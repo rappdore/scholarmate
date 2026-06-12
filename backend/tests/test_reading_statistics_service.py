@@ -11,6 +11,8 @@ import sqlite3
 
 import pytest
 
+from app.models.documents import PdfDocumentUpsert
+from app.services.documents_repository import DocumentsRepository
 from app.services.reading_statistics_service import ReadingStatisticsService
 
 
@@ -80,15 +82,16 @@ class TestPagination:
 
 
 class TestUpsertSession:
-    def test_insert_then_update_same_session(self, service):
-        # Make the tracked-PDF precondition pass with pdf_id=1
-        service.progress_service._get_pdf_id = lambda filename: 1
-        assert service.progress_service.save_progress("book.pdf", 1, 100) is True
+    def test_insert_then_update_same_session(self, service, db_path):
+        # Make the tracked-PDF precondition pass with a real registry row
+        repo = DocumentsRepository(db_path)
+        doc_id = repo.upsert(PdfDocumentUpsert(filename="book.pdf", num_pages=100))
+        assert service.progress_service.save_pdf_progress(doc_id, 1, 100) is True
 
-        assert service.upsert_session("sess-a", 1, 3, 2.0) is True
-        assert service.upsert_session("sess-a", 1, 7, 3.0) is True
+        assert service.upsert_session("sess-a", doc_id, 3, 2.0) is True
+        assert service.upsert_session("sess-a", doc_id, 7, 3.0) is True
 
-        result = service.get_sessions_by_pdf_id(1)
+        result = service.get_sessions_by_pdf_id(doc_id)
         assert result["total_sessions"] == 1
         assert result["sessions"][0]["pages_read"] == 7
         assert result["sessions"][0]["average_time_per_page"] == 3.0

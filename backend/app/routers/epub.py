@@ -5,15 +5,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..models.documents import DocumentRecord, DocumentType
+from ..models.documents import (
+    BookStatus,
+    DocumentProgress,
+    DocumentRecord,
+    DocumentType,
+    EpubPosition,
+)
 from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.epub_service import EPUBService
+from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
     get_epub_service,
+    get_progress_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +65,26 @@ class EPUBProgressRequest(BaseModel):
 class BookStatusRequest(BaseModel):
     status: str
     manually_set: bool = True
+
+
+def _progress_to_dict(progress: DocumentProgress) -> Dict[str, Any]:
+    """Map a unified DocumentProgress to the legacy EPUB progress wire dict."""
+    assert isinstance(progress.position, EpubPosition)
+    return {
+        "epub_filename": progress.filename,
+        "epub_id": progress.document_id,
+        "current_nav_id": progress.position.current_nav_id,
+        "chapter_id": progress.position.chapter_id,
+        "chapter_title": progress.position.chapter_title,
+        "scroll_position": progress.position.scroll_position,
+        "total_sections": progress.position.total_sections,
+        "progress_percentage": progress.progress_percentage,
+        "last_updated": progress.last_updated,
+        "status": progress.status.value,
+        "status_updated_at": progress.status_updated_at,
+        "manually_set": progress.manually_set,
+        "nav_metadata": progress.nav_metadata,
+    }
 
 
 # ========================================
@@ -240,22 +268,24 @@ def get_epub_image_by_id(
 def save_epub_progress_by_id(
     epub_id: int,
     progress: EPUBProgressRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> Dict[str, Any]:
     """
     Save reading progress for an EPUB by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
+        get_epub_doc_or_404(epub_id, documents_repository)
 
-        success = db_service.save_epub_progress(
-            epub_filename=epub_doc.filename,
-            current_nav_id=progress.current_nav_id,
-            chapter_id=progress.chapter_id,
-            chapter_title=progress.chapter_title,
-            scroll_position=progress.scroll_position,
-            total_sections=progress.total_sections,
+        success = progress_service.save_epub_progress(
+            document_id=epub_id,
+            position=EpubPosition(
+                current_nav_id=progress.current_nav_id,
+                chapter_id=progress.chapter_id,
+                chapter_title=progress.chapter_title,
+                scroll_position=progress.scroll_position,
+                total_sections=progress.total_sections,
+            ),
             progress_percentage=progress.progress_percentage,
             nav_metadata=progress.nav_metadata,
         )
@@ -284,7 +314,7 @@ def save_epub_progress_by_id(
 @router.get("/{epub_id:int}/progress")
 def get_epub_progress_by_id(
     epub_id: int,
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> Dict[str, Any]:
@@ -296,11 +326,13 @@ def get_epub_progress_by_id(
         epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
         filename = epub_doc.filename
 
-        progress = db_service.get_epub_progress(filename)
+        progress = progress_service.get_progress(epub_id)
 
         if progress:
+            response = _progress_to_dict(progress)
+
             # Check if word counts need to be extracted
-            nav_metadata = progress.get("nav_metadata")
+            nav_metadata = progress.nav_metadata
             if nav_metadata and epub_service.needs_word_count(nav_metadata):
                 try:
                     # Extract word counts and update nav_metadata
@@ -308,17 +340,13 @@ def get_epub_progress_by_id(
                         filename, nav_metadata
                     )
                     # Save updated nav_metadata back to database
-                    db_service.save_epub_progress(
-                        epub_filename=filename,
-                        current_nav_id=progress.get("current_nav_id", "start"),
-                        chapter_id=progress.get("chapter_id"),
-                        chapter_title=progress.get("chapter_title"),
-                        scroll_position=progress.get("scroll_position", 0),
-                        total_sections=progress.get("total_sections"),
-                        progress_percentage=progress.get("progress_percentage", 0.0),
+                    progress_service.save_epub_progress(
+                        document_id=epub_id,
+                        position=progress.position,
+                        progress_percentage=progress.progress_percentage,
                         nav_metadata=updated_nav_metadata,
                     )
-                    progress["nav_metadata"] = updated_nav_metadata
+                    response["nav_metadata"] = updated_nav_metadata
                     logger.info(f"Extracted word counts for EPUB {epub_id}")
                 except Exception as e:
                     # Log but don't fail - word counts are optional
@@ -327,8 +355,8 @@ def get_epub_progress_by_id(
                     )
 
             # Add ID to response
-            progress["id"] = epub_id
-            return progress
+            response["id"] = epub_id
+            return response
         else:
             # Return default progress if none found
             return {
@@ -359,26 +387,26 @@ def get_epub_progress_by_id(
 def update_epub_book_status_by_id(
     epub_id: int,
     status_request: BookStatusRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> Dict[str, Any]:
     """
     Update the reading status of an EPUB book by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
+        get_epub_doc_or_404(epub_id, documents_repository)
 
         # Validate status
-        valid_statuses = ["new", "reading", "finished"]
+        valid_statuses = [status.value for status in BookStatus]
         if status_request.status not in valid_statuses:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid status. Must be one of: {valid_statuses}",
             )
 
-        success = db_service.update_epub_book_status(
-            epub_filename=epub_doc.filename,
-            status=status_request.status,
+        success = progress_service.update_status(
+            document_id=epub_id,
+            status=BookStatus(status_request.status),
             manual=status_request.manually_set,
         )
 
@@ -441,9 +469,8 @@ def delete_epub_book_by_id(
             deletion_results["thumbnail"] = False
             logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
-        # Delete all database data (must run before the registry row is
-        # removed: highlight deletion looks up the epub_id by filename)
-        db_deletion_results = db_service.delete_all_epub_data(filename)
+        # Delete all database data
+        db_deletion_results = db_service.delete_all_epub_data(filename, epub_id)
         deletion_results.update(db_deletion_results)
 
         # Delete reading sessions tied to this EPUB
@@ -512,6 +539,7 @@ def list_epubs(
     db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> List[EPUBListItem]:
     """
     List all EPUB files in the epubs directory with metadata, reading progress, and notes info.
@@ -522,20 +550,27 @@ def list_epubs(
 
         # Get reading progress with status information
         if status:
-            # Filter by status using the database service
-            books_by_status = db_service.get_epub_books_by_status(status)
-            # Create a set of filenames that match the status
-            status_filenames = {book["epub_filename"] for book in books_by_status}
+            # Filter by status (an unknown status matches nothing)
+            if status in BookStatus:
+                books_by_status = progress_service.get_books_by_status(
+                    BookStatus(status), DocumentType.EPUB
+                )
+                status_filenames = {book.filename for book in books_by_status}
+            else:
+                status_filenames = set()
             # Filter EPUBs to only include those with the matching status
             epubs = [epub for epub in epubs if epub.filename in status_filenames]
 
-        all_progress = db_service.get_all_epub_progress()
+        all_progress = {
+            p.filename: _progress_to_dict(p)
+            for p in progress_service.get_all_progress(DocumentType.EPUB)
+        }
         all_notes = db_service.get_epub_notes_count_by_epub()
         all_highlights = db_service.get_epub_highlights_count_by_epub()
 
         # Get all EPUB documents from database once (avoid N+1 query)
-        all_epub_docs = documents_repository.list_all()
-        filename_to_id = {doc["filename"]: doc["id"] for doc in all_epub_docs}
+        all_epub_docs = documents_repository.list_all(DocumentType.EPUB)
+        filename_to_id = {doc.filename: doc.id for doc in all_epub_docs}
 
         # Build EPUBListItem models with enriched data
         result = []
@@ -601,13 +636,16 @@ def list_epubs(
 
 @router.get("/progress/all")
 def get_all_epub_progress(
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> Dict[str, Any]:
     """
     Get reading progress for all EPUB books
     """
     try:
-        progress = db_service.get_all_epub_progress()
+        progress = {
+            p.filename: _progress_to_dict(p)
+            for p in progress_service.get_all_progress(DocumentType.EPUB)
+        }
         return {"epub_progress": progress}
     except Exception as e:
         raise HTTPException(
@@ -617,13 +655,13 @@ def get_all_epub_progress(
 
 @router.get("/status/counts")
 def get_epub_status_counts(
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
 ) -> Dict[str, int]:
     """
     Get count of EPUB books for each status
     """
     try:
-        counts = db_service.get_epub_status_counts()
+        counts = progress_service.get_status_counts(DocumentType.EPUB)
         return counts
     except Exception as e:
         raise HTTPException(

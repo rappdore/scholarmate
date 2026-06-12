@@ -1,7 +1,7 @@
 """
 Services Package
 
-This package contains database services for managing PDF reading progress,
+This package contains database services for managing reading progress,
 chat notes, and highlights. It provides both specialized services for each
 domain and a unified facade service for backward compatibility.
 """
@@ -11,11 +11,11 @@ from .chat_notes_service import ChatNotesService
 from .database_service import DatabaseService
 from .epub_highlights_service import EPUBHighlightService
 from .highlights_service import HighlightsService
-from .reading_progress_service import ReadingProgressService
+from .progress_service import ProgressService
 
 __all__ = [
     "DatabaseService",
-    "ReadingProgressService",
+    "ProgressService",
     "ChatNotesService",
     "HighlightsService",
     "BaseDatabaseService",

@@ -7,8 +7,10 @@ It handles tracking session data including pages read and average reading time p
 
 import logging
 
+from app.models.documents import BookStatus
+
 from .base_database_service import BaseDatabaseService
-from .reading_progress_service import ReadingProgressService
+from .progress_service import ProgressService
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ class ReadingStatisticsService(BaseDatabaseService):
         """
         super().__init__(db_path)
         self._init_table()
-        self.progress_service = ReadingProgressService(db_path)
+        self.progress_service = ProgressService(db_path)
 
     def _init_table(self):
         """
@@ -102,16 +104,16 @@ class ReadingStatisticsService(BaseDatabaseService):
             ValueError: If the PDF doesn't exist in reading_progress table
         """
         try:
-            # Check if the PDF exists in reading_progress table
-            progress = self.progress_service.get_progress_by_pdf_id(pdf_id)
+            # Check if the PDF exists in the progress table
+            progress = self.progress_service.get_progress(pdf_id)
             if not progress:
                 raise ValueError(
-                    f"PDF with id={pdf_id} does not exist in reading_progress table. "
+                    f"PDF with id={pdf_id} does not exist in the progress table. "
                     "Statistics updates are only allowed for tracked PDFs."
                 )
 
             # Check if the book status is "finished"
-            if progress.status == "finished":
+            if progress.status == BookStatus.FINISHED:
                 logger.info(
                     f"Skipping statistics update for finished book: pdf_id={pdf_id} "
                     f"(session: {session_id})"

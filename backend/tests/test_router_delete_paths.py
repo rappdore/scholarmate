@@ -172,21 +172,21 @@ class TestPdfStatusValidation:
                 pdf_id,
                 request,
                 documents_repository=pdf_docs,
-                db_service=Mock(),
+                progress_service=Mock(),
             )
         assert exc_info.value.status_code == 400
 
     def test_valid_status_accepted(self, pdf_docs):
         pdf_id = pdf_docs.upsert(PdfDocumentUpsert(filename="status.pdf", num_pages=1))
-        fake_db = Mock()
-        fake_db.update_book_status.return_value = True
+        fake_progress = Mock()
+        fake_progress.update_status.return_value = True
 
         request = pdf_router.BookStatusRequest(status="reading")
         response = pdf_router.update_book_status_by_id(
             pdf_id,
             request,
             documents_repository=pdf_docs,
-            db_service=fake_db,
+            progress_service=fake_progress,
         )
         assert response.success is True
 

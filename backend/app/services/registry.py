@@ -34,6 +34,7 @@ from .epub_service import EPUBService
 from .llm_config_service import LLMConfigService
 from .ollama_service import OllamaService
 from .pdf_service import PDFService
+from .progress_service import ProgressService
 from .request_tracking_service import RequestTrackingService
 from .tts_service import TTSService
 
@@ -45,6 +46,7 @@ class ServiceRegistry:
     settings: Settings
     db_service: DatabaseService
     documents_repository: DocumentsRepository
+    progress_service: ProgressService
     pdf_service: PDFService
     epub_service: EPUBService
     epub_chat_context_service: EPUBChatContextService
@@ -79,6 +81,7 @@ def build_registry(settings: Settings) -> ServiceRegistry:
         settings=settings,
         db_service=DatabaseService(settings.db_path),
         documents_repository=DocumentsRepository(settings.db_path),
+        progress_service=ProgressService(settings.db_path),
         pdf_service=pdf_service,
         epub_service=epub_service,
         epub_chat_context_service=EPUBChatContextService(
@@ -124,6 +127,10 @@ def get_db_service() -> DatabaseService:
 
 def get_documents_repository() -> DocumentsRepository:
     return get_registry().documents_repository
+
+
+def get_progress_service() -> ProgressService:
+    return get_registry().progress_service
 
 
 def get_pdf_service() -> PDFService:

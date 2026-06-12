@@ -19,14 +19,13 @@ from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
 from .chat_notes_service import ChatNotesService
 from .epub_chat_notes_service import EPUBChatNotesService
 from .epub_highlights_service import EPUBHighlightService
-from .epub_progress_service import EPUBProgressService
 from .epub_reading_statistics_service import EPUBReadingStatisticsService
 from .highlights_service import HighlightsService
-from .reading_progress_service import ReadingProgressService
+from .progress_service import ProgressService
 from .reading_statistics_service import ReadingStatisticsService
 
 if TYPE_CHECKING:
-    from app.models.pdf_responses import DatabaseDeletionResults, ReadingProgress
+    from app.models.pdf_responses import DatabaseDeletionResults
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -38,8 +37,7 @@ class DatabaseService:
 
     This class coordinates specialized services for different data domains while maintaining
     the same public API for backward compatibility. It delegates operations to:
-    - ReadingProgressService: for PDF reading progress tracking
-    - EPUBProgressService: for EPUB reading progress tracking
+    - ProgressService: unified reading progress/status tracking (used here for deletion)
     - ChatNotesService: for conversation notes linked to PDF pages
     - EPUBChatNotesService: for conversation notes linked to EPUB navigation sections
     - HighlightsService: for text highlights with coordinates
@@ -61,8 +59,7 @@ class DatabaseService:
         # Initialize specialized services. Each service owns its tables and
         # creates its complete schema on construction; there is deliberately
         # no schema definition in this facade.
-        self.reading_progress = ReadingProgressService(db_path)
-        self.epub_progress = EPUBProgressService(db_path)
+        self.progress = ProgressService(db_path)
         self.chat_notes = ChatNotesService(db_path)
         self.epub_chat_notes = EPUBChatNotesService(db_path)
         self.highlights = HighlightsService(db_path)
@@ -80,204 +77,6 @@ class DatabaseService:
         data_dir = os.path.dirname(self.db_path)
         if data_dir and not os.path.exists(data_dir):
             os.makedirs(data_dir)
-
-    def save_reading_progress(
-        self, pdf_filename: str, last_page: int, total_pages: int
-    ) -> bool:
-        """
-        Save or update reading progress for a PDF document.
-
-        Uses INSERT OR REPLACE to either create a new record or update an existing one.
-        This ensures that each PDF has only one progress record.
-
-        Args:
-            pdf_filename (str): Name of the PDF file (used as unique identifier)
-            last_page (int): The page number the user was last reading
-            total_pages (int): Total number of pages in the PDF document
-
-        Returns:
-            bool: True if the operation was successful, False otherwise
-        """
-        return self.reading_progress.save_progress(pdf_filename, last_page, total_pages)
-
-    def get_reading_progress(self, pdf_filename: str) -> "ReadingProgress | None":
-        """
-        Retrieve reading progress for a specific PDF document.
-
-        Args:
-            pdf_filename (str): Name of the PDF file to get progress for
-
-        Returns:
-            ReadingProgress | None: Progress information or None if not found
-        """
-        return self.reading_progress.get_progress(pdf_filename)
-
-    def get_all_reading_progress(self) -> dict[str, "ReadingProgress"]:
-        """
-        Retrieve reading progress for all PDFs.
-
-        Returns:
-            dict[str, ReadingProgress]: Dictionary mapping PDF filenames to their progress info
-        """
-        return self.reading_progress.get_all_progress()
-
-    # ========================================
-    # EPUB PROGRESS METHODS (separate from PDF)
-    # ========================================
-
-    def save_epub_progress(
-        self,
-        epub_filename: str,
-        current_nav_id: str,
-        chapter_id: str = None,
-        chapter_title: str = None,
-        scroll_position: int = 0,
-        total_sections: int = None,
-        progress_percentage: float = 0.0,
-        nav_metadata: dict[str, Any] = None,
-    ) -> bool:
-        """
-        Save or update reading progress for an EPUB document.
-
-        Args:
-            epub_filename (str): Name of the EPUB file (used as unique identifier)
-            current_nav_id (str): Current finest navigation section ID
-            chapter_id (str): Chapter-level ID for display purposes
-            chapter_title (str): Chapter title for UI display
-            scroll_position (int): Scroll position within current section
-            total_sections (int): Total number of navigation sections in book
-            progress_percentage (float): Overall book progress (0.0-100.0)
-            nav_metadata (dict[str, Any]): Navigation metadata for progress calculation
-
-        Returns:
-            bool: True if the operation was successful, False otherwise
-        """
-        return self.epub_progress.save_progress(
-            epub_filename,
-            current_nav_id,
-            chapter_id,
-            chapter_title,
-            scroll_position,
-            total_sections,
-            progress_percentage,
-            nav_metadata,
-        )
-
-    def get_epub_progress(self, epub_filename: str) -> dict[str, Any] | None:
-        """
-        Retrieve reading progress for a specific EPUB document.
-
-        Args:
-            epub_filename (str): Name of the EPUB file to get progress for
-
-        Returns:
-            dict[str, Any] | None: Dictionary containing progress information:
-                - epub_filename: Name of the EPUB file
-                - current_nav_id: Current navigation section ID
-                - chapter_id: Chapter-level ID for display
-                - chapter_title: Chapter title
-                - scroll_position: Scroll position within section
-                - total_sections: Total navigation sections
-                - progress_percentage: Overall progress (0.0-100.0)
-                - last_updated: Timestamp of last update
-                - status: Reading status (new/reading/finished)
-                - nav_metadata: Navigation structure metadata
-            Returns None if no progress is found for the EPUB.
-        """
-        return self.epub_progress.get_progress(epub_filename)
-
-    def get_all_epub_progress(self) -> dict[str, dict[str, Any]]:
-        """
-        Retrieve reading progress for all EPUB documents.
-
-        Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their progress info
-        """
-        return self.epub_progress.get_all_progress()
-
-    def update_epub_book_status(
-        self, epub_filename: str, status: str, manual: bool = True
-    ) -> bool:
-        """
-        Update the reading status of an EPUB book.
-
-        Args:
-            epub_filename (str): Name of the EPUB file to update status for
-            status (str): New status ('new', 'reading', 'finished')
-            manual (bool): Whether this status was manually set by the user
-
-        Returns:
-            bool: True if the operation was successful, False otherwise
-        """
-        return self.epub_progress.update_book_status(epub_filename, status, manual)
-
-    def get_epub_books_by_status(
-        self, status: str | None = None
-    ) -> list[dict[str, Any]]:
-        """
-        Get all EPUB books filtered by status.
-
-        Args:
-            status (str | None): Filter by specific status ('new', 'reading', 'finished').
-                                   If None, returns all books.
-
-        Returns:
-            list[dict[str, Any]]: List of EPUB books with their progress and status information
-        """
-        return self.epub_progress.get_books_by_status(status)
-
-    def get_epub_status_counts(self) -> dict[str, int]:
-        """
-        Get count of EPUB books for each status.
-
-        Returns:
-            dict[str, int]: Dictionary with status counts
-        """
-        return self.epub_progress.get_status_counts()
-
-    def delete_epub_progress(self, epub_filename: str) -> bool:
-        """
-        Delete reading progress record for a specific EPUB.
-
-        Args:
-            epub_filename (str): Name of the EPUB file to delete progress for
-
-        Returns:
-            bool: True if the record was deleted successfully, False otherwise
-        """
-        return self.epub_progress.delete_progress(epub_filename)
-
-    def calculate_epub_progress_percentage(
-        self, current_nav_id: str, nav_metadata: dict[str, Any] = None
-    ) -> float:
-        """
-        Calculate overall progress percentage for an EPUB based on current navigation position.
-
-        Args:
-            current_nav_id (str): Current navigation section ID
-            nav_metadata (dict[str, Any]): Navigation structure metadata
-
-        Returns:
-            float: Progress percentage (0.0-100.0)
-        """
-        return self.epub_progress.calculate_progress_percentage(
-            current_nav_id, nav_metadata
-        )
-
-    def get_epub_chapter_progress_info(
-        self, epub_filename: str, chapter_id: str = None
-    ) -> dict[str, Any]:
-        """
-        Get detailed progress information for a specific EPUB chapter or current chapter.
-
-        Args:
-            epub_filename (str): Name of the EPUB file
-            chapter_id (str): Specific chapter ID, or None for current chapter
-
-        Returns:
-            dict[str, Any]: Chapter progress information
-        """
-        return self.epub_progress.get_chapter_progress_info(epub_filename, chapter_id)
 
     # ========================================
     # CHAT NOTES METHODS
@@ -627,64 +426,15 @@ class DatabaseService:
         """
         return self.highlights.get_highlights_count_by_pdf()
 
-    # Status management methods (delegated to reading progress service)
-
-    def update_book_status(
-        self, pdf_filename: str, status: str, manual: bool = True
-    ) -> bool:
-        """
-        Update the reading status of a book.
-
-        Args:
-            pdf_filename (str): Name of the PDF file to update status for
-            status (str): New status ('new', 'reading', 'finished')
-            manual (bool): Whether this status was manually set by the user
-
-        Returns:
-            bool: True if the operation was successful, False otherwise
-        """
-        return self.reading_progress.update_book_status(pdf_filename, status, manual)
-
-    def get_books_by_status(self, status: str | None = None) -> list["ReadingProgress"]:
-        """
-        Get all books filtered by status.
-
-        Args:
-            status (str | None): Filter by specific status ('new', 'reading', 'finished').
-                                   If None, returns all books.
-
-        Returns:
-            list[ReadingProgress]: List of books with their progress and status information
-        """
-        return self.reading_progress.get_books_by_status(status)
-
-    def get_status_counts(self) -> dict[str, int]:
-        """
-        Get count of books for each status.
-
-        Returns:
-            dict[str, int]: Dictionary with status counts
-        """
-        return self.reading_progress.get_status_counts()
-
-    def delete_reading_progress(self, pdf_filename: str) -> bool:
-        """
-        Delete reading progress record for a specific PDF.
-
-        Args:
-            pdf_filename (str): Name of the PDF file to delete progress for
-
-        Returns:
-            bool: True if the record was deleted successfully, False otherwise
-        """
-        return self.reading_progress.delete_progress(pdf_filename)
-
-    def delete_all_book_data(self, pdf_filename: str) -> "DatabaseDeletionResults":
+    def delete_all_book_data(
+        self, pdf_filename: str, document_id: int
+    ) -> "DatabaseDeletionResults":
         """
         Delete all database data for a specific book.
 
         Args:
             pdf_filename (str): Name of the PDF file to delete all data for
+            document_id (int): The document's registry id (keys the progress table)
 
         Returns:
             DatabaseDeletionResults: Results indicating success/failure for each data type
@@ -692,7 +442,7 @@ class DatabaseService:
         from app.models.pdf_responses import DatabaseDeletionResults
 
         # Delete reading progress
-        reading_progress_deleted = self.delete_reading_progress(pdf_filename)
+        reading_progress_deleted = self.progress.delete_progress(document_id)
 
         # Delete notes
         notes_deleted = False
@@ -728,12 +478,15 @@ class DatabaseService:
             highlights=highlights_deleted,
         )
 
-    def delete_all_epub_data(self, epub_filename: str) -> dict[str, bool]:
+    def delete_all_epub_data(
+        self, epub_filename: str, document_id: int
+    ) -> dict[str, bool]:
         """
         Delete all database data for a specific EPUB book.
 
         Args:
             epub_filename (str): Name of the EPUB file to delete all data for
+            document_id (int): The document's registry id (keys progress + highlights)
 
         Returns:
             dict[str, bool]: Dictionary indicating success/failure for each data type
@@ -741,7 +494,7 @@ class DatabaseService:
         results = {}
 
         # Delete EPUB reading progress
-        results["epub_progress"] = self.delete_epub_progress(epub_filename)
+        results["epub_progress"] = self.progress.delete_progress(document_id)
 
         # Delete EPUB chat notes
         try:
@@ -758,18 +511,11 @@ class DatabaseService:
             logger.error(f"Error deleting EPUB chat notes for {epub_filename}: {e}")
             results["epub_chat_notes"] = False
 
-        # Delete EPUB highlights - need to look up epub_id first
+        # Delete EPUB highlights (keyed by the document id)
         try:
-            from .documents_repository import DocumentsRepository
-
-            documents = DocumentsRepository(self.db_path)
-            epub_doc = documents.get_by_filename(epub_filename)
-            if epub_doc:
-                results["epub_highlights"] = self.delete_epub_highlights_for_epub(
-                    epub_doc.id
-                )
-            else:
-                results["epub_highlights"] = True  # Doc not found, nothing to delete
+            results["epub_highlights"] = self.delete_epub_highlights_for_epub(
+                document_id
+            )
         except Exception as e:
             logger.error(f"Error deleting EPUB highlights for {epub_filename}: {e}")
             results["epub_highlights"] = False

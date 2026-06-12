@@ -1,46 +1,9 @@
-from enum import Enum
-
 from pydantic import BaseModel, computed_field
 
+# Re-exported: BookStatus moved to the unified documents models (A-1) but is
+# still widely imported from here.
+from .documents import BookStatus as BookStatus
 from .pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
-
-# ============================================
-# Enums
-# ============================================
-
-
-class BookStatus(str, Enum):
-    """Valid book status values"""
-
-    NEW = "new"
-    READING = "reading"
-    FINISHED = "finished"
-
-
-# ============================================
-# Database Record Models
-# ============================================
-
-
-class PDFDocumentRecord(BaseModel):
-    """PDF document record from pdf_documents table"""
-
-    id: int
-    filename: str
-    title: str | None = None
-    author: str | None = None
-    num_pages: int
-    subject: str | None = None
-    creator: str | None = None
-    producer: str | None = None
-    file_size: int | None = None
-    file_path: str | None = None
-    thumbnail_path: str | None = None
-    created_date: str | None = None  # ISO format from filesystem
-    modified_date: str | None = None  # ISO format from filesystem
-    added_at: str  # SQLite returns as string
-    last_accessed: str  # SQLite returns as string
-    metadata_json: str | None = None
 
 
 class ReadingProgress(BaseModel):
