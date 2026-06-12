@@ -14,7 +14,6 @@ from app.models.knowledge_models import (
     BookExtractionResponse,
     Concept,
     ConceptCreate,
-    ConceptsResponse,
     ConceptUpdate,
     ExtractionRequest,
     ExtractionResponse,
@@ -157,9 +156,9 @@ async def extract_concepts(request: ExtractionRequest) -> ExtractionResponse:
             page_num=request.page_num,
         )
 
-        # Run extraction (using auto method which selects efficient triple-based extraction)
+        # Run extraction
         graph_builder = get_graph_builder()
-        result = await graph_builder.extract_and_store_auto(
+        result = await graph_builder.extract_and_store(
             content=content,
             book_id=request.book_id,
             book_type=request.book_type,
@@ -346,7 +345,7 @@ async def get_extraction_status(
         }
 
 
-@router.get("/concepts/{book_id}", response_model=ConceptsResponse)
+@router.get("/concepts/{book_id}", response_model=list[Concept])
 async def get_concepts(
     book_id: int,
     book_type: Literal["epub", "pdf"] = Query(..., description="Type of book"),
@@ -355,11 +354,9 @@ async def get_concepts(
     importance_min: int | None = Query(
         None, ge=1, le=5, description="Minimum importance"
     ),
-) -> ConceptsResponse:
+) -> list[Concept]:
     """
     Get concepts for a book, optionally filtered by section and importance.
-
-    Returns concepts along with the count of relationships between them.
     """
     try:
         # Verify book exists
@@ -373,19 +370,7 @@ async def get_concepts(
             page_num=page_num,
             importance_min=importance_min,
         )
-
-        # Get relationship count for the section
-        relationship_count = knowledge_db.count_relationships_for_section(
-            book_id=book_id,
-            book_type=book_type,
-            nav_id=nav_id,
-            page_num=page_num,
-        )
-
-        return ConceptsResponse(
-            concepts=concepts,
-            relationship_count=relationship_count,
-        )
+        return concepts
 
     except HTTPException:
         raise
@@ -667,8 +652,8 @@ async def extract_book_concepts(
                         sections_skipped += 1
                         continue
 
-                    # Run extraction (using auto method which selects efficient triple-based extraction)
-                    result = await graph_builder.extract_and_store_auto(
+                    # Run extraction
+                    result = await graph_builder.extract_and_store(
                         content=content,
                         book_id=request.book_id,
                         book_type=request.book_type,
@@ -713,7 +698,7 @@ async def extract_book_concepts(
                         sections_skipped += 1
                         continue
 
-                    result = await graph_builder.extract_and_store_auto(
+                    result = await graph_builder.extract_and_store(
                         content=content,
                         book_id=request.book_id,
                         book_type=request.book_type,

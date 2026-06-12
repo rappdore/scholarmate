@@ -11,11 +11,6 @@ export interface Concept {
   created_at: string | null;
 }
 
-export interface ConceptsResponse {
-  concepts: Concept[];
-  relationship_count: number;
-}
-
 export interface ConceptCreate {
   book_id: number;
   book_type: 'epub' | 'pdf';
