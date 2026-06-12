@@ -59,6 +59,7 @@ export default function NotesPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<number | null>(null);
+  const [copiedNoteId, setCopiedNoteId] = useState<number | null>(null);
 
   // Load notes for the current document (PDF or EPUB)
   useEffect(() => {
@@ -91,6 +92,16 @@ export default function NotesPanel({
 
     loadNotes();
   }, [pdfId, epubId, documentType]);
+
+  const copyNoteToClipboard = async (noteId: number, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedNoteId(noteId);
+      setTimeout(() => setCopiedNoteId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy note:', err);
+    }
+  };
 
   const deleteNote = async (noteId: number) => {
     try {
@@ -338,28 +349,68 @@ export default function NotesPanel({
                           <h5 className="text-sm font-medium text-gray-200 line-clamp-2">
                             {note.title}
                           </h5>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              deleteNote(note.id);
-                            }}
-                            className="text-gray-400 hover:text-red-400 transition-colors ml-2 flex-shrink-0"
-                            title="Delete note"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                          <div className="flex items-center ml-2 flex-shrink-0 gap-1">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                copyNoteToClipboard(note.id, note.chat_content);
+                              }}
+                              className="text-gray-400 hover:text-blue-400 transition-colors"
+                              title="Copy to clipboard"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
+                              {copiedNoteId === note.id ? (
+                                <svg
+                                  className="w-4 h-4 text-green-400"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+                                  />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                deleteNote(note.id);
+                              }}
+                              className="text-gray-400 hover:text-red-400 transition-colors"
+                              title="Delete note"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>{getLocationLabel(note)}</span>
@@ -434,33 +485,74 @@ export default function NotesPanel({
                           }
                         >
                           <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <h5 className="text-sm font-medium text-gray-200 line-clamp-2">
-                                {note.title}
-                              </h5>
-                            </div>
-                            <button
-                              onClick={e => {
-                                e.stopPropagation();
-                                deleteNote(note.id);
-                              }}
-                              className="text-gray-400 hover:text-red-400 transition-colors ml-2 flex-shrink-0"
-                              title="Delete note"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                            <h5 className="text-sm font-medium text-gray-200 line-clamp-2">
+                              {note.title}
+                            </h5>
+                            <div className="flex items-center ml-2 flex-shrink-0 gap-1">
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  copyNoteToClipboard(
+                                    note.id,
+                                    note.chat_content
+                                  );
+                                }}
+                                className="text-gray-400 hover:text-blue-400 transition-colors"
+                                title="Copy to clipboard"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                            </button>
+                                {copiedNoteId === note.id ? (
+                                  <svg
+                                    className="w-4 h-4 text-green-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+                                    />
+                                  </svg>
+                                )}
+                              </button>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  deleteNote(note.id);
+                                }}
+                                className="text-gray-400 hover:text-red-400 transition-colors"
+                                title="Delete note"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
                           <div className="flex items-center justify-between text-xs text-gray-400">
                             <span className="text-blue-400">
