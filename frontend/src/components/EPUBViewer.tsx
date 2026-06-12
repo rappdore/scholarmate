@@ -20,8 +20,8 @@ import {
   clearAllHighlights,
   extractChapterIdFromNavId,
   type EPUBHighlight,
-  type HighlightColor,
 } from '../utils/epubHighlights';
+import type { HighlightColor } from '../types/highlights';
 import { ttsService } from '../services/ttsService';
 import {
   highlightByOffset,

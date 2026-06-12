@@ -8,6 +8,7 @@ import type {
   HighlightColor,
   Highlight,
 } from '../types/highlights';
+import { HIGHLIGHT_COLORS } from '../types/highlights';
 import HighlightOverlay from './HighlightOverlay';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
 import { pdfService } from '../services/api';
@@ -809,24 +810,13 @@ export default function PDFViewer({
                 </div>
 
                 <div className="flex gap-2 flex-wrap">
-                  {Object.entries({
-                    Yellow: '#ffff00',
-                    Green: '#00ff00',
-                    Blue: '#0080ff',
-                    Pink: '#ff69b4',
-                    Orange: '#ffa500',
-                    Purple: '#9370db',
-                    Red: '#ff4444',
-                    Cyan: '#00ffff',
-                  }).map(([name, color]) => (
+                  {HIGHLIGHT_COLORS.map(({ name, hex, label }) => (
                     <button
                       key={name}
-                      onClick={() =>
-                        handleCreateHighlight(color as HighlightColor)
-                      }
+                      onClick={() => handleCreateHighlight(name)}
                       className="w-6 h-6 rounded border-2 border-gray-600 hover:border-gray-400 transition-colors"
-                      style={{ backgroundColor: color }}
-                      title={`Highlight in ${name}`}
+                      style={{ backgroundColor: hex }}
+                      title={`Highlight in ${label}`}
                     />
                   ))}
                 </div>

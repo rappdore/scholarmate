@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HighlightColor } from '../utils/epubHighlights';
+import { HIGHLIGHT_COLORS, type HighlightColor } from '../types/highlights';
 
 interface EPUBHighlightMenuProps {
   position: { x: number; y: number };
@@ -9,18 +9,6 @@ interface EPUBHighlightMenuProps {
   onReadAloud?: (text: string) => void;
   onContinueReading?: () => void;
 }
-
-const HIGHLIGHT_COLORS: Array<{
-  color: HighlightColor;
-  label: string;
-  className: string;
-}> = [
-  { color: 'yellow', label: 'Yellow', className: 'color-yellow' },
-  { color: 'blue', label: 'Blue', className: 'color-blue' },
-  { color: 'green', label: 'Green', className: 'color-green' },
-  { color: 'pink', label: 'Pink', className: 'color-pink' },
-  { color: 'orange', label: 'Orange', className: 'color-orange' },
-];
 
 export default function EPUBHighlightMenu({
   position,
@@ -113,12 +101,12 @@ export default function EPUBHighlightMenu({
       </div>
 
       {/* Color selection buttons */}
-      {HIGHLIGHT_COLORS.map(({ color, label, className }) => (
+      {HIGHLIGHT_COLORS.map(({ name, label }) => (
         <button
-          key={color}
-          className={className}
+          key={name}
+          className={`color-${name}`}
           title={`Highlight in ${label}`}
-          onClick={() => handleColorClick(color)}
+          onClick={() => handleColorClick(name)}
           aria-label={`Highlight selected text in ${label.toLowerCase()}`}
         >
           ✓

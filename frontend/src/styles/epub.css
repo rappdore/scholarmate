@@ -387,6 +387,21 @@
   color: #1f2937 !important;
 }
 
+.epub-highlight-purple {
+  background-color: rgba(147, 112, 219, 0.3);
+  color: #ffffff !important;
+}
+
+.epub-highlight-red {
+  background-color: rgba(244, 67, 54, 0.3);
+  color: #ffffff !important;
+}
+
+.epub-highlight-cyan {
+  background-color: rgba(0, 188, 212, 0.3);
+  color: #1f2937 !important;
+}
+
 /* Light theme highlight adjustments */
 .epub-content-container[data-theme='light'] .epub-highlight-yellow {
   background-color: rgba(255, 235, 59, 0.4);
@@ -413,6 +428,21 @@
   color: #1f2937 !important;
 }
 
+.epub-content-container[data-theme='light'] .epub-highlight-purple {
+  background-color: rgba(147, 112, 219, 0.4);
+  color: #1f2937 !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-red {
+  background-color: rgba(244, 67, 54, 0.4);
+  color: #ffffff !important;
+}
+
+.epub-content-container[data-theme='light'] .epub-highlight-cyan {
+  background-color: rgba(0, 188, 212, 0.4);
+  color: #1f2937 !important;
+}
+
 /* Sepia theme highlight adjustments */
 .epub-content-container[data-theme='sepia'] .epub-highlight-yellow {
   background-color: rgba(255, 235, 59, 0.35);
@@ -436,6 +466,21 @@
 
 .epub-content-container[data-theme='sepia'] .epub-highlight-orange {
   background-color: rgba(255, 152, 0, 0.35);
+  color: #5d4037 !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-purple {
+  background-color: rgba(147, 112, 219, 0.35);
+  color: #5d4037 !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-red {
+  background-color: rgba(244, 67, 54, 0.35);
+  color: #f3e5ab !important;
+}
+
+.epub-content-container[data-theme='sepia'] .epub-highlight-cyan {
+  background-color: rgba(0, 188, 212, 0.35);
   color: #5d4037 !important;
 }
 
@@ -493,6 +538,21 @@
 
 .epub-highlight-menu .color-orange {
   background-color: rgba(255, 152, 0, 0.8);
+  color: #1f2937;
+}
+
+.epub-highlight-menu .color-purple {
+  background-color: rgba(147, 112, 219, 0.8);
+  color: #ffffff;
+}
+
+.epub-highlight-menu .color-red {
+  background-color: rgba(244, 67, 54, 0.8);
+  color: #ffffff;
+}
+
+.epub-highlight-menu .color-cyan {
+  background-color: rgba(0, 188, 212, 0.8);
   color: #1f2937;
 }
 

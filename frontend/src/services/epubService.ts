@@ -1,5 +1,6 @@
 import type { EPUBDocument, EPUBDocumentInfo } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
+import type { HighlightColor } from '../types/highlights';
 import { API_BASE_URL } from './config';
 import { api } from './http';
 
@@ -149,7 +150,7 @@ export const epubService = {
       end_xpath: string;
       end_offset: number;
       highlight_text: string;
-      color: string;
+      color: HighlightColor;
     }
   ): Promise<EPUBHighlight> => {
     const response = await api.post(`/epub-highlights/create`, {
@@ -197,7 +198,7 @@ export const epubService = {
 
   updateEPUBHighlightColor: async (
     highlightId: number,
-    color: string
+    color: HighlightColor
   ): Promise<void> => {
     await api.put(`/epub-highlights/${highlightId}/color`, { color });
   },

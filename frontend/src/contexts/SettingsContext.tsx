@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { HighlightColor } from '../types/highlights';
+import type { HighlightColor } from '../types/highlights';
+import { DEFAULT_HIGHLIGHT_COLOR, toHighlightColor } from '../types/highlights';
 
 export interface AppSettings {
   // PDF Viewer Settings
@@ -34,7 +35,7 @@ export const defaultSettings: AppSettings = {
   defaultViewMode: 'single',
   defaultLeftPanelWidth: 60,
   defaultRightTopPanelHeight: 60,
-  defaultHighlightColor: HighlightColor.YELLOW,
+  defaultHighlightColor: DEFAULT_HIGHLIGHT_COLOR,
   highlightOpacity: 0.4,
   theme: 'dark',
   autoSaveProgress: true,
@@ -62,7 +63,12 @@ function loadSettings(): AppSettings {
   try {
     const savedSettings = localStorage.getItem(SETTINGS_KEY);
     if (savedSettings) {
-      return { ...defaultSettings, ...JSON.parse(savedSettings) };
+      const merged = { ...defaultSettings, ...JSON.parse(savedSettings) };
+      // Settings saved before the canonical color model stored hex values
+      merged.defaultHighlightColor = toHighlightColor(
+        merged.defaultHighlightColor
+      );
+      return merged;
     }
   } catch (error) {
     console.warn('Error loading settings:', error);

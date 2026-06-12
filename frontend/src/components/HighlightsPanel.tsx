@@ -1,24 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
 import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
-import type { Highlight } from '../types/highlights';
-import { HighlightColor } from '../types/highlights';
+import type { Highlight, HighlightColor } from '../types/highlights';
+import {
+  HIGHLIGHT_COLORS,
+  highlightColorHex,
+  highlightColorLabel,
+} from '../types/highlights';
 import type { DocumentType } from '../types/document';
-import type {
-  EPUBHighlight,
-  HighlightColor as EPUBHighlightColor,
-} from '../utils/epubHighlights';
-
-// The PDF and EPUB highlight systems use different color models (hex enum vs
-// named union; see audit F-13). Map the shared colors; unmapped hues fall
-// back to yellow.
-const PDF_TO_EPUB_COLOR: Partial<Record<HighlightColor, EPUBHighlightColor>> = {
-  [HighlightColor.YELLOW]: 'yellow',
-  [HighlightColor.GREEN]: 'green',
-  [HighlightColor.BLUE]: 'blue',
-  [HighlightColor.PINK]: 'pink',
-  [HighlightColor.ORANGE]: 'orange',
-};
+import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface HighlightsPanelProps {
   pdfId?: number;
@@ -208,7 +198,7 @@ export default function HighlightsPanel({
       // EPUB highlight color update - use context
       const success = await updateEpubHighlightColor(
         Number(highlightId),
-        PDF_TO_EPUB_COLOR[newColor] ?? 'yellow'
+        newColor
       );
       if (success) {
         console.log('EPUB highlight color updated:', highlightId, newColor);
@@ -237,21 +227,6 @@ export default function HighlightsPanel({
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  // Get color name for display
-  const getColorName = (color: HighlightColor): string => {
-    const colorNames: Record<HighlightColor, string> = {
-      [HighlightColor.YELLOW]: 'Yellow',
-      [HighlightColor.GREEN]: 'Green',
-      [HighlightColor.BLUE]: 'Blue',
-      [HighlightColor.PINK]: 'Pink',
-      [HighlightColor.ORANGE]: 'Orange',
-      [HighlightColor.PURPLE]: 'Purple',
-      [HighlightColor.RED]: 'Red',
-      [HighlightColor.CYAN]: 'Cyan',
-    };
-    return colorNames[color] || 'Unknown';
   };
 
   if (!filename) {
@@ -303,9 +278,9 @@ export default function HighlightsPanel({
             className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="all">All Colors</option>
-            {Object.values(HighlightColor).map(color => (
-              <option key={color} value={color}>
-                {getColorName(color)}
+            {HIGHLIGHT_COLORS.map(({ name, label }) => (
+              <option key={name} value={name}>
+                {label}
               </option>
             ))}
           </select>
@@ -377,7 +352,6 @@ export default function HighlightsPanel({
                             onPageJump?.(highlight.pageNumber)
                           }
                           formatDate={formatDate}
-                          getColorName={getColorName}
                         />
                       ))}
                     </div>
@@ -450,7 +424,6 @@ export default function HighlightsPanel({
                                       onPageJump?.(highlight.pageNumber)
                                     }
                                     formatDate={formatDate}
-                                    getColorName={getColorName}
                                   />
                                 ))}
                               </div>
@@ -490,7 +463,6 @@ export default function HighlightsPanel({
                             : undefined
                         }
                         formatDate={formatDate}
-                        getColorName={getColorName}
                       />
                     );
                   })}
@@ -514,7 +486,6 @@ interface HighlightItemProps {
   onColorChange: (color: HighlightColor) => void;
   onJumpToPage?: () => void;
   formatDate: (date: string) => string;
-  getColorName: (color: HighlightColor) => string;
 }
 
 function HighlightItem({
@@ -526,7 +497,6 @@ function HighlightItem({
   onColorChange,
   onJumpToPage,
   formatDate,
-  getColorName,
 }: HighlightItemProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -582,8 +552,8 @@ function HighlightItem({
         {/* Color indicator */}
         <div
           className="w-3 h-3 rounded-full mt-1 flex-shrink-0 border border-gray-600"
-          style={{ backgroundColor: highlight.color }}
-          title={getColorName(highlight.color as HighlightColor)}
+          style={{ backgroundColor: highlightColorHex(highlight.color) }}
+          title={highlightColorLabel(highlight.color)}
         />
 
         <div className="flex-1 min-w-0">
@@ -666,17 +636,17 @@ function HighlightItem({
                 {showColorPicker && (
                   <div className="absolute right-0 top-6 z-20 bg-gray-800 border border-gray-600 rounded-lg p-2 shadow-xl min-w-max">
                     <div className="grid grid-cols-4 gap-1 w-max">
-                      {Object.values(HighlightColor).map(color => (
+                      {HIGHLIGHT_COLORS.map(({ name, hex, label }) => (
                         <button
-                          key={color}
+                          key={name}
                           onClick={e => {
                             e.stopPropagation();
-                            onColorChange(color);
+                            onColorChange(name);
                             setShowColorPicker(false);
                           }}
                           className="w-6 h-6 rounded border-2 border-gray-600 hover:border-gray-400 transition-colors flex-shrink-0"
-                          style={{ backgroundColor: color }}
-                          title={getColorName(color)}
+                          style={{ backgroundColor: hex }}
+                          title={label}
                         />
                       ))}
                     </div>

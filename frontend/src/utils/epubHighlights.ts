@@ -1,8 +1,11 @@
 // Utility functions for EPUB text selection and highlighting
 // DOM-based positioning using XPath + character offsets for both start and end boundaries
 
+import type { HighlightColor } from '../types/highlights';
+
 /**
- * Base interface for text ranges - used by both highlights and TTS
+ * Base interface for DOM text ranges - used by both selections and TTS.
+ * camelCase fields, never sent over the wire.
  */
 export interface EPUBTextRange {
   // Start boundary
@@ -29,9 +32,10 @@ export interface EPUBSelection extends EPUBTextRange {
 }
 
 /**
- * Highlight stored in database
+ * Highlight as stored in the database and returned by the API (snake_case
+ * wire shape). Distinct from EPUBTextRange, which is the DOM-range view.
  */
-export interface EPUBHighlight extends EPUBTextRange {
+export interface EPUBHighlight {
   id?: number;
   epub_id: number;
   nav_id: string;
@@ -41,11 +45,9 @@ export interface EPUBHighlight extends EPUBTextRange {
   end_xpath: string;
   end_offset: number;
   highlight_text: string;
-  color: string;
+  color: HighlightColor;
   created_at?: string;
 }
-
-export type HighlightColor = 'yellow' | 'blue' | 'green' | 'pink' | 'orange';
 
 /**
  * Generate XPath for a DOM element
@@ -537,13 +539,6 @@ export function clearAllHighlights(): void {
 }
 
 /**
- * Get highlight color CSS class mapping
- */
-export function getHighlightColorClass(color: HighlightColor): string {
-  return `epub-highlight-${color}`;
-}
-
-/**
  * Extract chapter ID from navigation ID
  * Matches the existing pattern in EPUBViewer
  */
@@ -566,33 +561,4 @@ export function extractChapterIdFromNavId(navId: string): string {
   }
 
   return navId;
-}
-
-/**
- * Convert EPUBSelection to API request format
- */
-export function selectionToHighlightRequest(
-  selection: EPUBSelection,
-  epubId: number,
-  color: HighlightColor
-): Omit<EPUBHighlight, 'id' | 'created_at'> {
-  return {
-    epub_id: epubId,
-    nav_id: selection.navId,
-    chapter_id: selection.chapterId,
-    start_xpath: selection.startXPath,
-    start_offset: selection.startOffset,
-    end_xpath: selection.endXPath,
-    end_offset: selection.endOffset,
-    highlight_text: selection.text,
-    color,
-    // Also include the interface fields for EPUBTextRange compatibility
-    startXPath: selection.startXPath,
-    startOffset: selection.startOffset,
-    endXPath: selection.endXPath,
-    endOffset: selection.endOffset,
-    navId: selection.navId,
-    chapterId: selection.chapterId,
-    text: selection.text,
-  };
 }

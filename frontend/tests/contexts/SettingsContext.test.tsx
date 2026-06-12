@@ -15,6 +15,9 @@ function ShowSettings() {
     <div>
       <span data-testid="reading-goal">{settings.readingGoal}</span>
       <span data-testid="theme">{settings.theme}</span>
+      <span data-testid="highlight-color">
+        {settings.defaultHighlightColor}
+      </span>
       <button onClick={() => updateSettings({ readingGoal: 42 })}>
         update
       </button>
@@ -74,6 +77,17 @@ describe('SettingsProvider hydration (C-6 regression)', () => {
     expect(screen.getByTestId('reading-goal').textContent).toBe(
       String(defaultSettings.readingGoal)
     );
+  });
+
+  it('normalizes a legacy hex defaultHighlightColor to a canonical name', () => {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({ defaultHighlightColor: '#00ff00' })
+    );
+
+    renderProvider();
+
+    expect(screen.getByTestId('highlight-color').textContent).toBe('green');
   });
 
   it('persists updates to localStorage', () => {

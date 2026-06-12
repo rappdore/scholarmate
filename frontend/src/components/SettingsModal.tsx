@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HighlightColor } from '../types/highlights';
+import { HIGHLIGHT_COLORS } from '../types/highlights';
 import { useSettings } from '../contexts/SettingsContext';
 import type { LLMConfiguration, LLMConfigCreate } from '../types/llm';
 import {
@@ -274,22 +274,22 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       Default Highlight Color
                     </label>
                     <div className="grid grid-cols-4 gap-2">
-                      {Object.values(HighlightColor).map(color => (
+                      {HIGHLIGHT_COLORS.map(({ name, hex, label }) => (
                         <button
-                          key={color}
+                          key={name}
                           onClick={() =>
-                            updateSettings({ defaultHighlightColor: color })
+                            updateSettings({ defaultHighlightColor: name })
                           }
                           className={`
                             w-12 h-12 rounded-lg border-2 transition-all
                             ${
-                              settings.defaultHighlightColor === color
+                              settings.defaultHighlightColor === name
                                 ? 'border-white scale-110'
                                 : 'border-slate-600 hover:border-slate-400'
                             }
                           `}
-                          style={{ backgroundColor: color }}
-                          title={color}
+                          style={{ backgroundColor: hex }}
+                          title={label}
                         />
                       ))}
                     </div>

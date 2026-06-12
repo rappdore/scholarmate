@@ -6,7 +6,8 @@ import React, {
   useEffect,
 } from 'react';
 import { epubService } from '../services/epubService';
-import type { EPUBHighlight, HighlightColor } from '../utils/epubHighlights';
+import type { EPUBHighlight } from '../utils/epubHighlights';
+import type { HighlightColor } from '../types/highlights';
 
 interface EPUBHighlightRequest {
   nav_id: string;

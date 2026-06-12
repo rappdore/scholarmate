@@ -6,7 +6,11 @@ import React, {
   useEffect,
 } from 'react';
 import { highlightService } from '../services/api';
-import type { Highlight, HighlightRequest } from '../types/highlights';
+import type {
+  Highlight,
+  HighlightColor,
+  HighlightRequest,
+} from '../types/highlights';
 
 interface HighlightsContextType {
   highlights: Highlight[];
@@ -19,7 +23,7 @@ interface HighlightsContextType {
   deleteHighlight: (highlightId: string) => Promise<boolean>;
   updateHighlightColor: (
     highlightId: string,
-    color: string
+    color: HighlightColor
   ) => Promise<boolean>;
   refreshHighlights: () => Promise<void>;
   setCurrentPdfId: (pdfId: number | null) => void;
@@ -139,22 +143,20 @@ export const HighlightsProvider: React.FC<HighlightsProviderProps> = ({
 
   // Update highlight color
   const updateHighlightColor = useCallback(
-    async (highlightId: string, color: string): Promise<boolean> => {
+    async (highlightId: string, color: HighlightColor): Promise<boolean> => {
       setError(null);
 
       try {
         const success = await highlightService.updateHighlightColor(
           highlightId,
-          color as any
+          color
         );
 
         if (success) {
           // Update local state immediately
           setHighlights(prev =>
             prev.map(h =>
-              h.id === highlightId
-                ? { ...h, color: color as any, updatedAt: new Date() }
-                : h
+              h.id === highlightId ? { ...h, color, updatedAt: new Date() } : h
             )
           );
         }

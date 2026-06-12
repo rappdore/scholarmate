@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Highlight, HighlightCoordinates } from '../types/highlights';
+import { highlightColorHex } from '../types/highlights';
 
 interface HighlightOverlayProps {
   highlights: Highlight[];
@@ -99,7 +100,7 @@ function HighlightRect({
         top: `${scaledY}px`,
         width: `${scaledWidth}px`,
         height: `${scaledHeight}px`,
-        backgroundColor: highlight.color,
+        backgroundColor: highlightColorHex(highlight.color),
         opacity: isSelected ? 0.5 : 0.3,
         // Note: Removed mixBlendMode as it was interfering with mouse events
         zIndex: 10,

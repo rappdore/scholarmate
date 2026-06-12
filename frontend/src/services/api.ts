@@ -6,6 +6,7 @@ import type {
   HighlightRequest,
   HighlightColor,
 } from '../types/highlights';
+import { highlightColorHex, toHighlightColor } from '../types/highlights';
 import { API_BASE_URL } from './config';
 import { api, devLog, streamSSE } from './http';
 
@@ -403,7 +404,8 @@ export const highlightService = {
       selectedText: backendHighlight.selected_text,
       startOffset: backendHighlight.start_offset,
       endOffset: backendHighlight.end_offset,
-      color: backendHighlight.color as HighlightColor,
+      // The PDF wire format stores hex values; normalize to canonical names
+      color: toHighlightColor(backendHighlight.color),
       coordinates,
       createdAt: new Date(backendHighlight.created_at),
       updatedAt: new Date(backendHighlight.updated_at),
@@ -420,7 +422,7 @@ export const highlightService = {
         selected_text: highlightData.selectedText,
         start_offset: highlightData.startOffset,
         end_offset: highlightData.endOffset,
-        color: highlightData.color,
+        color: highlightColorHex(highlightData.color),
         coordinates: highlightData.coordinates,
       });
       const highlight = highlightService._convertBackendHighlight(
@@ -490,7 +492,9 @@ export const highlightService = {
     color: HighlightColor
   ): Promise<boolean> => {
     try {
-      await api.put(`/highlights/${highlightId}/color`, { color });
+      await api.put(`/highlights/${highlightId}/color`, {
+        color: highlightColorHex(color),
+      });
       devLog('Updated highlight color:', highlightId, color);
       return true;
     } catch (error) {
