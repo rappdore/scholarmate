@@ -28,7 +28,7 @@ class ChatNoteResponse(BaseModel):
 
 
 @router.post("/chat", response_model=Dict[str, Any])
-async def save_chat_note(
+def save_chat_note(
     note: ChatNoteRequest,
     db_service: DatabaseService = Depends(get_db_service),
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
@@ -70,7 +70,7 @@ async def save_chat_note(
 
 
 @router.get("/chat/pdf/{pdf_id:int}", response_model=List[ChatNoteResponse])
-async def get_chat_notes_for_pdf_by_id(
+def get_chat_notes_for_pdf_by_id(
     pdf_id: int,
     page_number: Optional[int] = None,
     db_service: DatabaseService = Depends(get_db_service),
@@ -96,7 +96,7 @@ async def get_chat_notes_for_pdf_by_id(
 
 
 @router.get("/chat/id/{note_id}", response_model=ChatNoteResponse)
-async def get_chat_note_by_id(
+def get_chat_note_by_id(
     note_id: int, db_service: DatabaseService = Depends(get_db_service)
 ) -> ChatNoteResponse:
     """
@@ -117,7 +117,7 @@ async def get_chat_note_by_id(
 
 
 @router.delete("/chat/{note_id}")
-async def delete_chat_note(
+def delete_chat_note(
     note_id: int, db_service: DatabaseService = Depends(get_db_service)
 ) -> Dict[str, Any]:
     """

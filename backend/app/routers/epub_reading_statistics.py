@@ -25,7 +25,7 @@ class EPUBSessionUpdateRequest(BaseModel):
 
 
 @router.put("/session/update")
-async def update_session(
+def update_session(
     request: EPUBSessionUpdateRequest,
     db_service: DatabaseService = Depends(get_db_service),
 ):
@@ -70,7 +70,7 @@ async def update_session(
 
 
 @router.get("/sessions/{epub_id:int}")
-async def get_sessions_by_id(
+def get_sessions_by_id(
     epub_id: int,
     limit: Optional[int] = Query(
         None, ge=1, description="Maximum number of sessions to return"

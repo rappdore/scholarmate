@@ -11,6 +11,7 @@ Provides API endpoints for managing LLM configurations:
 - Test connection
 """
 
+import asyncio
 import logging
 from typing import List, Optional
 
@@ -75,7 +76,7 @@ class LLMConfigUpdate(BaseModel):
 
 
 @router.get("/list")
-async def list_configurations(
+def list_configurations(
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
 ):
     """
@@ -95,7 +96,7 @@ async def list_configurations(
 
 
 @router.get("/active")
-async def get_active_configuration(
+def get_active_configuration(
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
 ):
     """
@@ -139,7 +140,7 @@ async def get_active_configuration(
 
 
 @router.get("/{config_id}")
-async def get_configuration(
+def get_configuration(
     config_id: int,
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
 ):
@@ -172,7 +173,7 @@ async def get_configuration(
 
 
 @router.post("")
-async def create_configuration(
+def create_configuration(
     config: LLMConfigCreate,
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
 ):
@@ -209,7 +210,7 @@ async def create_configuration(
 
 
 @router.put("/{config_id}")
-async def update_configuration(
+def update_configuration(
     config_id: int,
     updates: LLMConfigUpdate,
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
@@ -250,7 +251,7 @@ async def update_configuration(
 
 
 @router.put("/{config_id}/activate")
-async def activate_configuration(
+def activate_configuration(
     config_id: int,
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
     ollama_service: OllamaService = Depends(get_ollama_service),
@@ -299,7 +300,7 @@ async def activate_configuration(
 
 
 @router.delete("/{config_id}")
-async def delete_configuration(
+def delete_configuration(
     config_id: int,
     llm_config_service: LLMConfigService = Depends(get_llm_config_service),
 ):
@@ -347,8 +348,8 @@ async def test_configuration(
     """
     import time
 
-    try:
-        # Get the configuration (with full API key for testing)
+    def _fetch_config_row():
+        # Full API key needed for testing, so query directly (not the masked view)
         with llm_config_service.get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -358,13 +359,16 @@ async def test_configuration(
             """,
                 (config_id,),
             )
-            row = cursor.fetchone()
+            return cursor.fetchone()
 
-            if not row:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Configuration with ID {config_id} not found",
-                )
+    try:
+        row = await asyncio.to_thread(_fetch_config_row)
+
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Configuration with ID {config_id} not found",
+            )
 
         base_url = row["base_url"]
         api_key = row["api_key"]

@@ -15,7 +15,6 @@ these tests simply call them with explicit keyword arguments — no
 monkeypatching of module globals.
 """
 
-import asyncio
 from unittest.mock import Mock
 
 import pytest
@@ -74,13 +73,11 @@ class TestPdfDeletePath:
             reading_progress=True, notes=True, highlights=True
         )
 
-        response = asyncio.run(
-            pdf_router.delete_book_by_id(
-                pdf_id,
-                pdf_documents_service=pdf_docs,
-                pdf_service=fake_pdf_service,
-                db_service=fake_db,
-            )
+        response = pdf_router.delete_book_by_id(
+            pdf_id,
+            pdf_documents_service=pdf_docs,
+            pdf_service=fake_pdf_service,
+            db_service=fake_db,
         )
         return pdf_id, fake_pdf_service, fake_db, response
 
@@ -102,13 +99,11 @@ class TestPdfDeletePath:
 
     def test_unknown_id_is_404(self, pdf_docs):
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(
-                pdf_router.delete_book_by_id(
-                    99999,
-                    pdf_documents_service=pdf_docs,
-                    pdf_service=Mock(),
-                    db_service=Mock(),
-                )
+            pdf_router.delete_book_by_id(
+                99999,
+                pdf_documents_service=pdf_docs,
+                pdf_service=Mock(),
+                db_service=Mock(),
             )
         assert exc_info.value.status_code == 404
 
@@ -128,13 +123,11 @@ class TestEpubDeletePath:
         }
         fake_db.epub_reading_statistics.delete_sessions_by_epub_id.return_value = True
 
-        response = asyncio.run(
-            epub_router.delete_epub_book_by_id(
-                epub_id,
-                db_service=fake_db,
-                epub_service=fake_epub_service,
-                epub_documents_service=epub_docs,
-            )
+        response = epub_router.delete_epub_book_by_id(
+            epub_id,
+            db_service=fake_db,
+            epub_service=fake_epub_service,
+            epub_documents_service=epub_docs,
         )
         return epub_id, fake_epub_service, fake_db, response
 
@@ -158,13 +151,11 @@ class TestEpubDeletePath:
 
     def test_unknown_id_is_404(self, epub_docs):
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(
-                epub_router.delete_epub_book_by_id(
-                    99999,
-                    db_service=Mock(),
-                    epub_service=Mock(),
-                    epub_documents_service=epub_docs,
-                )
+            epub_router.delete_epub_book_by_id(
+                99999,
+                db_service=Mock(),
+                epub_service=Mock(),
+                epub_documents_service=epub_docs,
             )
         assert exc_info.value.status_code == 404
 
@@ -177,13 +168,11 @@ class TestPdfStatusValidation:
 
         request = pdf_router.BookStatusRequest(status="bogus")
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(
-                pdf_router.update_book_status_by_id(
-                    pdf_id,
-                    request,
-                    pdf_documents_service=pdf_docs,
-                    db_service=Mock(),
-                )
+            pdf_router.update_book_status_by_id(
+                pdf_id,
+                request,
+                pdf_documents_service=pdf_docs,
+                db_service=Mock(),
             )
         assert exc_info.value.status_code == 400
 
@@ -193,13 +182,11 @@ class TestPdfStatusValidation:
         fake_db.update_book_status.return_value = True
 
         request = pdf_router.BookStatusRequest(status="reading")
-        response = asyncio.run(
-            pdf_router.update_book_status_by_id(
-                pdf_id,
-                request,
-                pdf_documents_service=pdf_docs,
-                db_service=fake_db,
-            )
+        response = pdf_router.update_book_status_by_id(
+            pdf_id,
+            request,
+            pdf_documents_service=pdf_docs,
+            db_service=fake_db,
         )
         assert response.success is True
 
@@ -212,7 +199,7 @@ class TestNotes404NotSwallowed:
         fake_db.get_chat_note_by_id.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(notes_router.get_chat_note_by_id(12345, db_service=fake_db))
+            notes_router.get_chat_note_by_id(12345, db_service=fake_db)
         assert exc_info.value.status_code == 404
 
     def test_delete_note_missing_is_404(self):
@@ -220,5 +207,5 @@ class TestNotes404NotSwallowed:
         fake_db.delete_chat_note.return_value = False
 
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(notes_router.delete_chat_note(12345, db_service=fake_db))
+            notes_router.delete_chat_note(12345, db_service=fake_db)
         assert exc_info.value.status_code == 404

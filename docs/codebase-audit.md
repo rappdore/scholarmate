@@ -19,10 +19,10 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **C-5 + A-4** — single config module (`config.ts`: HTTP+WS base, `VITE_API_URL` override) + one shared axios client and one `streamSSE` helper (`http.ts`); HashRouter; dev proxy deleted; frontend suite 48→68
 - **C-6** — SettingsContext lazy hydration, regression tests
 - **A-3** — pydantic-settings `Settings` + lifespan-scoped `ServiceRegistry`; all 11 routers on `Depends`; zero import-time side effects; backend suite 270→281
+- **C-4** — sync-work endpoints converted to `def` (threadpool-offloaded); parse/DB work in the remaining async endpoints wrapped in `asyncio.to_thread`; backend suite 281→289
 
-**⬜ Open — next up (audit sequencing steps 8-10):**
-- **C-4** — thread-offload parse/DB work in async endpoints ← **NEXT**
-- **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder)
+**⬜ Open — next up (audit sequencing steps 9-10):**
+- **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder) ← **NEXT**
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
 - **Tooling:** eslint at 45 errors/27 warnings (gate after burn-down to zero); mypy not yet gated (tracked under A-2)
 
@@ -83,7 +83,7 @@ The old `migration_service.py` was deleted (commit `0c273aa`), but the `reading_
 - `useStatistics.ts:86` (`string` vs `BookStatus`), `Reader.tsx:71` (wrong annotation vs `api.ts:79` return type), `HighlightsPanel.tsx:197` (two incompatible `HighlightColor` types, F-13), unused props (TS6133)
 **Fix:** repair the ~18 errors (most are small), add `"typecheck": "tsc -b --noEmit"` and wire tsc + eslint (+ mypy backend-side, once A-4 shrinks the count) into pre-commit. *(S/M)*
 
-**C-4. Event-loop blocking in async paths** — ⬜ OPEN — `backend/app/services/dual_chat_service.py:318-365`, `routers/ai.py:417, 520`, plus every sync SQLite call from `async def` endpoints
+**C-4. Event-loop blocking in async paths** — ✅ DONE (2026-06-12): every endpoint doing only sync work (all of pdf/epub/notes/highlights/statistics/llm-config routers, plus `/`, `/health`, and the two chat-stop endpoints) converted to plain `def` so FastAPI runs it on its threadpool; the genuinely-async paths (`ai.py` analyze/chat/dual-chat, llm-config test) now run their blocking work — id→filename resolution, `pdfplumber` page extraction, full EPUB parse + chat-context assembly, LLM-config SQLite reads — via `asyncio.to_thread` (new `_load_epub_chat_context` helper in `ai.py`; `DualChatService._get_document_context`/`_get_llm_config` delegate to sync bodies through `to_thread`). All SQLite services open a fresh connection per call, so cross-thread use is safe. Regression tests in `backend/tests/test_async_offloading.py`: an allowlist test pins which endpoints may stay `async def`, and thread-recording tests assert the offloads actually leave the event loop. TTS was already offloaded (`generate_audio_async`). Original finding: `backend/app/services/dual_chat_service.py:318-365`, `routers/ai.py:417, 520`, plus every sync SQLite call from `async def` endpoints
 `pdfplumber` full-document parsing, `epub.read_epub()` (full ZIP+XML parse), and all `BaseDatabaseService` SQLite calls run synchronously on the event loop (FastAPI only thread-offloads sync `def` endpoints, and these are all `async def`). One chat request on a large book freezes all concurrent requests including in-flight SSE streams.
 **Fix:** `await asyncio.to_thread(...)` around parse/DB calls (pattern already exists in `tts_service.generate_audio_async`), or make endpoints sync `def` where they don't stream. *(M)*
 
@@ -239,8 +239,8 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 5. ✅ **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16 with ~155 new regression tests (`2c17ca9`).
 6. ✅ **C-5 + A-4 + C-6** — unified frontend config/client (`config.ts` + `http.ts`), HashRouter, dev proxy removed, SettingsContext hydration fixed; +20 frontend tests (suite 68).
 7. ✅ **A-3** — pydantic-settings + lifespan service registry; routers on `Depends`; import-time side effects eliminated; +11 backend tests (suite 281).
-8. ⬜ **C-4** — thread-offload parse/DB work. ← **NEXT**
-9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder).
+8. ✅ **C-4** — sync endpoints to `def` (threadpool), `asyncio.to_thread` for blocking work in async paths; +8 backend tests (suite 289).
+9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder). ← **NEXT**
 10. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.
 
 ## Open questions for review

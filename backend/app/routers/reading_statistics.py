@@ -25,7 +25,7 @@ class SessionUpdateRequest(BaseModel):
 
 
 @router.put("/session/update")
-async def update_session(
+def update_session(
     request: SessionUpdateRequest,
     db_service: DatabaseService = Depends(get_db_service),
 ):
@@ -70,7 +70,7 @@ async def update_session(
 
 
 @router.get("/sessions/pdf/{pdf_id:int}")
-async def get_sessions_by_id(
+def get_sessions_by_id(
     pdf_id: int,
     limit: Optional[int] = Query(
         None, ge=1, description="Maximum number of sessions to return"

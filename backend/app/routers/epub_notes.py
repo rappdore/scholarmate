@@ -75,7 +75,7 @@ class EPUBChatNoteResponse(BaseModel):
 
 
 @router.post("/chat", response_model=dict[str, Any])
-async def save_epub_chat_note(
+def save_epub_chat_note(
     note: EPUBChatNoteRequest,
     db_service: DatabaseService = Depends(get_db_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -130,7 +130,7 @@ async def save_epub_chat_note(
 
 
 @router.get("/chat/{epub_id}", response_model=list[EPUBChatNoteResponse])
-async def get_epub_chat_notes(
+def get_epub_chat_notes(
     epub_id: int,
     nav_id: str | None = None,
     chapter_id: str | None = None,
@@ -171,7 +171,7 @@ async def get_epub_chat_notes(
     "/chat/{epub_id}/by-chapter",
     response_model=dict[str, list[EPUBChatNoteResponse]],
 )
-async def get_epub_chat_notes_by_chapter(
+def get_epub_chat_notes_by_chapter(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -212,7 +212,7 @@ async def get_epub_chat_notes_by_chapter(
 
 
 @router.get("/chat/id/{note_id}", response_model=EPUBChatNoteResponse)
-async def get_epub_chat_note_by_id(
+def get_epub_chat_note_by_id(
     note_id: int, db_service: DatabaseService = Depends(get_db_service)
 ) -> EPUBChatNoteResponse:
     """
@@ -243,7 +243,7 @@ async def get_epub_chat_note_by_id(
 
 
 @router.delete("/chat/{note_id}")
-async def delete_epub_chat_note(
+def delete_epub_chat_note(
     note_id: int, db_service: DatabaseService = Depends(get_db_service)
 ) -> dict[str, Any]:
     """
@@ -279,7 +279,7 @@ async def delete_epub_chat_note(
 
 
 @router.get("/stats", response_model=dict[str, dict[str, Any]])
-async def get_epub_notes_statistics(
+def get_epub_notes_statistics(
     db_service: DatabaseService = Depends(get_db_service),
 ) -> dict[str, dict[str, Any]]:
     """

@@ -64,7 +64,7 @@ class BookStatusRequest(BaseModel):
 
 
 @router.get("/{epub_id:int}/info")
-async def get_epub_info_by_id(
+def get_epub_info_by_id(
     epub_id: int,
     epub_service: EPUBService = Depends(get_epub_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -89,7 +89,7 @@ async def get_epub_info_by_id(
 
 
 @router.get("/{epub_id:int}/thumbnail")
-async def get_epub_thumbnail_by_id(
+def get_epub_thumbnail_by_id(
     epub_id: int,
     epub_service: EPUBService = Depends(get_epub_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -123,7 +123,7 @@ async def get_epub_thumbnail_by_id(
 
 
 @router.get("/{epub_id:int}/navigation")
-async def get_epub_navigation_by_id(
+def get_epub_navigation_by_id(
     epub_id: int,
     epub_service: EPUBService = Depends(get_epub_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -147,7 +147,7 @@ async def get_epub_navigation_by_id(
 
 
 @router.get("/{epub_id:int}/content/{nav_id}")
-async def get_epub_content_by_id(
+def get_epub_content_by_id(
     epub_id: int,
     nav_id: str,
     epub_service: EPUBService = Depends(get_epub_service),
@@ -174,7 +174,7 @@ async def get_epub_content_by_id(
 
 
 @router.get("/{epub_id:int}/styles")
-async def get_epub_styles_by_id(
+def get_epub_styles_by_id(
     epub_id: int,
     epub_service: EPUBService = Depends(get_epub_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -197,7 +197,7 @@ async def get_epub_styles_by_id(
 
 
 @router.get("/{epub_id:int}/image/{image_path:path}")
-async def get_epub_image_by_id(
+def get_epub_image_by_id(
     epub_id: int,
     image_path: str,
     epub_service: EPUBService = Depends(get_epub_service),
@@ -238,7 +238,7 @@ async def get_epub_image_by_id(
 
 
 @router.put("/{epub_id:int}/progress")
-async def save_epub_progress_by_id(
+def save_epub_progress_by_id(
     epub_id: int,
     progress: EPUBProgressRequest,
     db_service: DatabaseService = Depends(get_db_service),
@@ -283,7 +283,7 @@ async def save_epub_progress_by_id(
 
 
 @router.get("/{epub_id:int}/progress")
-async def get_epub_progress_by_id(
+def get_epub_progress_by_id(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
@@ -357,7 +357,7 @@ async def get_epub_progress_by_id(
 
 
 @router.put("/{epub_id:int}/status")
-async def update_epub_book_status_by_id(
+def update_epub_book_status_by_id(
     epub_id: int,
     status_request: BookStatusRequest,
     db_service: DatabaseService = Depends(get_db_service),
@@ -403,7 +403,7 @@ async def update_epub_book_status_by_id(
 
 
 @router.delete("/{epub_id:int}")
-async def delete_epub_book_by_id(
+def delete_epub_book_by_id(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
@@ -506,7 +506,7 @@ async def delete_epub_book_by_id(
 
 
 @router.get("/list")
-async def list_epubs(
+def list_epubs(
     status: Optional[str] = Query(
         None, description="Filter by book status (new, reading, finished)"
     ),
@@ -601,7 +601,7 @@ async def list_epubs(
 
 
 @router.get("/progress/all")
-async def get_all_epub_progress(
+def get_all_epub_progress(
     db_service: DatabaseService = Depends(get_db_service),
 ) -> Dict[str, Any]:
     """
@@ -617,7 +617,7 @@ async def get_all_epub_progress(
 
 
 @router.get("/status/counts")
-async def get_epub_status_counts(
+def get_epub_status_counts(
     db_service: DatabaseService = Depends(get_db_service),
 ) -> Dict[str, int]:
     """
@@ -645,7 +645,7 @@ class CacheRefreshResponse(BaseModel):
 
 
 @router.post("/refresh-cache")
-async def refresh_epub_cache(
+def refresh_epub_cache(
     epub_service: EPUBService = Depends(get_epub_service),
 ) -> CacheRefreshResponse:
     """

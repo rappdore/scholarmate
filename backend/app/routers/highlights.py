@@ -48,7 +48,7 @@ class UpdateColorRequest(BaseModel):
 
 
 @router.post("/", response_model=HighlightResponse)
-async def create_highlight(
+def create_highlight(
     highlight_data: HighlightRequest,
     db_service: DatabaseService = Depends(get_db_service),
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
@@ -111,7 +111,7 @@ async def create_highlight(
 
 
 @router.get("/pdf/{pdf_id:int}", response_model=List[HighlightResponse])
-async def get_highlights_for_pdf_by_id(
+def get_highlights_for_pdf_by_id(
     pdf_id: int,
     page_number: Optional[int] = None,
     db_service: DatabaseService = Depends(get_db_service),
@@ -146,7 +146,7 @@ async def get_highlights_for_pdf_by_id(
 @router.get(
     "/pdf/{pdf_id:int}/page/{page_number}", response_model=List[HighlightResponse]
 )
-async def get_highlights_for_page_by_id(
+def get_highlights_for_page_by_id(
     pdf_id: int,
     page_number: int,
     db_service: DatabaseService = Depends(get_db_service),
@@ -179,7 +179,7 @@ async def get_highlights_for_page_by_id(
 
 
 @router.get("/id/{highlight_id}", response_model=HighlightResponse)
-async def get_highlight_by_id(
+def get_highlight_by_id(
     highlight_id: int, db_service: DatabaseService = Depends(get_db_service)
 ):
     """
@@ -209,7 +209,7 @@ async def get_highlight_by_id(
 
 
 @router.delete("/{highlight_id}")
-async def delete_highlight(
+def delete_highlight(
     highlight_id: int, db_service: DatabaseService = Depends(get_db_service)
 ):
     """
@@ -239,7 +239,7 @@ async def delete_highlight(
 
 
 @router.put("/{highlight_id}/color")
-async def update_highlight_color(
+def update_highlight_color(
     highlight_id: int,
     color_data: UpdateColorRequest,
     db_service: DatabaseService = Depends(get_db_service),
@@ -272,7 +272,7 @@ async def update_highlight_color(
 
 
 @router.get("/stats/count", response_model=Dict[str, Dict[str, Any]])
-async def get_highlights_count_by_pdf(
+def get_highlights_count_by_pdf(
     db_service: DatabaseService = Depends(get_db_service),
 ):
     """

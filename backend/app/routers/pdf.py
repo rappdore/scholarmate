@@ -47,7 +47,7 @@ class BookStatusRequest(BaseModel):
 
 
 @router.get("/{pdf_id:int}/info", response_model=PDFDetailResponse)
-async def get_pdf_info_by_id(
+def get_pdf_info_by_id(
     pdf_id: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
     pdf_service: PDFService = Depends(get_pdf_service),
@@ -74,7 +74,7 @@ async def get_pdf_info_by_id(
 
 
 @router.get("/{pdf_id:int}/text/{page_num}", response_model=PageTextResponse)
-async def get_page_text_by_id(
+def get_page_text_by_id(
     pdf_id: int,
     page_num: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
@@ -107,7 +107,7 @@ async def get_page_text_by_id(
 
 
 @router.put("/{pdf_id:int}/progress", response_model=ProgressSaveResponse)
-async def save_reading_progress_by_id(
+def save_reading_progress_by_id(
     pdf_id: int,
     progress: ReadingProgressRequest,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
@@ -149,7 +149,7 @@ async def save_reading_progress_by_id(
 
 
 @router.get("/{pdf_id:int}/progress", response_model=ReadingProgressWithId)
-async def get_reading_progress_by_id(
+def get_reading_progress_by_id(
     pdf_id: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
     db_service: DatabaseService = Depends(get_db_service),
@@ -190,7 +190,7 @@ async def get_reading_progress_by_id(
 
 
 @router.get("/{pdf_id:int}/thumbnail")
-async def get_pdf_thumbnail_by_id(
+def get_pdf_thumbnail_by_id(
     pdf_id: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
     pdf_service: PDFService = Depends(get_pdf_service),
@@ -225,7 +225,7 @@ async def get_pdf_thumbnail_by_id(
 
 
 @router.put("/{pdf_id:int}/status", response_model=StatusUpdateResponse)
-async def update_book_status_by_id(
+def update_book_status_by_id(
     pdf_id: int,
     status_request: BookStatusRequest,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
@@ -275,7 +275,7 @@ async def update_book_status_by_id(
 
 
 @router.delete("/{pdf_id:int}", response_model=BookDeletionResponse)
-async def delete_book_by_id(
+def delete_book_by_id(
     pdf_id: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
     pdf_service: PDFService = Depends(get_pdf_service),
@@ -370,7 +370,7 @@ async def delete_book_by_id(
 
 
 @router.get("/list", response_model=list[PDFListItemEnriched])
-async def list_pdfs(
+def list_pdfs(
     status: Optional[str] = Query(
         None, description="Filter by book status (new, reading, finished)"
     ),
@@ -450,7 +450,7 @@ async def list_pdfs(
 
 
 @router.get("/{pdf_id:int}/file")
-async def get_pdf_file(
+def get_pdf_file(
     pdf_id: int,
     pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
     pdf_service: PDFService = Depends(get_pdf_service),
@@ -482,7 +482,7 @@ async def get_pdf_file(
 
 
 @router.get("/progress/all", response_model=AllReadingProgressResponse)
-async def get_all_reading_progress(
+def get_all_reading_progress(
     db_service: DatabaseService = Depends(get_db_service),
 ) -> AllReadingProgressResponse:
     """
@@ -498,7 +498,7 @@ async def get_all_reading_progress(
 
 
 @router.get("/status/counts", response_model=StatusCountsResponse)
-async def get_status_counts(
+def get_status_counts(
     db_service: DatabaseService = Depends(get_db_service),
 ) -> StatusCountsResponse:
     """
@@ -514,7 +514,7 @@ async def get_status_counts(
 
 
 @router.post("/refresh-cache", response_model=CacheRefreshResponse)
-async def refresh_pdf_cache(
+def refresh_pdf_cache(
     pdf_service: PDFService = Depends(get_pdf_service),
 ) -> CacheRefreshResponse:
     """

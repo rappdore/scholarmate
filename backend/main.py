@@ -82,13 +82,13 @@ app.add_middleware(
 
 
 @app.get("/")
-async def read_root():
+def read_root():
     logger.info("Root endpoint accessed")
     return {"message": "PDF AI Reader API", "status": "running"}
 
 
 @app.get("/health")
-async def health_check():
+def health_check():
     logger.info("Health check endpoint accessed")
     return {"status": "healthy"}
 

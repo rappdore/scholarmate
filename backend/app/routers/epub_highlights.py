@@ -26,7 +26,7 @@ class UpdateColorRequest(BaseModel):
 
 
 @router.post("/create", response_model=EPUBHighlight)
-async def create_epub_highlight(
+def create_epub_highlight(
     payload: EPUBHighlightCreate,
     db_service: DatabaseService = Depends(get_db_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -57,7 +57,7 @@ async def create_epub_highlight(
 
 
 @router.get("/{epub_id:int}", response_model=list[EPUBHighlight])
-async def get_all_highlights(
+def get_all_highlights(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
     epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
@@ -75,7 +75,7 @@ async def get_all_highlights(
 
 
 @router.get("/{epub_id:int}/section/{nav_id}", response_model=list[EPUBHighlight])
-async def get_section_highlights(
+def get_section_highlights(
     epub_id: int,
     nav_id: str,
     db_service: DatabaseService = Depends(get_db_service),
@@ -94,7 +94,7 @@ async def get_section_highlights(
 
 
 @router.get("/{epub_id:int}/chapter/{chapter_id}", response_model=list[EPUBHighlight])
-async def get_chapter_highlights(
+def get_chapter_highlights(
     epub_id: int,
     chapter_id: str,
     db_service: DatabaseService = Depends(get_db_service),
@@ -113,7 +113,7 @@ async def get_chapter_highlights(
 
 
 @router.delete("/{highlight_id}")
-async def delete_epub_highlight(
+def delete_epub_highlight(
     highlight_id: int, db_service: DatabaseService = Depends(get_db_service)
 ) -> dict[str, str]:
     """Delete a highlight by ID."""
@@ -131,7 +131,7 @@ async def delete_epub_highlight(
 
 
 @router.put("/{highlight_id}/color")
-async def update_epub_highlight_color(
+def update_epub_highlight_color(
     highlight_id: int,
     color_data: UpdateColorRequest,
     db_service: DatabaseService = Depends(get_db_service),

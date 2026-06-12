@@ -332,7 +332,14 @@ Keep responses conversational but informative. When explaining a concept, emphas
     async def _get_document_context(
         self, filename: str, page_num: int, is_new_chat: bool
     ) -> str:
-        """Extract document context for the chat"""
+        """Extract document context for the chat (pdfplumber parses run off the event loop)"""
+        return await asyncio.to_thread(
+            self._extract_document_context, filename, page_num, is_new_chat
+        )
+
+    def _extract_document_context(
+        self, filename: str, page_num: int, is_new_chat: bool
+    ) -> str:
         try:
             # Get current page text
             current_text = self.pdf_service.extract_page_text(filename, page_num)
@@ -379,7 +386,10 @@ Keep responses conversational but informative. When explaining a concept, emphas
             return f"[Error extracting context from page {page_num}]"
 
     async def _get_llm_config(self, config_id: int) -> LLMConfiguration | None:
-        """Get LLM configuration by ID with full API key"""
+        """Get LLM configuration by ID with full API key (SQLite query off the event loop)"""
+        return await asyncio.to_thread(self._fetch_llm_config, config_id)
+
+    def _fetch_llm_config(self, config_id: int) -> LLMConfiguration | None:
         try:
             # We need the full API key, not the masked version
             # Query directly and use _row_to_dict_full

@@ -7,7 +7,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services.dual_chat_service import DualChatService
-from ..services.epub.epub_chat_context_service import EPUBChatContextService
+from ..services.epub.epub_chat_context_service import (
+    EPUBChatContext,
+    EPUBChatContextService,
+)
 from ..services.epub_documents_service import EPUBDocumentsService
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import OllamaService
@@ -96,6 +99,25 @@ def _resolve_epub_filename(
     return epub_doc["filename"]
 
 
+def _load_epub_chat_context(
+    epub_service: EPUBService,
+    epub_chat_context_service: EPUBChatContextService,
+    filename: str,
+    nav_id: str,
+    scroll_position: float,
+    is_new_chat: bool,
+) -> EPUBChatContext:
+    """Full EPUB parse + context assembly; blocking, always call via asyncio.to_thread."""
+    book = epub_service.get_epub_book(filename)
+    return epub_chat_context_service.get_chat_context(
+        book=book,
+        filename=filename,
+        nav_id=nav_id,
+        scroll_position=scroll_position,
+        is_new_chat=is_new_chat,
+    )
+
+
 @router.get("/health")
 async def health_check(
     ollama_service: OllamaService = Depends(get_ollama_service),
@@ -121,10 +143,14 @@ async def analyze_page(
     Analyze a specific page of a PDF using AI.
     """
     try:
-        filename = _resolve_pdf_filename(request.pdf_id, pdf_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+        )
 
-        # Extract text from the PDF page
-        page_text = pdf_service.extract_page_text(filename, request.page_num)
+        # Extract text from the PDF page (full pdfplumber parse — off the event loop)
+        page_text = await asyncio.to_thread(
+            pdf_service.extract_page_text, filename, request.page_num
+        )
 
         if not page_text.strip():
             return {
@@ -174,16 +200,19 @@ async def analyze_epub_section(
     Analyze a specific section of an EPUB using AI.
     """
     try:
-        filename = _resolve_epub_filename(request.epub_id, epub_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_epub_filename, request.epub_id, epub_documents_service
+        )
 
         # Extract context using the context service (considers scroll position)
-        book = epub_service.get_epub_book(filename)
-        epub_context = epub_chat_context_service.get_chat_context(
-            book=book,
-            filename=filename,
-            nav_id=request.nav_id,
-            scroll_position=request.scroll_position,
-            is_new_chat=True,  # Analysis always gets full context
+        epub_context = await asyncio.to_thread(
+            _load_epub_chat_context,
+            epub_service,
+            epub_chat_context_service,
+            filename,
+            request.nav_id,
+            request.scroll_position,
+            True,  # Analysis always gets full context
         )
 
         if not epub_context.current_section_text.strip():
@@ -240,16 +269,19 @@ async def analyze_epub_section_stream(
         data: {"done": true}
     """
     try:
-        filename = _resolve_epub_filename(request.epub_id, epub_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_epub_filename, request.epub_id, epub_documents_service
+        )
 
         # Extract context using the context service (considers scroll position)
-        book = epub_service.get_epub_book(filename)
-        epub_context = epub_chat_context_service.get_chat_context(
-            book=book,
-            filename=filename,
-            nav_id=request.nav_id,
-            scroll_position=request.scroll_position,
-            is_new_chat=True,  # Analysis always gets full context
+        epub_context = await asyncio.to_thread(
+            _load_epub_chat_context,
+            epub_service,
+            epub_chat_context_service,
+            filename,
+            request.nav_id,
+            request.scroll_position,
+            True,  # Analysis always gets full context
         )
 
         if not epub_context.current_section_text.strip():
@@ -319,10 +351,14 @@ async def analyze_page_stream(
         data: {"done": true}
     """
     try:
-        filename = _resolve_pdf_filename(request.pdf_id, pdf_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+        )
 
-        # Extract text from the PDF page
-        page_text = pdf_service.extract_page_text(filename, request.page_num)
+        # Extract text from the PDF page (full pdfplumber parse — off the event loop)
+        page_text = await asyncio.to_thread(
+            pdf_service.extract_page_text, filename, request.page_num
+        )
 
         if not page_text.strip():
 
@@ -398,7 +434,9 @@ async def chat_with_ai(
         data: {"done": true}
     """
     try:
-        filename = _resolve_pdf_filename(request.pdf_id, pdf_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+        )
 
         # Register the request for tracking
         request_id = request_tracking_service.register_request(
@@ -409,8 +447,10 @@ async def chat_with_ai(
         )
         logger.info(f"[AI Router] Registered chat request {request_id} for {filename}")
 
-        # Extract text from current page for context
-        page_text = pdf_service.extract_page_text(filename, request.page_num)
+        # Extract text from current page for context (off the event loop)
+        page_text = await asyncio.to_thread(
+            pdf_service.extract_page_text, filename, request.page_num
+        )
 
         async def generate_response():
             try:
@@ -497,7 +537,9 @@ async def chat_with_ai_epub(
     Stream format: Same as /chat endpoint (see above)
     """
     try:
-        filename = _resolve_epub_filename(request.epub_id, epub_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_epub_filename, request.epub_id, epub_documents_service
+        )
 
         # Register the request for tracking
         request_id = request_tracking_service.register_request(
@@ -512,13 +554,14 @@ async def chat_with_ai_epub(
 
         # Extract context using the new context service
         # This considers scroll position and includes surrounding sections for new chats
-        book = epub_service.get_epub_book(filename)
-        epub_context = epub_chat_context_service.get_chat_context(
-            book=book,
-            filename=filename,
-            nav_id=request.nav_id,
-            scroll_position=request.scroll_position,
-            is_new_chat=request.is_new_chat or False,
+        epub_context = await asyncio.to_thread(
+            _load_epub_chat_context,
+            epub_service,
+            epub_chat_context_service,
+            filename,
+            request.nav_id,
+            request.scroll_position,
+            request.is_new_chat or False,
         )
 
         async def generate_response():
@@ -583,7 +626,7 @@ async def chat_with_ai_epub(
 
 
 @router.post("/chat/stop/{request_id}")
-async def stop_chat(
+def stop_chat(
     request_id: str,
     request_tracking_service: RequestTrackingService = Depends(
         get_request_tracking_service
@@ -605,7 +648,7 @@ async def stop_chat(
 
 
 @router.post("/chat/epub/stop/{request_id}")
-async def stop_epub_chat(
+def stop_epub_chat(
     request_id: str,
     request_tracking_service: RequestTrackingService = Depends(
         get_request_tracking_service
@@ -639,7 +682,9 @@ async def dual_chat(
     Both LLMs receive the same prompt but maintain independent conversation histories.
     """
     try:
-        filename = _resolve_pdf_filename(request.pdf_id, pdf_documents_service)
+        filename = await asyncio.to_thread(
+            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+        )
 
         return StreamingResponse(
             dual_chat_service.stream_dual_chat_response(
