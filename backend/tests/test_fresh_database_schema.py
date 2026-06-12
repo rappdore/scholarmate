@@ -14,9 +14,8 @@ import sqlite3
 import pytest
 
 from app.services.database_service import DatabaseService
-from app.services.epub_documents_service import EPUBDocumentsService
+from app.services.documents_repository import DocumentsRepository
 from app.services.llm_config_service import LLMConfigService
-from app.services.pdf_documents_service import PDFDocumentsService
 
 
 @pytest.fixture
@@ -28,10 +27,9 @@ def db_path(tmp_path):
 @pytest.fixture
 def db_service(db_path):
     """A DatabaseService (and therefore all its specialized services) on a fresh DB."""
-    # The documents and LLM-config services own their tables and are
+    # The documents repository and LLM-config service own their tables and are
     # constructed independently of the facade, exactly like at app startup.
-    PDFDocumentsService(db_path)
-    EPUBDocumentsService(db_path)
+    DocumentsRepository(db_path)
     LLMConfigService(db_path)
     return DatabaseService(db_path)
 
@@ -61,8 +59,7 @@ class TestFreshSchemaIsComplete:
             "epub_highlights",
             "reading_sessions",
             "epub_reading_sessions",
-            "pdf_documents",
-            "epub_documents",
+            "documents",
             "llm_configurations",
         }
         missing = expected - _tables(db_path)

@@ -11,9 +11,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..models.documents import DocumentRecord, DocumentType
 from ..services.database_service import DatabaseService
-from ..services.epub_documents_service import EPUBDocumentsService
-from ..services.registry import get_db_service, get_epub_documents_service
+from ..services.documents_repository import DocumentsRepository
+from ..services.registry import get_db_service, get_documents_repository
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -23,8 +24,8 @@ router = APIRouter(prefix="/epub-notes", tags=["epub-notes"])
 
 # Helper function to get EPUB document by ID or raise 404
 def get_epub_doc_or_404(
-    epub_id: int, epub_documents_service: EPUBDocumentsService
-) -> dict[str, Any]:
+    epub_id: int, documents_repository: DocumentsRepository
+) -> DocumentRecord:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
 
@@ -32,14 +33,14 @@ def get_epub_doc_or_404(
         epub_id: The EPUB document ID
 
     Returns:
-        The EPUB document dictionary with 'id' and 'filename' keys
+        The EPUB DocumentRecord
 
     Raises:
         HTTPException: 404 if EPUB not found
     """
     if epub_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid EPUB ID: must be positive")
-    epub_doc = epub_documents_service.get_by_id(epub_id)
+    epub_doc = documents_repository.get_by_id(epub_id, DocumentType.EPUB)
     if not epub_doc:
         raise HTTPException(status_code=404, detail="EPUB not found")
     return epub_doc
@@ -78,7 +79,7 @@ class EPUBChatNoteResponse(BaseModel):
 def save_epub_chat_note(
     note: EPUBChatNoteRequest,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> dict[str, Any]:
     """
     Save EPUB chat conversation as a note
@@ -94,8 +95,8 @@ def save_epub_chat_note(
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(note.epub_id, epub_documents_service)
-        epub_filename = epub_doc["filename"]
+        epub_doc = get_epub_doc_or_404(note.epub_id, documents_repository)
+        epub_filename = epub_doc.filename
 
         note_id = db_service.save_epub_chat_note(
             epub_filename=epub_filename,
@@ -135,7 +136,7 @@ def get_epub_chat_notes(
     nav_id: str | None = None,
     chapter_id: str | None = None,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[EPUBChatNoteResponse]:
     """
     Get EPUB chat notes with optional filtering
@@ -153,8 +154,8 @@ def get_epub_chat_notes(
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
-        epub_filename = epub_doc["filename"]
+        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
+        epub_filename = epub_doc.filename
 
         notes = db_service.get_epub_chat_notes(epub_filename, nav_id, chapter_id)
         return [EPUBChatNoteResponse(**note) for note in notes]
@@ -174,7 +175,7 @@ def get_epub_chat_notes(
 def get_epub_chat_notes_by_chapter(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> dict[str, list[EPUBChatNoteResponse]]:
     """
     Get EPUB chat notes grouped by chapter for UI display
@@ -190,8 +191,8 @@ def get_epub_chat_notes_by_chapter(
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
-        epub_filename = epub_doc["filename"]
+        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
+        epub_filename = epub_doc.filename
 
         notes_by_chapter = db_service.get_epub_chat_notes_by_chapter(epub_filename)
 

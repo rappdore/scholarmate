@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..models.documents import DocumentType
 from ..models.pdf_responses import (
     AllReadingProgressResponse,
     BookDeletionResponse,
@@ -23,11 +24,11 @@ from ..models.pdf_responses import (
     StatusUpdateResponse,
 )
 from ..services.database_service import DatabaseService
-from ..services.pdf_documents_service import PDFDocumentsService
+from ..services.documents_repository import DocumentsRepository
 from ..services.pdf_service import PDFService
 from ..services.registry import (
     get_db_service,
-    get_pdf_documents_service,
+    get_documents_repository,
     get_pdf_service,
 )
 
@@ -49,7 +50,7 @@ class BookStatusRequest(BaseModel):
 @router.get("/{pdf_id:int}/info", response_model=PDFDetailResponse)
 def get_pdf_info_by_id(
     pdf_id: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
 ) -> PDFDetailResponse:
     """
@@ -57,7 +58,7 @@ def get_pdf_info_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -77,7 +78,7 @@ def get_pdf_info_by_id(
 def get_page_text_by_id(
     pdf_id: int,
     page_num: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
 ) -> PageTextResponse:
     """
@@ -85,7 +86,7 @@ def get_page_text_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -110,7 +111,7 @@ def get_page_text_by_id(
 def save_reading_progress_by_id(
     pdf_id: int,
     progress: ReadingProgressRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     db_service: DatabaseService = Depends(get_db_service),
 ) -> ProgressSaveResponse:
     """
@@ -118,7 +119,7 @@ def save_reading_progress_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -151,7 +152,7 @@ def save_reading_progress_by_id(
 @router.get("/{pdf_id:int}/progress", response_model=ReadingProgressWithId)
 def get_reading_progress_by_id(
     pdf_id: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     db_service: DatabaseService = Depends(get_db_service),
 ) -> ReadingProgressWithId:
     """
@@ -159,7 +160,7 @@ def get_reading_progress_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -192,7 +193,7 @@ def get_reading_progress_by_id(
 @router.get("/{pdf_id:int}/thumbnail")
 def get_pdf_thumbnail_by_id(
     pdf_id: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
 ):
     """
@@ -200,7 +201,7 @@ def get_pdf_thumbnail_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -228,7 +229,7 @@ def get_pdf_thumbnail_by_id(
 def update_book_status_by_id(
     pdf_id: int,
     status_request: BookStatusRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     db_service: DatabaseService = Depends(get_db_service),
 ) -> StatusUpdateResponse:
     """
@@ -236,7 +237,7 @@ def update_book_status_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -277,7 +278,7 @@ def update_book_status_by_id(
 @router.delete("/{pdf_id:int}", response_model=BookDeletionResponse)
 def delete_book_by_id(
     pdf_id: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
     db_service: DatabaseService = Depends(get_db_service),
 ) -> BookDeletionResponse:
@@ -286,7 +287,7 @@ def delete_book_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -325,7 +326,7 @@ def delete_book_by_id(
 
         # Remove the registry row so the ID can no longer resolve
         try:
-            pdf_documents_service.delete_by_filename(filename)
+            documents_repository.delete_by_filename(filename)
         except Exception:
             logger.warning(
                 "Could not delete registry row for %s", filename, exc_info=True
@@ -376,7 +377,7 @@ def list_pdfs(
     ),
     pdf_service: PDFService = Depends(get_pdf_service),
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[PDFListItemEnriched]:
     """
     List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
@@ -403,7 +404,7 @@ def list_pdfs(
 
         for pdf in pdfs:
             # Get PDF ID from database
-            pdf_doc = pdf_documents_service.get_by_filename(pdf.filename)
+            pdf_doc = documents_repository.get_by_filename(pdf.filename)
             if not pdf_doc:
                 continue  # Skip PDFs not in database
 
@@ -452,7 +453,7 @@ def list_pdfs(
 @router.get("/{pdf_id:int}/file")
 def get_pdf_file(
     pdf_id: int,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
 ):
     """
@@ -462,7 +463,7 @@ def get_pdf_file(
     documents registry, never from request input.
     """
     try:
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 

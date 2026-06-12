@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..models.documents import DocumentType
 from ..services.database_service import DatabaseService
-from ..services.pdf_documents_service import PDFDocumentsService
-from ..services.registry import get_db_service, get_pdf_documents_service
+from ..services.documents_repository import DocumentsRepository
+from ..services.registry import get_db_service, get_documents_repository
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
 
@@ -51,7 +52,7 @@ class UpdateColorRequest(BaseModel):
 def create_highlight(
     highlight_data: HighlightRequest,
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ):
     """
     Create a new highlight for a PDF document.
@@ -67,7 +68,9 @@ def create_highlight(
         HTTPException: If highlight creation fails
     """
     try:
-        pdf_doc = pdf_documents_service.get_by_id(highlight_data.pdf_id)
+        pdf_doc = documents_repository.get_by_id(
+            highlight_data.pdf_id, DocumentType.PDF
+        )
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
         pdf_filename = pdf_doc.filename
@@ -115,7 +118,7 @@ def get_highlights_for_pdf_by_id(
     pdf_id: int,
     page_number: Optional[int] = None,
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ):
     """
     Get all highlights for a PDF document by ID, optionally filtered by page number.
@@ -129,7 +132,7 @@ def get_highlights_for_pdf_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
@@ -150,7 +153,7 @@ def get_highlights_for_page_by_id(
     pdf_id: int,
     page_number: int,
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ):
     """
     Get all highlights for a specific page of a PDF document by ID.
@@ -164,7 +167,7 @@ def get_highlights_for_page_by_id(
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 

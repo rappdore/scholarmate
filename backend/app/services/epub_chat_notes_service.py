@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from .base_database_service import BaseDatabaseService
-from .epub_documents_service import EPUBDocumentsService
+from .documents_repository import DocumentsRepository
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -36,10 +36,7 @@ class EPUBChatNotesService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
-        # Phase 4b: Initialize EPUB documents service for epub_id lookups
-        # Note: Must be initialized before _init_table() for consistency,
-        # though backfill uses direct SQL joins, not the helper method
-        self._epub_docs_service = EPUBDocumentsService(db_path)
+        self._documents = DocumentsRepository(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -97,9 +94,9 @@ class EPUBChatNotesService(BaseDatabaseService):
             int | None: The epub_id if found, None otherwise
         """
         try:
-            epub_doc = self._epub_docs_service.get_by_filename(epub_filename)
+            epub_doc = self._documents.get_by_filename(epub_filename)
             if epub_doc:
-                return epub_doc.get("id")
+                return epub_doc.id
             return None
         except Exception as e:
             logger.warning(f"Could not look up epub_id for {epub_filename}: {e}")

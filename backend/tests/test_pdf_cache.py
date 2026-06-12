@@ -15,8 +15,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from app.models.documents import PdfDocumentUpsert
+from app.services.documents_repository import DocumentsRepository
 from app.services.pdf_cache import PDFCache
-from app.services.pdf_documents_service import PDFDocumentsService
 
 
 @pytest.fixture
@@ -128,8 +129,8 @@ class TestNullDatabaseFields:
         (temp_dirs["pdf_dir"] / "untitled.pdf").write_bytes(b"%PDF-1.4")
 
         # Pre-seed a registry row where nullable columns are NULL
-        docs = PDFDocumentsService(temp_dirs["db_path"])
-        docs.create_or_update(filename="untitled.pdf", num_pages=7)
+        docs = DocumentsRepository(temp_dirs["db_path"])
+        docs.upsert(PdfDocumentUpsert(filename="untitled.pdf", num_pages=7))
 
         cache = _build_cache(temp_dirs, mock_pdf_service)
 

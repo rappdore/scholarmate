@@ -760,18 +760,14 @@ class DatabaseService:
 
         # Delete EPUB highlights - need to look up epub_id first
         try:
-            from .epub_documents_service import EPUBDocumentsService
+            from .documents_repository import DocumentsRepository
 
-            epub_docs_service = EPUBDocumentsService(self.db_path)
-            epub_doc = epub_docs_service.get_by_filename(epub_filename)
+            documents = DocumentsRepository(self.db_path)
+            epub_doc = documents.get_by_filename(epub_filename)
             if epub_doc:
-                epub_id = epub_doc.get("id")
-                if epub_id:
-                    results["epub_highlights"] = self.delete_epub_highlights_for_epub(
-                        epub_id
-                    )
-                else:
-                    results["epub_highlights"] = True  # No ID, nothing to delete
+                results["epub_highlights"] = self.delete_epub_highlights_for_epub(
+                    epub_doc.id
+                )
             else:
                 results["epub_highlights"] = True  # Doc not found, nothing to delete
         except Exception as e:

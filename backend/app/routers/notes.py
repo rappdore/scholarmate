@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..models.documents import DocumentType
 from ..services.database_service import DatabaseService
-from ..services.pdf_documents_service import PDFDocumentsService
-from ..services.registry import get_db_service, get_pdf_documents_service
+from ..services.documents_repository import DocumentsRepository
+from ..services.registry import get_db_service, get_documents_repository
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -31,13 +32,13 @@ class ChatNoteResponse(BaseModel):
 def save_chat_note(
     note: ChatNoteRequest,
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> Dict[str, Any]:
     """
     Save a chat conversation as a note.
     """
     try:
-        pdf_doc = pdf_documents_service.get_by_id(note.pdf_id)
+        pdf_doc = documents_repository.get_by_id(note.pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
         pdf_filename = pdf_doc.filename
@@ -74,14 +75,14 @@ def get_chat_notes_for_pdf_by_id(
     pdf_id: int,
     page_number: Optional[int] = None,
     db_service: DatabaseService = Depends(get_db_service),
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> List[ChatNoteResponse]:
     """
     Get chat notes for a PDF by ID, optionally filtered by page
     """
     try:
         # Lookup filename from ID
-        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 

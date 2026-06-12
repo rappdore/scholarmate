@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..models.documents import DocumentRecord, DocumentType
 from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
 from ..services.database_service import DatabaseService
-from ..services.epub_documents_service import EPUBDocumentsService
-from ..services.registry import get_db_service, get_epub_documents_service
+from ..services.documents_repository import DocumentsRepository
+from ..services.registry import get_db_service, get_documents_repository
 
 router = APIRouter(prefix="/epub-highlights", tags=["epub-highlights"])
 
 
 def get_epub_doc_or_404(
-    epub_id: int, epub_documents_service: EPUBDocumentsService
-) -> dict:
+    epub_id: int, documents_repository: DocumentsRepository
+) -> DocumentRecord:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
     """
-    epub_doc = epub_documents_service.get_by_id(epub_id)
+    epub_doc = documents_repository.get_by_id(epub_id, DocumentType.EPUB)
     if not epub_doc:
         raise HTTPException(status_code=404, detail="EPUB not found")
     return epub_doc
@@ -29,12 +30,12 @@ class UpdateColorRequest(BaseModel):
 def create_epub_highlight(
     payload: EPUBHighlightCreate,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> EPUBHighlight:
     """Create a new highlight in an EPUB section."""
     try:
         # Validate EPUB exists
-        get_epub_doc_or_404(payload.epub_id, epub_documents_service)
+        get_epub_doc_or_404(payload.epub_id, documents_repository)
 
         highlight_id = db_service.save_epub_highlight(payload)
 
@@ -60,11 +61,11 @@ def create_epub_highlight(
 def get_all_highlights(
     epub_id: int,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[EPUBHighlight]:
     """Retrieve all highlights for an EPUB document by ID."""
     try:
-        get_epub_doc_or_404(epub_id, epub_documents_service)
+        get_epub_doc_or_404(epub_id, documents_repository)
         return db_service.get_epub_all_highlights(epub_id)
     except HTTPException:
         raise
@@ -79,11 +80,11 @@ def get_section_highlights(
     epub_id: int,
     nav_id: str,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[EPUBHighlight]:
     """Retrieve all highlights for a specific navigation section."""
     try:
-        get_epub_doc_or_404(epub_id, epub_documents_service)
+        get_epub_doc_or_404(epub_id, documents_repository)
         return db_service.get_epub_section_highlights(epub_id, nav_id)
     except HTTPException:
         raise
@@ -98,11 +99,11 @@ def get_chapter_highlights(
     epub_id: int,
     chapter_id: str,
     db_service: DatabaseService = Depends(get_db_service),
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[EPUBHighlight]:
     """Retrieve all highlights for a chapter by EPUB ID."""
     try:
-        get_epub_doc_or_404(epub_id, epub_documents_service)
+        get_epub_doc_or_404(epub_id, documents_repository)
         return db_service.get_epub_chapter_highlights(epub_id, chapter_id)
     except HTTPException:
         raise

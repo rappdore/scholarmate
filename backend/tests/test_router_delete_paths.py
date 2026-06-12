@@ -23,9 +23,9 @@ from fastapi import HTTPException
 import app.routers.epub as epub_router
 import app.routers.notes as notes_router
 import app.routers.pdf as pdf_router
+from app.models.documents import EpubDocumentUpsert, PdfDocumentUpsert
 from app.models.pdf_responses import DatabaseDeletionResults
-from app.services.epub_documents_service import EPUBDocumentsService
-from app.services.pdf_documents_service import PDFDocumentsService
+from app.services.documents_repository import DocumentsRepository
 from app.services.registry import (
     get_dual_chat_service,
     get_epub_service,
@@ -36,12 +36,12 @@ from app.services.registry import (
 
 @pytest.fixture
 def pdf_docs(tmp_path):
-    return PDFDocumentsService(str(tmp_path / "pdf.db"))
+    return DocumentsRepository(str(tmp_path / "pdf.db"))
 
 
 @pytest.fixture
 def epub_docs(tmp_path):
-    return EPUBDocumentsService(str(tmp_path / "epub.db"))
+    return DocumentsRepository(str(tmp_path / "epub.db"))
 
 
 class TestSharedServiceInstances:
@@ -65,7 +65,7 @@ class TestPdfDeletePath:
     """B-12: PDF deletion must clean up registry, sessions, and cache."""
 
     def _run_delete(self, pdf_docs):
-        pdf_id = pdf_docs.create_or_update(filename="gone.pdf", num_pages=3)
+        pdf_id = pdf_docs.upsert(PdfDocumentUpsert(filename="gone.pdf", num_pages=3))
 
         fake_pdf_service = Mock()
         fake_db = Mock()
@@ -75,7 +75,7 @@ class TestPdfDeletePath:
 
         response = pdf_router.delete_book_by_id(
             pdf_id,
-            pdf_documents_service=pdf_docs,
+            documents_repository=pdf_docs,
             pdf_service=fake_pdf_service,
             db_service=fake_db,
         )
@@ -101,7 +101,7 @@ class TestPdfDeletePath:
         with pytest.raises(HTTPException) as exc_info:
             pdf_router.delete_book_by_id(
                 99999,
-                pdf_documents_service=pdf_docs,
+                documents_repository=pdf_docs,
                 pdf_service=Mock(),
                 db_service=Mock(),
             )
@@ -112,7 +112,7 @@ class TestEpubDeletePath:
     """B-12: EPUB deletion must clean up registry, sessions, and cache."""
 
     def _run_delete(self, epub_docs):
-        epub_id = epub_docs.create_or_update(filename="gone.epub", chapters=3)
+        epub_id = epub_docs.upsert(EpubDocumentUpsert(filename="gone.epub", chapters=3))
 
         fake_epub_service = Mock()
         fake_db = Mock()
@@ -127,7 +127,7 @@ class TestEpubDeletePath:
             epub_id,
             db_service=fake_db,
             epub_service=fake_epub_service,
-            epub_documents_service=epub_docs,
+            documents_repository=epub_docs,
         )
         return epub_id, fake_epub_service, fake_db, response
 
@@ -155,7 +155,7 @@ class TestEpubDeletePath:
                 99999,
                 db_service=Mock(),
                 epub_service=Mock(),
-                epub_documents_service=epub_docs,
+                documents_repository=epub_docs,
             )
         assert exc_info.value.status_code == 404
 
@@ -164,20 +164,20 @@ class TestPdfStatusValidation:
     """B-15b: invalid status must be a 400, mirroring the EPUB endpoint."""
 
     def test_invalid_status_returns_400(self, pdf_docs):
-        pdf_id = pdf_docs.create_or_update(filename="status.pdf", num_pages=1)
+        pdf_id = pdf_docs.upsert(PdfDocumentUpsert(filename="status.pdf", num_pages=1))
 
         request = pdf_router.BookStatusRequest(status="bogus")
         with pytest.raises(HTTPException) as exc_info:
             pdf_router.update_book_status_by_id(
                 pdf_id,
                 request,
-                pdf_documents_service=pdf_docs,
+                documents_repository=pdf_docs,
                 db_service=Mock(),
             )
         assert exc_info.value.status_code == 400
 
     def test_valid_status_accepted(self, pdf_docs):
-        pdf_id = pdf_docs.create_or_update(filename="status.pdf", num_pages=1)
+        pdf_id = pdf_docs.upsert(PdfDocumentUpsert(filename="status.pdf", num_pages=1))
         fake_db = Mock()
         fake_db.update_book_status.return_value = True
 
@@ -185,7 +185,7 @@ class TestPdfStatusValidation:
         response = pdf_router.update_book_status_by_id(
             pdf_id,
             request,
-            pdf_documents_service=pdf_docs,
+            documents_repository=pdf_docs,
             db_service=fake_db,
         )
         assert response.success is True

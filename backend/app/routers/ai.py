@@ -6,23 +6,22 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..models.documents import DocumentType
+from ..services.documents_repository import DocumentsRepository
 from ..services.dual_chat_service import DualChatService
 from ..services.epub.epub_chat_context_service import (
     EPUBChatContext,
     EPUBChatContextService,
 )
-from ..services.epub_documents_service import EPUBDocumentsService
 from ..services.epub_service import EPUBService
 from ..services.ollama_service import OllamaService
-from ..services.pdf_documents_service import PDFDocumentsService
 from ..services.pdf_service import PDFService
 from ..services.registry import (
+    get_documents_repository,
     get_dual_chat_service,
     get_epub_chat_context_service,
-    get_epub_documents_service,
     get_epub_service,
     get_ollama_service,
-    get_pdf_documents_service,
     get_pdf_service,
     get_request_tracking_service,
 )
@@ -76,27 +75,27 @@ class DualChatRequest(BaseModel):
 
 
 def _resolve_pdf_filename(
-    pdf_id: int, pdf_documents_service: PDFDocumentsService
+    pdf_id: int, documents_repository: DocumentsRepository
 ) -> str:
     """Resolve a pdf_id to its filename, raising 404 if unknown.
 
     Filenames used for file access always come from the documents registry,
     never from request input, so they cannot carry path traversal.
     """
-    pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+    pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
     if not pdf_doc:
         raise HTTPException(status_code=404, detail="PDF not found")
     return pdf_doc.filename
 
 
 def _resolve_epub_filename(
-    epub_id: int, epub_documents_service: EPUBDocumentsService
+    epub_id: int, documents_repository: DocumentsRepository
 ) -> str:
     """Resolve an epub_id to its filename, raising 404 if unknown."""
-    epub_doc = epub_documents_service.get_by_id(epub_id)
+    epub_doc = documents_repository.get_by_id(epub_id, DocumentType.EPUB)
     if not epub_doc:
         raise HTTPException(status_code=404, detail="EPUB not found")
-    return epub_doc["filename"]
+    return epub_doc.filename
 
 
 def _load_epub_chat_context(
@@ -135,7 +134,7 @@ async def health_check(
 @router.post("/analyze")
 async def analyze_page(
     request: AnalyzePageRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
     ollama_service: OllamaService = Depends(get_ollama_service),
 ) -> dict[str, object]:
@@ -144,7 +143,7 @@ async def analyze_page(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+            _resolve_pdf_filename, request.pdf_id, documents_repository
         )
 
         # Extract text from the PDF page (full pdfplumber parse — off the event loop)
@@ -189,7 +188,7 @@ async def analyze_page(
 @router.post("/analyze-epub-section")
 async def analyze_epub_section(
     request: AnalyzeEpubSectionRequest,
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     epub_service: EPUBService = Depends(get_epub_service),
     epub_chat_context_service: EPUBChatContextService = Depends(
         get_epub_chat_context_service
@@ -201,7 +200,7 @@ async def analyze_epub_section(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_epub_filename, request.epub_id, epub_documents_service
+            _resolve_epub_filename, request.epub_id, documents_repository
         )
 
         # Extract context using the context service (considers scroll position)
@@ -251,7 +250,7 @@ async def analyze_epub_section(
 @router.post("/analyze-epub-section/stream")
 async def analyze_epub_section_stream(
     request: AnalyzeEpubSectionRequest,
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     epub_service: EPUBService = Depends(get_epub_service),
     epub_chat_context_service: EPUBChatContextService = Depends(
         get_epub_chat_context_service
@@ -270,7 +269,7 @@ async def analyze_epub_section_stream(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_epub_filename, request.epub_id, epub_documents_service
+            _resolve_epub_filename, request.epub_id, documents_repository
         )
 
         # Extract context using the context service (considers scroll position)
@@ -336,7 +335,7 @@ async def analyze_epub_section_stream(
 @router.post("/analyze/stream")
 async def analyze_page_stream(
     request: AnalyzePageRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
     ollama_service: OllamaService = Depends(get_ollama_service),
 ) -> StreamingResponse:
@@ -352,7 +351,7 @@ async def analyze_page_stream(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+            _resolve_pdf_filename, request.pdf_id, documents_repository
         )
 
         # Extract text from the PDF page (full pdfplumber parse — off the event loop)
@@ -415,7 +414,7 @@ async def analyze_page_stream(
 @router.post("/chat")
 async def chat_with_ai(
     request: ChatRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
     ollama_service: OllamaService = Depends(get_ollama_service),
     request_tracking_service: RequestTrackingService = Depends(
@@ -435,7 +434,7 @@ async def chat_with_ai(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+            _resolve_pdf_filename, request.pdf_id, documents_repository
         )
 
         # Register the request for tracking
@@ -520,7 +519,7 @@ async def chat_with_ai(
 @router.post("/chat/epub")
 async def chat_with_ai_epub(
     request: EpubChatRequest,
-    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     epub_service: EPUBService = Depends(get_epub_service),
     epub_chat_context_service: EPUBChatContextService = Depends(
         get_epub_chat_context_service
@@ -538,7 +537,7 @@ async def chat_with_ai_epub(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_epub_filename, request.epub_id, epub_documents_service
+            _resolve_epub_filename, request.epub_id, documents_repository
         )
 
         # Register the request for tracking
@@ -674,7 +673,7 @@ def stop_epub_chat(
 @router.post("/dual-chat")
 async def dual_chat(
     request: DualChatRequest,
-    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    documents_repository: DocumentsRepository = Depends(get_documents_repository),
     dual_chat_service: DualChatService = Depends(get_dual_chat_service),
 ) -> StreamingResponse:
     """
@@ -683,7 +682,7 @@ async def dual_chat(
     """
     try:
         filename = await asyncio.to_thread(
-            _resolve_pdf_filename, request.pdf_id, pdf_documents_service
+            _resolve_pdf_filename, request.pdf_id, documents_repository
         )
 
         return StreamingResponse(

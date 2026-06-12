@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from .base_database_service import BaseDatabaseService
-from .pdf_documents_service import PDFDocumentsService
+from .documents_repository import DocumentsRepository
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -32,10 +32,7 @@ class ChatNotesService(BaseDatabaseService):
             db_path (str): Path to the SQLite database file
         """
         super().__init__(db_path)
-        # Phase 3b: Initialize PDF documents service for pdf_id lookups
-        # Note: Must be initialized before _init_table() for consistency,
-        # though backfill uses direct SQL joins, not the helper method
-        self._pdf_docs_service = PDFDocumentsService(db_path)
+        self._documents = DocumentsRepository(db_path)
         self._init_table()
 
     def _init_table(self):
@@ -83,9 +80,9 @@ class ChatNotesService(BaseDatabaseService):
             int | None: The pdf_id if found, None otherwise
         """
         try:
-            pdf_doc = self._pdf_docs_service.get_by_filename(pdf_filename)
+            pdf_doc = self._documents.get_by_filename(pdf_filename)
             if pdf_doc:
-                return pdf_doc.get("id")
+                return pdf_doc.id
             return None
         except Exception as e:
             logger.warning(f"Could not look up pdf_id for {pdf_filename}: {e}")

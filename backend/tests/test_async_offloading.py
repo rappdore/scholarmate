@@ -69,11 +69,15 @@ class TestEndpointSyncness:
 
 
 def _fake_pdf_documents(filename="book.pdf"):
-    return SimpleNamespace(get_by_id=lambda pdf_id: SimpleNamespace(filename=filename))
+    return SimpleNamespace(
+        get_by_id=lambda pdf_id, doc_type=None: SimpleNamespace(filename=filename)
+    )
 
 
 def _fake_epub_documents(filename="book.epub"):
-    return SimpleNamespace(get_by_id=lambda epub_id: {"filename": filename})
+    return SimpleNamespace(
+        get_by_id=lambda epub_id, doc_type=None: SimpleNamespace(filename=filename)
+    )
 
 
 class ThreadRecorder:
@@ -97,7 +101,7 @@ class ThreadRecorder:
 async def test_analyze_page_offloads_resolve_and_pdf_parse():
     recorder = ThreadRecorder()
 
-    def get_by_id(pdf_id):
+    def get_by_id(pdf_id, doc_type=None):
         recorder.record("resolve")
         return SimpleNamespace(filename="book.pdf")
 
@@ -107,7 +111,7 @@ async def test_analyze_page_offloads_resolve_and_pdf_parse():
 
     result = await ai.analyze_page(
         ai.AnalyzePageRequest(pdf_id=1, page_num=2),
-        pdf_documents_service=SimpleNamespace(get_by_id=get_by_id),
+        documents_repository=SimpleNamespace(get_by_id=get_by_id),
         pdf_service=SimpleNamespace(extract_page_text=extract_page_text),
         ollama_service=SimpleNamespace(analyze_page=AsyncMock(return_value="analysis")),
     )
@@ -132,7 +136,7 @@ async def test_analyze_epub_section_offloads_epub_parse():
 
     result = await ai.analyze_epub_section(
         ai.AnalyzeEpubSectionRequest(epub_id=1, nav_id="ch1"),
-        epub_documents_service=_fake_epub_documents(),
+        documents_repository=_fake_epub_documents(),
         epub_service=SimpleNamespace(get_epub_book=get_epub_book),
         epub_chat_context_service=SimpleNamespace(get_chat_context=get_chat_context),
         ollama_service=SimpleNamespace(
@@ -162,7 +166,7 @@ async def test_chat_with_ai_offloads_pdf_parse():
 
     response = await ai.chat_with_ai(
         ai.ChatRequest(message="hi", pdf_id=1, page_num=2),
-        pdf_documents_service=_fake_pdf_documents(),
+        documents_repository=_fake_pdf_documents(),
         pdf_service=SimpleNamespace(extract_page_text=extract_page_text),
         ollama_service=SimpleNamespace(),  # stream generator never consumed
         request_tracking_service=tracking,
@@ -194,7 +198,7 @@ async def test_chat_with_ai_epub_offloads_epub_parse():
 
     response = await ai.chat_with_ai_epub(
         ai.EpubChatRequest(message="hi", epub_id=1, nav_id="ch1"),
-        epub_documents_service=_fake_epub_documents(),
+        documents_repository=_fake_epub_documents(),
         epub_service=SimpleNamespace(get_epub_book=get_epub_book),
         epub_chat_context_service=SimpleNamespace(get_chat_context=get_chat_context),
         ollama_service=SimpleNamespace(),

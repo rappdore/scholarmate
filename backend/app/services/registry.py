@@ -27,13 +27,12 @@ from dataclasses import dataclass
 from app.settings import Settings, get_settings
 
 from .database_service import DatabaseService
+from .documents_repository import DocumentsRepository
 from .dual_chat_service import DualChatService
 from .epub.epub_chat_context_service import EPUBChatContextService
-from .epub_documents_service import EPUBDocumentsService
 from .epub_service import EPUBService
 from .llm_config_service import LLMConfigService
 from .ollama_service import OllamaService
-from .pdf_documents_service import PDFDocumentsService
 from .pdf_service import PDFService
 from .request_tracking_service import RequestTrackingService
 from .tts_service import TTSService
@@ -45,8 +44,7 @@ logger = logging.getLogger(__name__)
 class ServiceRegistry:
     settings: Settings
     db_service: DatabaseService
-    pdf_documents_service: PDFDocumentsService
-    epub_documents_service: EPUBDocumentsService
+    documents_repository: DocumentsRepository
     pdf_service: PDFService
     epub_service: EPUBService
     epub_chat_context_service: EPUBChatContextService
@@ -80,8 +78,7 @@ def build_registry(settings: Settings) -> ServiceRegistry:
     return ServiceRegistry(
         settings=settings,
         db_service=DatabaseService(settings.db_path),
-        pdf_documents_service=PDFDocumentsService(settings.db_path),
-        epub_documents_service=EPUBDocumentsService(settings.db_path),
+        documents_repository=DocumentsRepository(settings.db_path),
         pdf_service=pdf_service,
         epub_service=epub_service,
         epub_chat_context_service=EPUBChatContextService(
@@ -125,12 +122,8 @@ def get_db_service() -> DatabaseService:
     return get_registry().db_service
 
 
-def get_pdf_documents_service() -> PDFDocumentsService:
-    return get_registry().pdf_documents_service
-
-
-def get_epub_documents_service() -> EPUBDocumentsService:
-    return get_registry().epub_documents_service
+def get_documents_repository() -> DocumentsRepository:
+    return get_registry().documents_repository
 
 
 def get_pdf_service() -> PDFService:

@@ -4,9 +4,10 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
+from app.models.documents import PdfDocumentUpsert
 from app.models.pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
 
-from .pdf_documents_service import PDFDocumentsService
+from .documents_repository import DocumentsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ class PDFCache:
         self.thumbnails_dir = thumbnails_dir
         self.pdf_service = pdf_service
 
-        # Phase 1a: Database service for persistence
-        self._db_service = PDFDocumentsService(db_path)
+        # Database backing via the unified documents registry
+        self._db_service = DocumentsRepository(db_path)
 
         # Cache storage: dict[filename, PDFBasicMetadata | PDFExtendedMetadata]
         # Starts with PDFBasicMetadata, upgraded to PDFExtendedMetadata on get_pdf_info()
@@ -104,16 +105,18 @@ class PDFCache:
 
                         # Update database with new thumbnail path
                         try:
-                            self._db_service.create_or_update(
-                                filename=filename,
-                                num_pages=db_record.num_pages,
-                                title=db_record.title,
-                                author=db_record.author,
-                                file_size=db_record.file_size,
-                                file_path=db_record.file_path,
-                                thumbnail_path=thumbnail_path_str,
-                                created_date=db_record.created_date,
-                                modified_date=db_record.modified_date,
+                            self._db_service.upsert(
+                                PdfDocumentUpsert(
+                                    filename=filename,
+                                    num_pages=db_record.num_pages or 0,
+                                    title=db_record.title,
+                                    author=db_record.author,
+                                    file_size=db_record.file_size,
+                                    file_path=db_record.file_path,
+                                    thumbnail_path=thumbnail_path_str,
+                                    created_date=db_record.created_date,
+                                    modified_date=db_record.modified_date,
+                                )
                             )
                         except Exception as db_error:
                             logger.warning(
@@ -130,7 +133,7 @@ class PDFCache:
                     type="pdf",
                     title=db_record.title or file_path.stem,
                     author=db_record.author or "Unknown",
-                    num_pages=db_record.num_pages,
+                    num_pages=db_record.num_pages or 0,
                     file_size=db_record.file_size or 0,
                     modified_date=db_record.modified_date or "",
                     created_date=db_record.created_date or "",
@@ -187,16 +190,18 @@ class PDFCache:
 
                     # Persist to database
                     try:
-                        self._db_service.create_or_update(
-                            filename=file_path.name,
-                            title=pdf_info.title,
-                            author=pdf_info.author,
-                            num_pages=num_pages,
-                            file_size=stat.st_size,
-                            file_path=str(file_path),
-                            thumbnail_path=thumbnail_path_str,
-                            created_date=pdf_info.created_date,
-                            modified_date=pdf_info.modified_date,
+                        self._db_service.upsert(
+                            PdfDocumentUpsert(
+                                filename=file_path.name,
+                                title=pdf_info.title,
+                                author=pdf_info.author,
+                                num_pages=num_pages,
+                                file_size=stat.st_size,
+                                file_path=str(file_path),
+                                thumbnail_path=thumbnail_path_str,
+                                created_date=pdf_info.created_date,
+                                modified_date=pdf_info.modified_date,
+                            )
                         )
                     except Exception as db_error:
                         logger.error(
@@ -307,21 +312,23 @@ class PDFCache:
 
                 logger.debug(f"Extended metadata cached for: {filename}")
 
-                # Phase 1a: Persist extended metadata to database
+                # Persist extended metadata to database
                 try:
-                    self._db_service.create_or_update(
-                        filename=filename,
-                        num_pages=extended_info.num_pages,
-                        title=extended_info.title,
-                        author=extended_info.author,
-                        subject=extended_info.subject,
-                        creator=extended_info.creator,
-                        producer=extended_info.producer,
-                        file_size=extended_info.file_size,
-                        file_path=str(file_path),
-                        thumbnail_path=extended_info.thumbnail_path,
-                        created_date=extended_info.created_date,
-                        modified_date=extended_info.modified_date,
+                    self._db_service.upsert(
+                        PdfDocumentUpsert(
+                            filename=filename,
+                            num_pages=extended_info.num_pages,
+                            title=extended_info.title,
+                            author=extended_info.author,
+                            subject=extended_info.subject,
+                            creator=extended_info.creator,
+                            producer=extended_info.producer,
+                            file_size=extended_info.file_size,
+                            file_path=str(file_path),
+                            thumbnail_path=extended_info.thumbnail_path,
+                            created_date=extended_info.created_date,
+                            modified_date=extended_info.modified_date,
+                        )
                     )
                 except Exception as db_error:
                     logger.error(

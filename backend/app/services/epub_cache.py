@@ -7,9 +7,10 @@ from typing import Any
 import ebooklib
 from ebooklib import epub
 
+from app.models.documents import EpubDocumentUpsert
 from app.models.epub_metadata import EPUBBasicMetadata, EPUBExtendedMetadata
 
-from .epub_documents_service import EPUBDocumentsService
+from .documents_repository import DocumentsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,8 @@ class EPUBCache:
         self.thumbnails_dir = thumbnails_dir
         self.epub_service = epub_service
 
-        # Database service for persistence
-        self._db_service = EPUBDocumentsService(db_path)
+        # Database backing via the unified documents registry
+        self._db_service = DocumentsRepository(db_path)
 
         # Cache storage: dict[filename, EPUBBasicMetadata | EPUBExtendedMetadata]
         self._cache: dict[str, EPUBBasicMetadata | EPUBExtendedMetadata] = {}
@@ -127,7 +128,7 @@ class EPUBCache:
                 logger.debug(f"Loading from database: {filename}")
 
                 # Get thumbnail path from database (column may exist with NULL)
-                thumbnail_path_str = db_record.get("thumbnail_path") or ""
+                thumbnail_path_str = db_record.thumbnail_path or ""
 
                 # Only generate thumbnail if DB has no path or file doesn't exist
                 if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
@@ -139,28 +140,30 @@ class EPUBCache:
                         try:
                             # Parse existing metadata_json if present
                             metadata = None
-                            if db_record.get("metadata_json"):
+                            if db_record.metadata_json:
                                 try:
-                                    metadata = json.loads(db_record["metadata_json"])
+                                    metadata = json.loads(db_record.metadata_json)
                                 except json.JSONDecodeError:
                                     logger.warning(
                                         f"Failed to parse metadata_json for {filename}"
                                     )
 
-                            self._db_service.create_or_update(
-                                filename=filename,
-                                chapters=db_record.get("chapters", 0),
-                                title=db_record.get("title"),
-                                author=db_record.get("author"),
-                                subject=db_record.get("subject"),
-                                publisher=db_record.get("publisher"),
-                                language=db_record.get("language"),
-                                file_size=db_record.get("file_size"),
-                                file_path=db_record.get("file_path"),
-                                thumbnail_path=thumbnail_path_str,
-                                created_date=db_record.get("created_date"),
-                                modified_date=db_record.get("modified_date"),
-                                metadata=metadata,
+                            self._db_service.upsert(
+                                EpubDocumentUpsert(
+                                    filename=filename,
+                                    chapters=db_record.chapters or 0,
+                                    title=db_record.title,
+                                    author=db_record.author,
+                                    subject=db_record.subject,
+                                    publisher=db_record.publisher,
+                                    language=db_record.language,
+                                    file_size=db_record.file_size,
+                                    file_path=db_record.file_path,
+                                    thumbnail_path=thumbnail_path_str,
+                                    created_date=db_record.created_date,
+                                    modified_date=db_record.modified_date,
+                                    metadata=metadata,
+                                )
                             )
                         except Exception as db_error:
                             logger.warning(
@@ -172,18 +175,16 @@ class EPUBCache:
                         )
                         thumbnail_path_str = ""
 
-                # NOTE: the DB row always contains these keys, possibly with
-                # NULL values, so `dict.get(key, default)` never applies the
-                # default. Use `or` so NULLs fall back too (matches pdf_cache).
+                # NULL columns fall back via `or` (matches pdf_cache).
                 epub_info = EPUBBasicMetadata(
                     filename=filename,
                     type="epub",
-                    title=db_record.get("title") or file_path.stem,
-                    author=db_record.get("author") or "Unknown",
-                    chapters=db_record.get("chapters") or 0,
-                    file_size=db_record.get("file_size") or 0,
-                    modified_date=db_record.get("modified_date") or "",
-                    created_date=db_record.get("created_date") or "",
+                    title=db_record.title or file_path.stem,
+                    author=db_record.author or "Unknown",
+                    chapters=db_record.chapters or 0,
+                    file_size=db_record.file_size or 0,
+                    modified_date=db_record.modified_date or "",
+                    created_date=db_record.created_date or "",
                     thumbnail_path=thumbnail_path_str,
                     error=None,
                 )
@@ -253,20 +254,22 @@ class EPUBCache:
 
                     # Persist to database
                     try:
-                        self._db_service.create_or_update(
-                            filename=file_path.name,
-                            title=epub_info.title,
-                            author=epub_info.author,
-                            subject=epub_info.subject,
-                            publisher=epub_info.publisher,
-                            language=epub_info.language,
-                            chapters=chapter_count,
-                            file_size=stat.st_size,
-                            file_path=str(file_path),
-                            thumbnail_path=thumbnail_path_str,
-                            created_date=epub_info.created_date,
-                            modified_date=epub_info.modified_date,
-                            metadata=epub_info.model_dump(),
+                        self._db_service.upsert(
+                            EpubDocumentUpsert(
+                                filename=file_path.name,
+                                title=epub_info.title,
+                                author=epub_info.author,
+                                subject=epub_info.subject,
+                                publisher=epub_info.publisher,
+                                language=epub_info.language,
+                                chapters=chapter_count,
+                                file_size=stat.st_size,
+                                file_path=str(file_path),
+                                thumbnail_path=thumbnail_path_str,
+                                created_date=epub_info.created_date,
+                                modified_date=epub_info.modified_date,
+                                metadata=epub_info.model_dump(),
+                            )
                         )
                     except Exception as db_error:
                         logger.warning(
@@ -372,20 +375,22 @@ class EPUBCache:
 
             # Persist extended metadata to database
             try:
-                self._db_service.create_or_update(
-                    filename=filename,
-                    chapters=extended_info.chapters,
-                    title=extended_info.title,
-                    author=extended_info.author,
-                    subject=extended_info.subject,
-                    publisher=extended_info.publisher,
-                    language=extended_info.language,
-                    file_size=extended_info.file_size,
-                    file_path=str(file_path),
-                    thumbnail_path=extended_info.thumbnail_path,
-                    created_date=extended_info.created_date,
-                    modified_date=extended_info.modified_date,
-                    metadata=extended_info.model_dump(),
+                self._db_service.upsert(
+                    EpubDocumentUpsert(
+                        filename=filename,
+                        chapters=extended_info.chapters,
+                        title=extended_info.title,
+                        author=extended_info.author,
+                        subject=extended_info.subject,
+                        publisher=extended_info.publisher,
+                        language=extended_info.language,
+                        file_size=extended_info.file_size,
+                        file_path=str(file_path),
+                        thumbnail_path=extended_info.thumbnail_path,
+                        created_date=extended_info.created_date,
+                        modified_date=extended_info.modified_date,
+                        metadata=extended_info.model_dump(),
+                    )
                 )
             except Exception as db_error:
                 logger.warning(

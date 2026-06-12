@@ -9,7 +9,7 @@ Tests cover:
 - Thumbnail path management
 - Cache refresh functionality
 - Error handling and resilience
-- Integration with EPUBDocumentsService
+- Integration with DocumentsRepository
 """
 
 import sqlite3
@@ -19,8 +19,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from app.models.documents import EpubDocumentUpsert
+from app.services.documents_repository import DocumentsRepository
 from app.services.epub_cache import EPUBCache
-from app.services.epub_documents_service import EPUBDocumentsService
 
 
 @pytest.fixture
@@ -90,7 +91,7 @@ class TestCacheInitialization:
     """Test cache initialization with database backing"""
 
     def test_init_creates_db_service(self, temp_dirs, temp_db, mock_epub_service):
-        """Test that cache initializes EPUBDocumentsService"""
+        """Test that cache initializes the DocumentsRepository backing"""
         with patch("app.services.epub_cache.epub.read_epub"):
             cache = EPUBCache(
                 epub_dir=temp_dirs["epub_dir"],
@@ -100,7 +101,7 @@ class TestCacheInitialization:
             )
 
         assert cache._db_service is not None
-        assert isinstance(cache._db_service, EPUBDocumentsService)
+        assert isinstance(cache._db_service, DocumentsRepository)
         assert cache._db_service.db_path == temp_db
 
     def test_init_with_empty_directory(self, temp_dirs, temp_db, mock_epub_service):
@@ -180,7 +181,7 @@ class TestBuildCache:
         # Verify database was updated
         doc = cache._db_service.get_by_filename("book.epub")
         assert doc is not None
-        assert doc["filename"] == "book.epub"
+        assert doc.filename == "book.epub"
 
     def test_build_cache_handles_corrupted_epub(
         self, temp_dirs, temp_db, mock_epub_service
@@ -263,8 +264,8 @@ class TestDatabasePersistence:
         # Check database directly
         doc = cache._db_service.get_by_filename("persist_test.epub")
         assert doc is not None
-        assert doc["filename"] == "persist_test.epub"
-        assert doc["chapters"] >= 0
+        assert doc.filename == "persist_test.epub"
+        assert doc.chapters >= 0
 
     def test_cache_handles_db_write_failure(
         self, temp_dirs, temp_db, mock_epub_service, mock_epub_book
@@ -280,8 +281,8 @@ class TestDatabasePersistence:
             "app.services.epub_cache.epub.read_epub", return_value=mock_epub_book
         ):
             with patch.object(
-                EPUBDocumentsService,
-                "create_or_update",
+                DocumentsRepository,
+                "upsert",
                 side_effect=Exception("DB Error"),
             ):
                 # Should not raise exception
@@ -370,8 +371,8 @@ class TestExtendedMetadataLoading:
         # Check database for extended metadata
         doc = cache._db_service.get_by_filename("extended_persist.epub")
         # Extended fields should be present (may be None or empty, but key exists)
-        assert "subject" in doc or doc.get("subject") is not None
-        assert "publisher" in doc or doc.get("publisher") is not None
+        assert doc.subject == "Science Fiction"
+        assert doc.publisher == "Publisher XYZ"
 
     def test_extended_metadata_handles_errors(
         self, temp_dirs, temp_db, mock_epub_service, mock_epub_book
@@ -646,9 +647,11 @@ class TestNullDatabaseFields:
         thumb.write_bytes(b"png")
 
         # Pre-seed a registry row where nullable columns are NULL
-        docs = EPUBDocumentsService(temp_db)
-        docs.create_or_update(
-            filename="untitled.epub", chapters=4, thumbnail_path=str(thumb)
+        docs = DocumentsRepository(temp_db)
+        docs.upsert(
+            EpubDocumentUpsert(
+                filename="untitled.epub", chapters=4, thumbnail_path=str(thumb)
+            )
         )
 
         # Cache build must not raise even though title/author/etc are NULL
