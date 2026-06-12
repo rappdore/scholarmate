@@ -3,7 +3,6 @@ import Library from './pages/Library';
 import Reader from './pages/Reader';
 import Statistics from './pages/Statistics';
 import EpubStatistics from './pages/EpubStatistics';
-import GraphPage from './pages/GraphPage';
 import Header from './components/Header';
 
 function App() {
@@ -21,7 +20,6 @@ function App() {
             path="/statistics/epub/:documentId"
             element={<EpubStatistics />}
           />
-          <Route path="/graph/:bookId" element={<GraphPage />} />
         </Routes>
       </div>
     </div>

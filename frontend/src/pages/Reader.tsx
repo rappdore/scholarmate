@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PDFViewer from '../components/PDFViewer';
 import EPUBViewer from '../components/EPUBViewer';
@@ -12,7 +12,6 @@ import type {
   EPUBDocumentInfo,
 } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
-import type { Concept } from '../types/knowledge';
 
 interface DocumentInfo {
   id: number;
@@ -207,23 +206,6 @@ export default function Reader() {
     setTargetHighlight(highlight);
   };
 
-  // Handle navigation to concept source location
-  const handleConceptNavigate = useCallback(
-    (concept: Concept) => {
-      if (!documentInfo) return;
-
-      if (documentInfo.type === 'epub' && concept.nav_id) {
-        // For EPUB: navigate to the section containing the concept
-        // The EPUBViewer should handle navigation when currentNavId changes
-        setCurrentNavId(concept.nav_id);
-      } else if (documentInfo.type === 'pdf' && concept.page_num) {
-        // For PDF: jump to the page
-        setCurrentPage(concept.page_num);
-      }
-    },
-    [documentInfo]
-  );
-
   // Loading state
   if (loading) {
     return (
@@ -314,7 +296,6 @@ export default function Reader() {
             currentChapterTitle={currentChapterTitle}
             onPageJump={handlePageChange}
             onEPUBHighlightSelect={handleEPUBHighlightSelect}
-            onConceptNavigate={handleConceptNavigate}
           />
         }
       />

@@ -4,10 +4,8 @@ import ChatInterface from './ChatInterface';
 import DualChatInterface from './DualChatInterface';
 import NotesPanel from './NotesPanel';
 import HighlightsPanel from './HighlightsPanel';
-import ConceptsPanel from './ConceptsPanel';
 import type { DocumentType } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
-import type { Concept } from '../types/knowledge';
 
 interface TabbedRightPanelProps {
   pdfId?: number;
@@ -21,16 +19,9 @@ interface TabbedRightPanelProps {
   currentChapterTitle?: string; // For EPUB chapter display
   onPageJump?: (pageNumber: number) => void;
   onEPUBHighlightSelect?: (highlight: EPUBHighlight) => void;
-  onConceptNavigate?: (concept: Concept) => void; // For concept source navigation
 }
 
-type TabType =
-  | 'ai'
-  | 'chat'
-  | 'dual-chat'
-  | 'notes'
-  | 'highlights'
-  | 'concepts';
+type TabType = 'ai' | 'chat' | 'dual-chat' | 'notes' | 'highlights';
 
 export default function TabbedRightPanel({
   pdfId,
@@ -44,7 +35,6 @@ export default function TabbedRightPanel({
   currentChapterTitle,
   onPageJump,
   onEPUBHighlightSelect,
-  onConceptNavigate,
 }: TabbedRightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai');
 
@@ -57,7 +47,6 @@ export default function TabbedRightPanel({
       : []),
     { id: 'notes' as TabType, label: 'Notes', icon: '📝' },
     { id: 'highlights' as TabType, label: 'Highlights', icon: '🖍️' },
-    { id: 'concepts' as TabType, label: 'Concepts', icon: '💡' },
   ];
 
   return (
@@ -141,18 +130,6 @@ export default function TabbedRightPanel({
             currentPage={currentPage}
             onPageJump={onPageJump}
             onEPUBHighlightSelect={onEPUBHighlightSelect}
-          />
-        </div>
-        <div className={`h-full ${activeTab === 'concepts' ? '' : 'hidden'}`}>
-          <ConceptsPanel
-            pdfId={pdfId}
-            epubId={epubId}
-            filename={filename}
-            documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
-            currentPage={currentPage}
-            currentNavId={currentNavId}
-            currentChapterTitle={currentChapterTitle}
-            onNavigateToSource={onConceptNavigate}
           />
         </div>
       </div>
