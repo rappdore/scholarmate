@@ -138,9 +138,9 @@ export default function PDFViewer({
     getHighlightsForPage,
   } = useHighlightsContext();
 
-  // Set current PDF ID when it changes
+  // Set current PDF ID when it changes (?? not ||: 0 is a valid id)
   useEffect(() => {
-    setCurrentPdfId(pdfId || null);
+    setCurrentPdfId(pdfId ?? null);
   }, [pdfId, setCurrentPdfId]);
 
   // Save zoom level to localStorage whenever it changes

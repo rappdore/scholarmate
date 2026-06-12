@@ -60,10 +60,10 @@ export default function HighlightsPanel({
     setCurrentEpubId,
   } = useEPUBHighlightsContext();
 
-  // Set current PDF ID when it changes (for PDFs)
+  // Set current PDF ID when it changes (for PDFs; ?? not ||: 0 is a valid id)
   useEffect(() => {
     if (documentType === 'pdf') {
-      setCurrentPdfId(pdfId || null);
+      setCurrentPdfId(pdfId ?? null);
     }
   }, [documentType, pdfId, setCurrentPdfId]);
 
