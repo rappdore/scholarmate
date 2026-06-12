@@ -23,8 +23,7 @@ class HighlightCoordinates(BaseModel):
 
 
 class HighlightRequest(BaseModel):
-    pdf_id: Optional[int] = None  # NEW: ID-based reference
-    pdf_filename: Optional[str] = None  # Legacy: filename-based reference
+    pdf_id: int
     page_number: int
     selected_text: str
     start_offset: int
@@ -66,18 +65,10 @@ async def create_highlight(highlight_data: HighlightRequest):
         HTTPException: If highlight creation fails
     """
     try:
-        # Resolve filename from pdf_id if provided, otherwise use pdf_filename
-        if highlight_data.pdf_id is not None:
-            pdf_doc = pdf_documents_service.get_by_id(highlight_data.pdf_id)
-            if not pdf_doc:
-                raise HTTPException(status_code=404, detail="PDF not found")
-            pdf_filename = pdf_doc.filename
-        elif highlight_data.pdf_filename is not None:
-            pdf_filename = highlight_data.pdf_filename
-        else:
-            raise HTTPException(
-                status_code=400, detail="Either pdf_id or pdf_filename must be provided"
-            )
+        pdf_doc = pdf_documents_service.get_by_id(highlight_data.pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+        pdf_filename = pdf_doc.filename
 
         # Convert Pydantic models to dictionaries for database storage
         coordinates_dicts = [coord.model_dump() for coord in highlight_data.coordinates]
@@ -169,55 +160,6 @@ async def get_highlights_for_page_by_id(pdf_id: int, page_number: int):
         return [HighlightResponse(**highlight) for highlight in highlights]
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving page highlights: {str(e)}"
-        )
-
-
-# ========================================
-# FILENAME-BASED ENDPOINTS (Legacy)
-# ========================================
-
-
-@router.get("/{pdf_filename}", response_model=List[HighlightResponse])
-async def get_highlights_for_pdf(pdf_filename: str, page_number: Optional[int] = None):
-    """
-    Get all highlights for a PDF document, optionally filtered by page number.
-
-    Args:
-        pdf_filename: Name of the PDF file
-        page_number: Optional page number to filter highlights
-
-    Returns:
-        List[HighlightResponse]: List of highlights for the PDF
-    """
-    try:
-        highlights = db_service.get_highlights_for_pdf(pdf_filename, page_number)
-        return [HighlightResponse(**highlight) for highlight in highlights]
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving highlights: {str(e)}"
-        )
-
-
-@router.get(
-    "/{pdf_filename}/page/{page_number}", response_model=List[HighlightResponse]
-)
-async def get_highlights_for_page(pdf_filename: str, page_number: int):
-    """
-    Get all highlights for a specific page of a PDF document.
-
-    Args:
-        pdf_filename: Name of the PDF file
-        page_number: Page number to get highlights for
-
-    Returns:
-        List[HighlightResponse]: List of highlights for the specific page
-    """
-    try:
-        highlights = db_service.get_highlights_for_pdf(pdf_filename, page_number)
-        return [HighlightResponse(**highlight) for highlight in highlights]
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error retrieving page highlights: {str(e)}"

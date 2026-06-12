@@ -62,15 +62,6 @@ async def get_chapter_highlights(epub_id: int, chapter_id: str) -> list[EPUBHigh
     return db_service.get_epub_chapter_highlights(epub_id, chapter_id)
 
 
-@router.get("/id/{highlight_id}", response_model=EPUBHighlight)
-async def get_epub_highlight_by_id(highlight_id: int) -> EPUBHighlight:
-    """Retrieve a specific highlight by its ID."""
-    highlight = db_service.get_epub_highlight_by_id(highlight_id)
-    if not highlight:
-        raise HTTPException(status_code=404, detail="Highlight not found")
-    return highlight
-
-
 @router.delete("/{highlight_id}")
 async def delete_epub_highlight(highlight_id: int) -> dict[str, str]:
     """Delete a highlight by ID."""

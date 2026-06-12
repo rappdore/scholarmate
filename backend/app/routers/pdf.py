@@ -390,19 +390,28 @@ async def list_pdfs(
         raise HTTPException(status_code=500, detail=f"Error listing PDFs: {str(e)}")
 
 
-@router.get("/{filename}/file")
-async def get_pdf_file(filename: str):
+@router.get("/{pdf_id:int}/file")
+async def get_pdf_file(pdf_id: int):
     """
-    Serve the actual PDF file for viewing
+    Serve the actual PDF file for viewing.
+
+    ID-based so the filename used for file access always comes from the
+    documents registry, never from request input.
     """
     try:
-        file_path = pdf_service.get_pdf_path(filename)
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="PDF file not found")
+        pdf_doc = pdf_documents_service.get_by_id(pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+
+        file_path = pdf_service.get_pdf_path(pdf_doc.filename)
 
         return FileResponse(
-            path=str(file_path), media_type="application/pdf", filename=filename
+            path=str(file_path),
+            media_type="application/pdf",
+            filename=pdf_doc.filename,
         )
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="PDF not found")
     except Exception as e:

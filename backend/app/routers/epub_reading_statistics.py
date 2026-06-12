@@ -23,7 +23,7 @@ class EPUBSessionUpdateRequest(BaseModel):
     time_spent_seconds: float
 
 
-@router.api_route("/session/update", methods=["PUT", "POST"])
+@router.put("/session/update")
 async def update_session(request: EPUBSessionUpdateRequest):
     """
     Update or create an EPUB reading session.

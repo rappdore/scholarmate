@@ -761,16 +761,7 @@ export default function PDFViewer({
         ) : (
           <div className="flex justify-center p-4 relative">
             <Document
-              file={(() => {
-                const pdfUrl = `/api/pdf/${filename}/file`;
-                console.log('📄 [PDF DOCUMENT LOADING]', {
-                  filename,
-                  pdfUrl,
-                  fullUrl: `${window.location.origin}${pdfUrl}`,
-                  timestamp: new Date().toISOString(),
-                });
-                return pdfUrl;
-              })()}
+              file={`/api/pdf/${pdfId}/file`}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={

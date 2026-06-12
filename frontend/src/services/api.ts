@@ -445,17 +445,6 @@ export const aiService = {
       );
     }
   },
-
-  getPageContext: async (
-    pdfId: number,
-    pageNum: number,
-    contextPages: number = 1
-  ) => {
-    const response = await api.get(
-      `/ai/pdf/${pdfId}/context/${pageNum}?context_pages=${contextPages}`
-    );
-    return response.data;
-  },
 };
 
 export const chatService = {

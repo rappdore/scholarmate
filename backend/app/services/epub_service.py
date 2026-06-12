@@ -61,13 +61,20 @@ class EPUBService:
 
     def get_epub_path(self, filename: str) -> Path:
         """
-        Get the full path to an EPUB file
-        Handles URL decoding for filenames with special characters
+        Get the full path to an EPUB file.
+        Handles URL decoding for filenames with special characters.
+
+        The resolved path must stay inside the epubs directory; a filename
+        containing path traversal (e.g. "../...", including encoded forms
+        that survive URL decoding) is rejected as not found.
         """
         # Decode the filename in case it's URL-encoded
         decoded_filename = EPUBURLHelper.decode_filename_from_url(filename)
 
-        file_path = self.epub_dir / decoded_filename
+        file_path = (self.epub_dir / decoded_filename).resolve()
+
+        if not file_path.is_relative_to(self.epub_dir.resolve()):
+            raise FileNotFoundError(f"EPUB {decoded_filename} not found")
 
         if not file_path.exists():
             raise FileNotFoundError(f"EPUB {decoded_filename} not found")

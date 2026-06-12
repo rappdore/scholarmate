@@ -13,8 +13,7 @@ pdf_documents_service = PDFDocumentsService()
 
 
 class ChatNoteRequest(BaseModel):
-    pdf_id: Optional[int] = None  # NEW: ID-based reference
-    pdf_filename: Optional[str] = None  # Legacy: filename-based reference
+    pdf_id: int
     page_number: int
     title: str
     chat_content: str
@@ -34,21 +33,12 @@ class ChatNoteResponse(BaseModel):
 async def save_chat_note(note: ChatNoteRequest) -> Dict[str, Any]:
     """
     Save a chat conversation as a note.
-    Can use either pdf_id (preferred) or pdf_filename (legacy).
     """
     try:
-        # Resolve filename from pdf_id if provided, otherwise use pdf_filename
-        if note.pdf_id is not None:
-            pdf_doc = pdf_documents_service.get_by_id(note.pdf_id)
-            if not pdf_doc:
-                raise HTTPException(status_code=404, detail="PDF not found")
-            pdf_filename = pdf_doc.filename
-        elif note.pdf_filename is not None:
-            pdf_filename = note.pdf_filename
-        else:
-            raise HTTPException(
-                status_code=400, detail="Either pdf_id or pdf_filename must be provided"
-            )
+        pdf_doc = pdf_documents_service.get_by_id(note.pdf_id)
+        if not pdf_doc:
+            raise HTTPException(status_code=404, detail="PDF not found")
+        pdf_filename = pdf_doc.filename
 
         note_id = db_service.save_chat_note(
             pdf_filename=pdf_filename,
@@ -94,27 +84,6 @@ async def get_chat_notes_for_pdf_by_id(
         return [ChatNoteResponse(**note) for note in notes]
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error getting chat notes: {str(e)}"
-        )
-
-
-# ========================================
-# FILENAME-BASED ENDPOINTS (Legacy)
-# ========================================
-
-
-@router.get("/chat/{pdf_filename}", response_model=List[ChatNoteResponse])
-async def get_chat_notes_for_pdf(
-    pdf_filename: str, page_number: Optional[int] = None
-) -> List[ChatNoteResponse]:
-    """
-    Get chat notes for a PDF, optionally filtered by page
-    """
-    try:
-        notes = db_service.get_chat_notes_for_pdf(pdf_filename, page_number)
-        return [ChatNoteResponse(**note) for note in notes]
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error getting chat notes: {str(e)}"

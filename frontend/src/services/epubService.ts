@@ -72,12 +72,6 @@ export const epubService = {
     return response.data;
   },
 
-  getEPUBFile: async (epubId: number): Promise<any> => {
-    // This will return 404 for now as per the plan
-    const response = await api.get(`/epub/${epubId}/file`);
-    return response.data;
-  },
-
   getThumbnailUrl: (epubId: number): string => {
     return `${API_BASE_URL}/epub/${epubId}/thumbnail`;
   },
@@ -142,16 +136,6 @@ export const epubService = {
 
   deleteEPUBBook: async (epubId: number): Promise<any> => {
     const response = await api.delete(`/epub/${epubId}`);
-    return response.data;
-  },
-
-  getEPUBChapterProgress: async (
-    epubId: number,
-    chapterId: string
-  ): Promise<any> => {
-    const response = await api.get(
-      `/epub/${epubId}/chapter-progress/${chapterId}`
-    );
     return response.data;
   },
 

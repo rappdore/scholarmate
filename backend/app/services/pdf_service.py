@@ -39,9 +39,15 @@ class PDFService:
 
     def get_pdf_path(self, filename: str) -> Path:
         """
-        Get the full path to a PDF file
+        Get the full path to a PDF file.
+
+        The resolved path must stay inside the pdfs directory; a filename
+        containing path traversal (e.g. "../...") is rejected as not found.
         """
-        file_path = self.pdf_dir / filename
+        file_path = (self.pdf_dir / filename).resolve()
+
+        if not file_path.is_relative_to(self.pdf_dir.resolve()):
+            raise FileNotFoundError(f"PDF {filename} not found")
 
         if not file_path.exists():
             raise FileNotFoundError(f"PDF {filename} not found")
