@@ -6,6 +6,7 @@ from openai import AsyncOpenAI
 from app.models.llm_types import LLMConfiguration
 from app.models.stream_types import StreamChunk
 from app.services.epub.epub_chat_context_service import EPUBChatContext
+from app.services.request_tracking_service import RequestTrackingService
 from app.services.stream_parser import ThinkingStreamParser
 
 # Configure logger
@@ -24,8 +25,11 @@ MAX_REASONING_PER_FILE = 50
 
 
 class OllamaService:
-    def __init__(self, db_path: str = "data/reading_progress.db") -> None:
+    def __init__(self, db_path: str, request_tracking: RequestTrackingService) -> None:
         self.db_path = db_path
+        # Shared tracker injected by the registry so cancellation requests
+        # made through the routers are visible to in-flight streams here.
+        self._request_tracking = request_tracking
         self.client: AsyncOpenAI | None = None
         self.model: str | None = None
         self.base_url: str | None = None
@@ -350,10 +354,7 @@ Keep responses conversational but informative. When explaining a concept, emphas
             async for chunk in stream:
                 # Check for cancellation if request_id is provided
                 if request_id:
-                    # Lazy import to avoid circular imports
-                    from .request_tracking_service import request_tracking_service
-
-                    if request_tracking_service.is_cancelled(request_id):
+                    if self._request_tracking.is_cancelled(request_id):
                         logger.info(
                             f"[LLM] Request {request_id} cancelled, stopping stream"
                         )
@@ -485,10 +486,7 @@ Keep responses conversational but informative."""
             async for chunk in stream:
                 # Check for cancellation if request_id is provided
                 if request_id:
-                    # Lazy import to avoid circular imports
-                    from .request_tracking_service import request_tracking_service
-
-                    if request_tracking_service.is_cancelled(request_id):
+                    if self._request_tracking.is_cancelled(request_id):
                         logger.info(
                             f"[LLM] Request {request_id} cancelled, stopping EPUB stream"
                         )
@@ -717,10 +715,3 @@ Provide a helpful analysis that will aid in understanding this content."""
                 content=f"Error: {str(e)}",
                 metadata={"thinking_started": False, "thinking_complete": False},
             )
-
-
-# Global instance
-# This creates a singleton instance of the OllamaService that can be imported
-# and used throughout the application. This ensures all parts of the app use
-# the same LLM configuration.
-ollama_service = OllamaService()

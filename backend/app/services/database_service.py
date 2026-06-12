@@ -820,10 +820,3 @@ class DatabaseService:
     def delete_epub_highlights_for_epub(self, epub_id: int) -> bool:
         """Delete all highlights for an EPUB document."""
         return self.epub_highlights.delete_highlights_for_epub(epub_id)
-
-
-# Global instance
-# This creates a singleton instance of the DatabaseService that can be imported
-# and used throughout the application. This ensures all parts of the app use
-# the same database connection and configuration.
-db_service = DatabaseService()

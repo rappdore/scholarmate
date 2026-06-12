@@ -1,15 +1,13 @@
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
 from ..services.pdf_documents_service import PDFDocumentsService
+from ..services.registry import get_db_service, get_pdf_documents_service
 
 router = APIRouter(prefix="/notes", tags=["notes"])
-
-# Initialize services
-pdf_documents_service = PDFDocumentsService()
 
 
 class ChatNoteRequest(BaseModel):
@@ -30,7 +28,11 @@ class ChatNoteResponse(BaseModel):
 
 
 @router.post("/chat", response_model=Dict[str, Any])
-async def save_chat_note(note: ChatNoteRequest) -> Dict[str, Any]:
+async def save_chat_note(
+    note: ChatNoteRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+) -> Dict[str, Any]:
     """
     Save a chat conversation as a note.
     """
@@ -69,7 +71,10 @@ async def save_chat_note(note: ChatNoteRequest) -> Dict[str, Any]:
 
 @router.get("/chat/pdf/{pdf_id:int}", response_model=List[ChatNoteResponse])
 async def get_chat_notes_for_pdf_by_id(
-    pdf_id: int, page_number: Optional[int] = None
+    pdf_id: int,
+    page_number: Optional[int] = None,
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
 ) -> List[ChatNoteResponse]:
     """
     Get chat notes for a PDF by ID, optionally filtered by page
@@ -91,7 +96,9 @@ async def get_chat_notes_for_pdf_by_id(
 
 
 @router.get("/chat/id/{note_id}", response_model=ChatNoteResponse)
-async def get_chat_note_by_id(note_id: int) -> ChatNoteResponse:
+async def get_chat_note_by_id(
+    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+) -> ChatNoteResponse:
     """
     Get a specific chat note by ID
     """
@@ -110,7 +117,9 @@ async def get_chat_note_by_id(note_id: int) -> ChatNoteResponse:
 
 
 @router.delete("/chat/{note_id}")
-async def delete_chat_note(note_id: int) -> Dict[str, Any]:
+async def delete_chat_note(
+    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+) -> Dict[str, Any]:
     """
     Delete a chat note
     """

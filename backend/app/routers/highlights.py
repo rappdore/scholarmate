@@ -1,15 +1,13 @@
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
 from ..services.pdf_documents_service import PDFDocumentsService
+from ..services.registry import get_db_service, get_pdf_documents_service
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
-
-# Initialize services
-pdf_documents_service = PDFDocumentsService()
 
 
 class HighlightCoordinates(BaseModel):
@@ -50,7 +48,11 @@ class UpdateColorRequest(BaseModel):
 
 
 @router.post("/", response_model=HighlightResponse)
-async def create_highlight(highlight_data: HighlightRequest):
+async def create_highlight(
+    highlight_data: HighlightRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+):
     """
     Create a new highlight for a PDF document.
 
@@ -109,7 +111,12 @@ async def create_highlight(highlight_data: HighlightRequest):
 
 
 @router.get("/pdf/{pdf_id:int}", response_model=List[HighlightResponse])
-async def get_highlights_for_pdf_by_id(pdf_id: int, page_number: Optional[int] = None):
+async def get_highlights_for_pdf_by_id(
+    pdf_id: int,
+    page_number: Optional[int] = None,
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+):
     """
     Get all highlights for a PDF document by ID, optionally filtered by page number.
 
@@ -139,7 +146,12 @@ async def get_highlights_for_pdf_by_id(pdf_id: int, page_number: Optional[int] =
 @router.get(
     "/pdf/{pdf_id:int}/page/{page_number}", response_model=List[HighlightResponse]
 )
-async def get_highlights_for_page_by_id(pdf_id: int, page_number: int):
+async def get_highlights_for_page_by_id(
+    pdf_id: int,
+    page_number: int,
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+):
     """
     Get all highlights for a specific page of a PDF document by ID.
 
@@ -167,7 +179,9 @@ async def get_highlights_for_page_by_id(pdf_id: int, page_number: int):
 
 
 @router.get("/id/{highlight_id}", response_model=HighlightResponse)
-async def get_highlight_by_id(highlight_id: int):
+async def get_highlight_by_id(
+    highlight_id: int, db_service: DatabaseService = Depends(get_db_service)
+):
     """
     Get a specific highlight by its ID.
 
@@ -195,7 +209,9 @@ async def get_highlight_by_id(highlight_id: int):
 
 
 @router.delete("/{highlight_id}")
-async def delete_highlight(highlight_id: int):
+async def delete_highlight(
+    highlight_id: int, db_service: DatabaseService = Depends(get_db_service)
+):
     """
     Delete a specific highlight by its ID.
 
@@ -223,7 +239,11 @@ async def delete_highlight(highlight_id: int):
 
 
 @router.put("/{highlight_id}/color")
-async def update_highlight_color(highlight_id: int, color_data: UpdateColorRequest):
+async def update_highlight_color(
+    highlight_id: int,
+    color_data: UpdateColorRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
     Update the color of a specific highlight.
 
@@ -252,7 +272,9 @@ async def update_highlight_color(highlight_id: int, color_data: UpdateColorReque
 
 
 @router.get("/stats/count", response_model=Dict[str, Dict[str, Any]])
-async def get_highlights_count_by_pdf():
+async def get_highlights_count_by_pdf(
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
     Get summary statistics about highlights for all PDF documents.
 

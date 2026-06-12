@@ -18,10 +18,10 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16, all with regression tests; backend suite 155→270, frontend 20→48 (`2c17ca9`)
 - **C-5 + A-4** — single config module (`config.ts`: HTTP+WS base, `VITE_API_URL` override) + one shared axios client and one `streamSSE` helper (`http.ts`); HashRouter; dev proxy deleted; frontend suite 48→68
 - **C-6** — SettingsContext lazy hydration, regression tests
+- **A-3** — pydantic-settings `Settings` + lifespan-scoped `ServiceRegistry`; all 11 routers on `Depends`; zero import-time side effects; backend suite 270→281
 
-**⬜ Open — next up (audit sequencing steps 7-10):**
-- **A-3** — settings module + DI (instances.py singletons from B-3 are a stepping stone) ← **NEXT**
-- **C-4** — thread-offload parse/DB work in async endpoints
+**⬜ Open — next up (audit sequencing steps 8-10):**
+- **C-4** — thread-offload parse/DB work in async endpoints ← **NEXT**
 - **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder)
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
 - **Tooling:** eslint at 45 errors/27 warnings (gate after burn-down to zero); mypy not yet gated (tracked under A-2)
@@ -205,7 +205,7 @@ Sequencing within A-1: documents table (M) → notes (M) → progress/status (M)
 **A-2. Typed models instead of `dict[str, Any]`** *(M; largely subsumed by A-1)*
 134 occurrences in `backend/app/`; the EPUB side is systematically untyped end-to-end (`EPUBProgressService` — every method; `EPUBDocumentsService` returns raw dicts where its 91%-twin returns `PDFDocumentRecord`; chat-notes hand-built dicts; `epub.py` router has no `response_model` anywhere, with two hand-built progress dict shapes that can drift). mypy: **125 errors in 30 files** (hotspots: `ollama_service` 22, `epub_progress_service` 12, `routers/tts` 9). Start with `EPUBDocumentRecord` (template exists), then EPUB progress/notes models; add mypy to pre-commit once the count is near zero.
 
-**A-3. Lifespan-scoped dependency injection + a settings module** *(S/M)*
+**A-3. Lifespan-scoped dependency injection + a settings module** — ✅ DONE (2026-06-12): `app/settings.py` (pydantic-settings, `SCHOLARMATE_` env prefix + `.env`, defaults for db_path/pdf_dir/epub_dir/thumbnails_dir/base_url) and `app/services/registry.py` (a `ServiceRegistry` dataclass built once in `main.py`'s FastAPI lifespan; `get_*` accessors for `Depends`; `init_services`/`reset_services` for tests). All module-level singletons deleted (`db_service`, `ollama_service`, `dual_chat_service`, `tts_service`, `request_tracking_service`, `instances.py`); all 11 routers converted to `Depends` with parameter names matching the old globals (bodies unchanged); router helpers (`get_epub_doc_or_404`, `_resolve_*_filename`) take the service explicitly. Circular-import workarounds replaced by constructor injection: `DualChatService(db_path, pdf_service)`, `OllamaService(db_path, request_tracking)`. Verified: importing `main` creates no files and runs no DDL; everything constructs in `init_services()`. Tests: `test_settings.py`, `test_registry.py` (+11; suite 281). Original finding:
 Module-level singletons constructed at import time (DDL + backfills on import); 3 `PDFService` / 2 `EPUBService` independent instances (B-3); `EPUBDocumentsService` constructed in 5 routers; circular-import workarounds in the facade. No settings module: `"data/reading_progress.db"` hardcoded as default **23 times**; `pdfs`/`epubs`/`thumbnails`/`base_url` hardcoded; only env read in the backend is a PyTorch flag. One `pydantic-settings` `Settings` + FastAPI `Depends`/lifespan singletons fixes B-3 structurally.
 
 **A-4. Frontend API client consolidation** — ✅ DONE with C-5 (2026-06-12): `services/http.ts` owns the one axios instance (dev-gated logging interceptors), `parseSSELine`, and a single `streamSSE` generator that replaced all five copy-pasted reader loops (analyze ×2, chat ×2, dual-chat); `highlightService` and `llmConfig.ts` converted from raw fetch to the shared client (404 semantics preserved); `epubService.ts`'s second axios instance deleted; `api.ts` 1,044→581 lines. Tests: `tests/services/http.test.ts` (streamSSE), `tests/services/config.test.ts`. Original finding:
@@ -238,8 +238,8 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 4. ✅ **C-2 + B-14** — path containment + legacy filename routes/fields deleted (`b007792`).
 5. ✅ **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16 with ~155 new regression tests (`2c17ca9`).
 6. ✅ **C-5 + A-4 + C-6** — unified frontend config/client (`config.ts` + `http.ts`), HashRouter, dev proxy removed, SettingsContext hydration fixed; +20 frontend tests (suite 68).
-7. ⬜ **A-3** — settings + DI (services/instances.py from the burn-down is the stepping stone). ← **NEXT**
-8. ⬜ **C-4** — thread-offload parse/DB work.
+7. ✅ **A-3** — pydantic-settings + lifespan service registry; routers on `Depends`; import-time side effects eliminated; +11 backend tests (suite 281).
+8. ⬜ **C-4** — thread-offload parse/DB work. ← **NEXT**
 9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder).
 10. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.
 

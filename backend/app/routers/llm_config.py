@@ -14,21 +14,20 @@ Provides API endpoints for managing LLM configurations:
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from app.models.llm_types import LLMConfiguration, LLMConfigurationMasked
 from app.services.llm_config_service import LLMConfigService
+from app.services.ollama_service import OllamaService
+from app.services.registry import get_llm_config_service, get_ollama_service
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 # Initialize router
 router = APIRouter(prefix="/llm-config", tags=["LLM Configuration"])
-
-# Initialize service
-llm_config_service = LLMConfigService()
 
 
 # Pydantic models for request/response validation
@@ -76,7 +75,9 @@ class LLMConfigUpdate(BaseModel):
 
 
 @router.get("/list")
-async def list_configurations():
+async def list_configurations(
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     List all LLM configurations with masked API keys.
 
@@ -94,7 +95,9 @@ async def list_configurations():
 
 
 @router.get("/active")
-async def get_active_configuration():
+async def get_active_configuration(
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Get the currently active LLM configuration.
 
@@ -136,7 +139,10 @@ async def get_active_configuration():
 
 
 @router.get("/{config_id}")
-async def get_configuration(config_id: int):
+async def get_configuration(
+    config_id: int,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Get a specific LLM configuration by ID.
 
@@ -166,7 +172,10 @@ async def get_configuration(config_id: int):
 
 
 @router.post("")
-async def create_configuration(config: LLMConfigCreate):
+async def create_configuration(
+    config: LLMConfigCreate,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Create a new LLM configuration.
 
@@ -200,7 +209,11 @@ async def create_configuration(config: LLMConfigCreate):
 
 
 @router.put("/{config_id}")
-async def update_configuration(config_id: int, updates: LLMConfigUpdate):
+async def update_configuration(
+    config_id: int,
+    updates: LLMConfigUpdate,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Update an existing LLM configuration.
 
@@ -237,7 +250,11 @@ async def update_configuration(config_id: int, updates: LLMConfigUpdate):
 
 
 @router.put("/{config_id}/activate")
-async def activate_configuration(config_id: int):
+async def activate_configuration(
+    config_id: int,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+    ollama_service: OllamaService = Depends(get_ollama_service),
+):
     """
     Activate a configuration (deactivates all others).
     This will reload the OllamaService configuration.
@@ -259,10 +276,7 @@ async def activate_configuration(config_id: int):
         )
 
         # Trigger OllamaService to reload configuration
-        # This will be implemented when we modify OllamaService
         try:
-            from app.services.ollama_service import ollama_service
-
             logger.info(
                 "🔄 [ACTIVATION] Calling ollama_service.reload_configuration()..."
             )
@@ -285,7 +299,10 @@ async def activate_configuration(config_id: int):
 
 
 @router.delete("/{config_id}")
-async def delete_configuration(config_id: int):
+async def delete_configuration(
+    config_id: int,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Delete a configuration.
     Cannot delete the active configuration.
@@ -314,7 +331,10 @@ async def delete_configuration(config_id: int):
 
 
 @router.post("/{config_id}/test")
-async def test_configuration(config_id: int):
+async def test_configuration(
+    config_id: int,
+    llm_config_service: LLMConfigService = Depends(get_llm_config_service),
+):
     """
     Test connection to LLM with a specific configuration.
     Sends a simple test message and measures response time.

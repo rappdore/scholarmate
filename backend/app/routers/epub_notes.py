@@ -8,23 +8,23 @@ Provides endpoints for saving, retrieving, and managing chat notes linked to EPU
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
 from ..services.epub_documents_service import EPUBDocumentsService
+from ..services.registry import get_db_service, get_epub_documents_service
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/epub-notes", tags=["epub-notes"])
 
-# Initialize service
-epub_documents_service = EPUBDocumentsService()
-
 
 # Helper function to get EPUB document by ID or raise 404
-def get_epub_doc_or_404(epub_id: int) -> dict[str, Any]:
+def get_epub_doc_or_404(
+    epub_id: int, epub_documents_service: EPUBDocumentsService
+) -> dict[str, Any]:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
 
@@ -75,7 +75,11 @@ class EPUBChatNoteResponse(BaseModel):
 
 
 @router.post("/chat", response_model=dict[str, Any])
-async def save_epub_chat_note(note: EPUBChatNoteRequest) -> dict[str, Any]:
+async def save_epub_chat_note(
+    note: EPUBChatNoteRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> dict[str, Any]:
     """
     Save EPUB chat conversation as a note
 
@@ -90,7 +94,7 @@ async def save_epub_chat_note(note: EPUBChatNoteRequest) -> dict[str, Any]:
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(note.epub_id)
+        epub_doc = get_epub_doc_or_404(note.epub_id, epub_documents_service)
         epub_filename = epub_doc["filename"]
 
         note_id = db_service.save_epub_chat_note(
@@ -127,7 +131,11 @@ async def save_epub_chat_note(note: EPUBChatNoteRequest) -> dict[str, Any]:
 
 @router.get("/chat/{epub_id}", response_model=list[EPUBChatNoteResponse])
 async def get_epub_chat_notes(
-    epub_id: int, nav_id: str | None = None, chapter_id: str | None = None
+    epub_id: int,
+    nav_id: str | None = None,
+    chapter_id: str | None = None,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
 ) -> list[EPUBChatNoteResponse]:
     """
     Get EPUB chat notes with optional filtering
@@ -145,7 +153,7 @@ async def get_epub_chat_notes(
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
         epub_filename = epub_doc["filename"]
 
         notes = db_service.get_epub_chat_notes(epub_filename, nav_id, chapter_id)
@@ -165,6 +173,8 @@ async def get_epub_chat_notes(
 )
 async def get_epub_chat_notes_by_chapter(
     epub_id: int,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
 ) -> dict[str, list[EPUBChatNoteResponse]]:
     """
     Get EPUB chat notes grouped by chapter for UI display
@@ -180,7 +190,7 @@ async def get_epub_chat_notes_by_chapter(
     """
     try:
         # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
         epub_filename = epub_doc["filename"]
 
         notes_by_chapter = db_service.get_epub_chat_notes_by_chapter(epub_filename)
@@ -202,7 +212,9 @@ async def get_epub_chat_notes_by_chapter(
 
 
 @router.get("/chat/id/{note_id}", response_model=EPUBChatNoteResponse)
-async def get_epub_chat_note_by_id(note_id: int) -> EPUBChatNoteResponse:
+async def get_epub_chat_note_by_id(
+    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+) -> EPUBChatNoteResponse:
     """
     Get specific EPUB chat note by ID
 
@@ -231,7 +243,9 @@ async def get_epub_chat_note_by_id(note_id: int) -> EPUBChatNoteResponse:
 
 
 @router.delete("/chat/{note_id}")
-async def delete_epub_chat_note(note_id: int) -> dict[str, Any]:
+async def delete_epub_chat_note(
+    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+) -> dict[str, Any]:
     """
     Delete EPUB chat note
 
@@ -265,7 +279,9 @@ async def delete_epub_chat_note(note_id: int) -> dict[str, Any]:
 
 
 @router.get("/stats", response_model=dict[str, dict[str, Any]])
-async def get_epub_notes_statistics() -> dict[str, dict[str, Any]]:
+async def get_epub_notes_statistics(
+    db_service: DatabaseService = Depends(get_db_service),
+) -> dict[str, dict[str, Any]]:
     """
     Get summary statistics about notes for all EPUB documents
 

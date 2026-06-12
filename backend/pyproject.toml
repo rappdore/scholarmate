@@ -26,6 +26,7 @@ dependencies = [
     # spacy (pip-installed at runtime by kokoro, outside this lockfile)
     # imports typer; declare it explicitly so `uv sync` keeps it in the venv
     "typer>=0.12",
+    "pydantic-settings>=2.14.1",
 ]
 
 # we added pip because the kokoro code downloads and

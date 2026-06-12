@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 from app.models.llm_types import LLMConfiguration
 
 from .llm_config_service import LLMConfigService
+from .pdf_service import PDFService
 from .stream_parser import ThinkingStreamParser
 
 # Configure logger
@@ -46,15 +47,12 @@ class DualChatSession:
 class DualChatService:
     """Service for managing dual LLM chat sessions"""
 
-    def __init__(self, db_path: str = "data/reading_progress.db"):
+    def __init__(self, db_path: str, pdf_service: PDFService):
         self.db_path = db_path
         self.active_sessions: dict[str, DualChatSession] = {}
         self.llm_config_service = LLMConfigService(db_path)
-        # Use the shared PDFService singleton instead of building a second
-        # service (and a second in-memory cache) just for dual chat.
-        # Imported lazily to avoid import cycles at module load time.
-        from .instances import pdf_service
-
+        # The shared PDFService is injected (see app.services.registry) so
+        # dual chat never builds a second service and in-memory cache.
         self.pdf_service = pdf_service
         # Reuse AsyncOpenAI clients per endpoint+key instead of creating (and
         # never closing) a new client for every streamed request.
@@ -403,7 +401,3 @@ Keep responses conversational but informative. When explaining a concept, emphas
         except Exception as e:
             logger.error(f"Error fetching LLM config {config_id}: {e}")
             return None
-
-
-# Singleton instance
-dual_chat_service = DualChatService()

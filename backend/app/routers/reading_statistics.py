@@ -6,10 +6,11 @@ API endpoints for managing reading session statistics.
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
+from ..services.registry import get_db_service
 
 router = APIRouter(prefix="/reading-statistics", tags=["reading-statistics"])
 
@@ -24,7 +25,10 @@ class SessionUpdateRequest(BaseModel):
 
 
 @router.put("/session/update")
-async def update_session(request: SessionUpdateRequest):
+async def update_session(
+    request: SessionUpdateRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
     Update or create a reading session.
 
@@ -72,6 +76,7 @@ async def get_sessions_by_id(
         None, ge=1, description="Maximum number of sessions to return"
     ),
     offset: Optional[int] = Query(None, ge=0, description="Number of sessions to skip"),
+    db_service: DatabaseService = Depends(get_db_service),
 ):
     """
     Get all reading sessions for a specific PDF by ID.

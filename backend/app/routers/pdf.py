@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -22,16 +22,18 @@ from ..models.pdf_responses import (
     StatusCountsResponse,
     StatusUpdateResponse,
 )
-from ..services.database_service import db_service
-from ..services.instances import pdf_service
+from ..services.database_service import DatabaseService
 from ..services.pdf_documents_service import PDFDocumentsService
+from ..services.pdf_service import PDFService
+from ..services.registry import (
+    get_db_service,
+    get_pdf_documents_service,
+    get_pdf_service,
+)
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
 
 logger = logging.getLogger(__name__)
-
-# Initialize services (pdf_service is the shared singleton from instances.py)
-pdf_documents_service = PDFDocumentsService()
 
 
 class ReadingProgressRequest(BaseModel):
@@ -45,7 +47,11 @@ class BookStatusRequest(BaseModel):
 
 
 @router.get("/{pdf_id:int}/info", response_model=PDFDetailResponse)
-async def get_pdf_info_by_id(pdf_id: int) -> PDFDetailResponse:
+async def get_pdf_info_by_id(
+    pdf_id: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    pdf_service: PDFService = Depends(get_pdf_service),
+) -> PDFDetailResponse:
     """
     Get detailed information about a specific PDF by ID
     """
@@ -68,7 +74,12 @@ async def get_pdf_info_by_id(pdf_id: int) -> PDFDetailResponse:
 
 
 @router.get("/{pdf_id:int}/text/{page_num}", response_model=PageTextResponse)
-async def get_page_text_by_id(pdf_id: int, page_num: int) -> PageTextResponse:
+async def get_page_text_by_id(
+    pdf_id: int,
+    page_num: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    pdf_service: PDFService = Depends(get_pdf_service),
+) -> PageTextResponse:
     """
     Extract text from a specific page of the PDF by ID
     """
@@ -97,7 +108,10 @@ async def get_page_text_by_id(pdf_id: int, page_num: int) -> PageTextResponse:
 
 @router.put("/{pdf_id:int}/progress", response_model=ProgressSaveResponse)
 async def save_reading_progress_by_id(
-    pdf_id: int, progress: ReadingProgressRequest
+    pdf_id: int,
+    progress: ReadingProgressRequest,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    db_service: DatabaseService = Depends(get_db_service),
 ) -> ProgressSaveResponse:
     """
     Save reading progress for a PDF by ID
@@ -135,7 +149,11 @@ async def save_reading_progress_by_id(
 
 
 @router.get("/{pdf_id:int}/progress", response_model=ReadingProgressWithId)
-async def get_reading_progress_by_id(pdf_id: int) -> ReadingProgressWithId:
+async def get_reading_progress_by_id(
+    pdf_id: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    db_service: DatabaseService = Depends(get_db_service),
+) -> ReadingProgressWithId:
     """
     Get reading progress for a PDF by ID
     """
@@ -172,7 +190,11 @@ async def get_reading_progress_by_id(pdf_id: int) -> ReadingProgressWithId:
 
 
 @router.get("/{pdf_id:int}/thumbnail")
-async def get_pdf_thumbnail_by_id(pdf_id: int):
+async def get_pdf_thumbnail_by_id(
+    pdf_id: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    pdf_service: PDFService = Depends(get_pdf_service),
+):
     """
     Get a thumbnail image of the first page of the PDF by ID
     """
@@ -204,7 +226,10 @@ async def get_pdf_thumbnail_by_id(pdf_id: int):
 
 @router.put("/{pdf_id:int}/status", response_model=StatusUpdateResponse)
 async def update_book_status_by_id(
-    pdf_id: int, status_request: BookStatusRequest
+    pdf_id: int,
+    status_request: BookStatusRequest,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    db_service: DatabaseService = Depends(get_db_service),
 ) -> StatusUpdateResponse:
     """
     Update the reading status of a book by ID
@@ -250,7 +275,12 @@ async def update_book_status_by_id(
 
 
 @router.delete("/{pdf_id:int}", response_model=BookDeletionResponse)
-async def delete_book_by_id(pdf_id: int) -> BookDeletionResponse:
+async def delete_book_by_id(
+    pdf_id: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    pdf_service: PDFService = Depends(get_pdf_service),
+    db_service: DatabaseService = Depends(get_db_service),
+) -> BookDeletionResponse:
     """
     Delete a book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
     """
@@ -344,6 +374,9 @@ async def list_pdfs(
     status: Optional[str] = Query(
         None, description="Filter by book status (new, reading, finished)"
     ),
+    pdf_service: PDFService = Depends(get_pdf_service),
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
 ) -> list[PDFListItemEnriched]:
     """
     List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
@@ -417,7 +450,11 @@ async def list_pdfs(
 
 
 @router.get("/{pdf_id:int}/file")
-async def get_pdf_file(pdf_id: int):
+async def get_pdf_file(
+    pdf_id: int,
+    pdf_documents_service: PDFDocumentsService = Depends(get_pdf_documents_service),
+    pdf_service: PDFService = Depends(get_pdf_service),
+):
     """
     Serve the actual PDF file for viewing.
 
@@ -445,7 +482,9 @@ async def get_pdf_file(pdf_id: int):
 
 
 @router.get("/progress/all", response_model=AllReadingProgressResponse)
-async def get_all_reading_progress() -> AllReadingProgressResponse:
+async def get_all_reading_progress(
+    db_service: DatabaseService = Depends(get_db_service),
+) -> AllReadingProgressResponse:
     """
     Get reading progress for all PDFs
     """
@@ -459,7 +498,9 @@ async def get_all_reading_progress() -> AllReadingProgressResponse:
 
 
 @router.get("/status/counts", response_model=StatusCountsResponse)
-async def get_status_counts() -> StatusCountsResponse:
+async def get_status_counts(
+    db_service: DatabaseService = Depends(get_db_service),
+) -> StatusCountsResponse:
     """
     Get count of books for each status
     """
@@ -473,7 +514,9 @@ async def get_status_counts() -> StatusCountsResponse:
 
 
 @router.post("/refresh-cache", response_model=CacheRefreshResponse)
-async def refresh_pdf_cache() -> CacheRefreshResponse:
+async def refresh_pdf_cache(
+    pdf_service: PDFService = Depends(get_pdf_service),
+) -> CacheRefreshResponse:
     """
     Refresh the PDF cache by rebuilding from filesystem.
     This will rescan all PDFs and regenerate thumbnails.

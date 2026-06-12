@@ -6,10 +6,11 @@ API endpoints for managing EPUB reading session statistics.
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
+from ..services.registry import get_db_service
 
 router = APIRouter(prefix="/epub/reading-statistics", tags=["epub-reading-statistics"])
 
@@ -24,7 +25,10 @@ class EPUBSessionUpdateRequest(BaseModel):
 
 
 @router.put("/session/update")
-async def update_session(request: EPUBSessionUpdateRequest):
+async def update_session(
+    request: EPUBSessionUpdateRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
     Update or create an EPUB reading session.
 
@@ -72,6 +76,7 @@ async def get_sessions_by_id(
         None, ge=1, description="Maximum number of sessions to return"
     ),
     offset: Optional[int] = Query(None, ge=0, description="Number of sessions to skip"),
+    db_service: DatabaseService = Depends(get_db_service),
 ):
     """
     Get all reading sessions for a specific EPUB by ID.

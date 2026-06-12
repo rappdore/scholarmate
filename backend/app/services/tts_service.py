@@ -292,7 +292,3 @@ class TTSService:
             # Exceptions inside `produce` are routed through the queue, so the
             # executor future never holds an unretrieved exception.
             stop_producing.set()
-
-
-# Singleton instance
-tts_service = TTSService()

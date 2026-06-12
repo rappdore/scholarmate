@@ -3,9 +3,10 @@ import base64
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from app.services.tts_service import DEFAULT_SPEED, tts_service
+from app.services.registry import get_tts_service
+from app.services.tts_service import DEFAULT_SPEED, TTSService
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ async def generate_tts(
     text: str,
     voice: str,
     speed: float,
+    tts_service: TTSService,
 ) -> None:
     """Generate TTS audio and stream it via WebSocket.
 
@@ -80,7 +82,9 @@ async def generate_tts(
 
 
 @router.websocket("/tts")
-async def tts_websocket(websocket: WebSocket):
+async def tts_websocket(
+    websocket: WebSocket, tts_service: TTSService = Depends(get_tts_service)
+):
     await websocket.accept()
 
     current_task: asyncio.Task | None = None
@@ -112,7 +116,7 @@ async def tts_websocket(websocket: WebSocket):
 
                 # Start TTS generation as a cancellable task
                 current_task = asyncio.create_task(
-                    generate_tts(websocket, text, voice, speed)
+                    generate_tts(websocket, text, voice, speed, tts_service)
                 )
 
                 # Use asyncio.wait to listen for either task completion or new messages
@@ -156,7 +160,9 @@ async def tts_websocket(websocket: WebSocket):
 
                                 if text.strip():
                                     current_task = asyncio.create_task(
-                                        generate_tts(websocket, text, voice, speed)
+                                        generate_tts(
+                                            websocket, text, voice, speed, tts_service
+                                        )
                                     )
                                 else:
                                     await websocket.send_json(

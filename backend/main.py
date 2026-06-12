@@ -1,5 +1,6 @@
 import logging
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, Request
@@ -19,6 +20,7 @@ from app.routers import (
     reading_statistics,
     tts,
 )
+from app.services.registry import init_services
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +30,16 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="PDF AI Reader API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Construct all shared services once, fail-fast, at startup (schema
+    # init, cache build, thumbnail generation) instead of at import time.
+    init_services()
+    yield
+
+
+app = FastAPI(title="PDF AI Reader API", version="1.0.0", lifespan=lifespan)
 
 
 @app.middleware("http")

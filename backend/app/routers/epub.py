@@ -1,30 +1,35 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
-from ..services.database_service import db_service
+from ..services.database_service import DatabaseService
 from ..services.epub_documents_service import EPUBDocumentsService
-from ..services.instances import epub_service
+from ..services.epub_service import EPUBService
+from ..services.registry import (
+    get_db_service,
+    get_epub_documents_service,
+    get_epub_service,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/epub", tags=["epub"])
 
-# Initialize services (epub_service is the shared singleton from instances.py)
-epub_documents_service = EPUBDocumentsService()
-
 
 # Helper function to get EPUB document by ID or raise 404
-def get_epub_doc_or_404(epub_id: int) -> Dict[str, Any]:
+def get_epub_doc_or_404(
+    epub_id: int, epub_documents_service: EPUBDocumentsService
+) -> Dict[str, Any]:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
 
     Args:
         epub_id: The EPUB document ID
+        epub_documents_service: The EPUB documents service to look up the ID with
 
     Returns:
         The EPUB document dictionary with 'id' and 'filename' keys
@@ -59,12 +64,16 @@ class BookStatusRequest(BaseModel):
 
 
 @router.get("/{epub_id:int}/info")
-async def get_epub_info_by_id(epub_id: int) -> EPUBDetailResponse:
+async def get_epub_info_by_id(
+    epub_id: int,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> EPUBDetailResponse:
     """
     Get detailed information about a specific EPUB by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         info = epub_service.get_epub_info(epub_doc["filename"])
         # Return EPUBDetailResponse model directly
@@ -80,12 +89,16 @@ async def get_epub_info_by_id(epub_id: int) -> EPUBDetailResponse:
 
 
 @router.get("/{epub_id:int}/thumbnail")
-async def get_epub_thumbnail_by_id(epub_id: int):
+async def get_epub_thumbnail_by_id(
+    epub_id: int,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+):
     """
     Get thumbnail image for an EPUB cover by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         thumbnail_path = epub_service.get_thumbnail_path(epub_doc["filename"])
 
@@ -110,12 +123,16 @@ async def get_epub_thumbnail_by_id(epub_id: int):
 
 
 @router.get("/{epub_id:int}/navigation")
-async def get_epub_navigation_by_id(epub_id: int) -> Dict[str, Any]:
+async def get_epub_navigation_by_id(
+    epub_id: int,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> Dict[str, Any]:
     """
     Get the hierarchical navigation structure (table of contents) for an EPUB by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         navigation = epub_service.get_navigation_tree(epub_doc["filename"])
         return navigation
@@ -130,12 +147,17 @@ async def get_epub_navigation_by_id(epub_id: int) -> Dict[str, Any]:
 
 
 @router.get("/{epub_id:int}/content/{nav_id}")
-async def get_epub_content_by_id(epub_id: int, nav_id: str) -> Dict[str, Any]:
+async def get_epub_content_by_id(
+    epub_id: int,
+    nav_id: str,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> Dict[str, Any]:
     """
     Get HTML content for a specific navigation section by EPUB ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         content = epub_service.get_content_by_nav_id(
             epub_doc["filename"], nav_id, epub_id
@@ -152,13 +174,17 @@ async def get_epub_content_by_id(epub_id: int, nav_id: str) -> Dict[str, Any]:
 
 
 @router.get("/{epub_id:int}/styles")
-async def get_epub_styles_by_id(epub_id: int) -> Dict[str, Any]:
+async def get_epub_styles_by_id(
+    epub_id: int,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> Dict[str, Any]:
     """
     Get CSS styles from an EPUB file by ID
     Returns sanitized CSS content for safe browser rendering
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         styles = epub_service.get_epub_styles(epub_doc["filename"])
         return styles
@@ -171,12 +197,17 @@ async def get_epub_styles_by_id(epub_id: int) -> Dict[str, Any]:
 
 
 @router.get("/{epub_id:int}/image/{image_path:path}")
-async def get_epub_image_by_id(epub_id: int, image_path: str):
+async def get_epub_image_by_id(
+    epub_id: int,
+    image_path: str,
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+):
     """
     Get an image from an EPUB file by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         image_data = epub_service.get_epub_image(epub_doc["filename"], image_path)
 
@@ -208,13 +239,16 @@ async def get_epub_image_by_id(epub_id: int, image_path: str):
 
 @router.put("/{epub_id:int}/progress")
 async def save_epub_progress_by_id(
-    epub_id: int, progress: EPUBProgressRequest
+    epub_id: int,
+    progress: EPUBProgressRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
 ) -> Dict[str, Any]:
     """
     Save reading progress for an EPUB by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         success = db_service.save_epub_progress(
             epub_filename=epub_doc["filename"],
@@ -249,13 +283,18 @@ async def save_epub_progress_by_id(
 
 
 @router.get("/{epub_id:int}/progress")
-async def get_epub_progress_by_id(epub_id: int) -> Dict[str, Any]:
+async def get_epub_progress_by_id(
+    epub_id: int,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> Dict[str, Any]:
     """
     Get reading progress for an EPUB by ID.
     Also extracts word counts for nav_metadata if not already present.
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
         filename = epub_doc["filename"]
 
         progress = db_service.get_epub_progress(filename)
@@ -319,13 +358,16 @@ async def get_epub_progress_by_id(epub_id: int) -> Dict[str, Any]:
 
 @router.put("/{epub_id:int}/status")
 async def update_epub_book_status_by_id(
-    epub_id: int, status_request: BookStatusRequest
+    epub_id: int,
+    status_request: BookStatusRequest,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
 ) -> Dict[str, Any]:
     """
     Update the reading status of an EPUB book by ID
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         # Validate status
         valid_statuses = ["new", "reading", "finished"]
@@ -361,12 +403,17 @@ async def update_epub_book_status_by_id(
 
 
 @router.delete("/{epub_id:int}")
-async def delete_epub_book_by_id(epub_id: int) -> Dict[str, Any]:
+async def delete_epub_book_by_id(
+    epub_id: int,
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
+) -> Dict[str, Any]:
     """
     Delete an EPUB book by ID and all its associated data (file, thumbnails, progress, notes, highlights)
     """
     try:
-        epub_doc = get_epub_doc_or_404(epub_id)
+        epub_doc = get_epub_doc_or_404(epub_id, epub_documents_service)
 
         filename = epub_doc["filename"]
         deletion_results = {}
@@ -463,6 +510,9 @@ async def list_epubs(
     status: Optional[str] = Query(
         None, description="Filter by book status (new, reading, finished)"
     ),
+    db_service: DatabaseService = Depends(get_db_service),
+    epub_service: EPUBService = Depends(get_epub_service),
+    epub_documents_service: EPUBDocumentsService = Depends(get_epub_documents_service),
 ) -> List[EPUBListItem]:
     """
     List all EPUB files in the epubs directory with metadata, reading progress, and notes info.
@@ -551,7 +601,9 @@ async def list_epubs(
 
 
 @router.get("/progress/all")
-async def get_all_epub_progress() -> Dict[str, Any]:
+async def get_all_epub_progress(
+    db_service: DatabaseService = Depends(get_db_service),
+) -> Dict[str, Any]:
     """
     Get reading progress for all EPUB books
     """
@@ -565,7 +617,9 @@ async def get_all_epub_progress() -> Dict[str, Any]:
 
 
 @router.get("/status/counts")
-async def get_epub_status_counts() -> Dict[str, int]:
+async def get_epub_status_counts(
+    db_service: DatabaseService = Depends(get_db_service),
+) -> Dict[str, int]:
     """
     Get count of EPUB books for each status
     """
@@ -591,7 +645,9 @@ class CacheRefreshResponse(BaseModel):
 
 
 @router.post("/refresh-cache")
-async def refresh_epub_cache() -> CacheRefreshResponse:
+async def refresh_epub_cache(
+    epub_service: EPUBService = Depends(get_epub_service),
+) -> CacheRefreshResponse:
     """
     Refresh the EPUB cache by rebuilding from filesystem.
     This will rescan all EPUBs and regenerate thumbnails.

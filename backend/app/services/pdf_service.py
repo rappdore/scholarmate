@@ -13,10 +13,13 @@ from .pdf_cache import PDFCache
 
 class PDFService:
     def __init__(
-        self, pdf_dir: str = "pdfs", db_path: str = "data/reading_progress.db"
+        self,
+        pdf_dir: str = "pdfs",
+        db_path: str = "data/reading_progress.db",
+        thumbnails_dir: str = "thumbnails",
     ) -> None:
         self.pdf_dir = Path(pdf_dir)
-        self.thumbnails_dir = Path("thumbnails")
+        self.thumbnails_dir = Path(thumbnails_dir)
         if not self.pdf_dir.exists():
             self.pdf_dir.mkdir(exist_ok=True)
         if not self.thumbnails_dir.exists():

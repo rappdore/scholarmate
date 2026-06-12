@@ -191,7 +191,3 @@ class RequestTrackingService:
             logger.info(f"Cleaned up {len(to_remove)} old requests")
 
         return len(to_remove)
-
-
-# Global instance
-request_tracking_service = RequestTrackingService()

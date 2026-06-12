@@ -20,11 +20,12 @@ class EPUBService:
     def __init__(
         self,
         epub_dir: str = "epubs",
-        base_url: str = None,
+        base_url: str | None = None,
         db_path: str = "data/reading_progress.db",
+        thumbnails_dir: str = "thumbnails",
     ):
         self.epub_dir = Path(epub_dir)
-        self.thumbnails_dir = Path("thumbnails")
+        self.thumbnails_dir = Path(thumbnails_dir)
         # Make base URL configurable for different deployment environments
         self.base_url = base_url or "http://localhost:8000"
 
@@ -36,7 +37,7 @@ class EPUBService:
         # Initialize component services
         self.navigation_service = EPUBNavigationService()
         self.content_processor = EPUBContentProcessor(self.base_url)
-        self.image_service = EPUBImageService("thumbnails")
+        self.image_service = EPUBImageService(thumbnails_dir)
         self.style_processor = EPUBStyleProcessor()
         self.word_count_service = EPUBWordCountService()
 
