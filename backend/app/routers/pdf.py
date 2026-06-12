@@ -30,12 +30,14 @@ from ..models.pdf_responses import (
 )
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
+from ..services.highlights_service import HighlightsService
 from ..services.notes_service import NotesService
 from ..services.pdf_service import PDFService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
+    get_highlights_service,
     get_notes_service,
     get_pdf_service,
     get_progress_service,
@@ -403,10 +405,10 @@ def list_pdfs(
         None, description="Filter by book status (new, reading, finished)"
     ),
     pdf_service: PDFService = Depends(get_pdf_service),
-    db_service: DatabaseService = Depends(get_db_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     progress_service: ProgressService = Depends(get_progress_service),
     notes_service: NotesService = Depends(get_notes_service),
+    highlights_service: HighlightsService = Depends(get_highlights_service),
 ) -> list[PDFListItemEnriched]:
     """
     List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
@@ -433,7 +435,7 @@ def list_pdfs(
             for p in progress_service.get_all_progress(DocumentType.PDF)
         }
         all_notes = notes_service.get_notes_summary(DocumentType.PDF)
-        all_highlights = db_service.get_highlights_count_by_pdf()
+        all_highlights = highlights_service.get_pdf_highlights_summary()
 
         # Build enriched list
         enriched_pdfs: list[PDFListItemEnriched] = []
@@ -454,7 +456,9 @@ def list_pdfs(
             # Get highlights info and convert to HighlightsInfo if exists
             highlights_data = all_highlights.get(pdf.filename)
             highlights_info = (
-                HighlightsInfo(**highlights_data) if highlights_data else None
+                HighlightsInfo(**highlights_data.model_dump())
+                if highlights_data
+                else None
             )
 
             # Create enriched item

@@ -123,6 +123,32 @@ class EpubPosition(BaseModel):
 DocumentPosition = PdfPosition | EpubPosition
 
 
+class PdfHighlightRecord(BaseModel):
+    """A row of ``document_highlights_pdf`` (joined with documents for the
+    filename). PDF highlights anchor by page + character offsets + rendered
+    bounding boxes."""
+
+    id: int
+    document_id: int
+    filename: str
+    page_number: int
+    selected_text: str
+    start_offset: int
+    end_offset: int
+    color: str
+    coordinates: list[dict[str, Any]]
+    created_at: str
+    updated_at: str
+
+
+class HighlightsSummary(BaseModel):
+    """Per-document highlight statistics for list views."""
+
+    highlights_count: int
+    latest_highlight_date: str | None = None
+    latest_highlight_text: str | None = None
+
+
 class ReadingSessionRecord(BaseModel):
     """A row of the unified ``document_sessions`` table.
 

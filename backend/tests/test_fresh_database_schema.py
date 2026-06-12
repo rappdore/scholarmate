@@ -67,8 +67,8 @@ class TestFreshSchemaIsComplete:
             "document_progress",
             "document_notes",
             "document_sessions",
-            "highlights",
-            "epub_highlights",
+            "document_highlights_pdf",
+            "document_highlights_epub",
             "documents",
             "llm_configurations",
         }
@@ -95,7 +95,8 @@ class TestFreshSchemaIsComplete:
 
     def test_id_columns_present_everywhere(self, db_service, db_path):
         assert "document_id" in _columns(db_path, "document_notes")
-        assert "pdf_id" in _columns(db_path, "highlights")
+        assert "document_id" in _columns(db_path, "document_highlights_pdf")
+        assert "document_id" in _columns(db_path, "document_highlights_epub")
 
     def test_llm_config_table_complete_with_trigger(self, db_service, db_path):
         assert "always_starts_with_thinking" in _columns(db_path, "llm_configurations")

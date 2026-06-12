@@ -8,7 +8,6 @@ domain and a unified facade service for backward compatibility.
 
 from .base_database_service import BaseDatabaseService
 from .database_service import DatabaseService
-from .epub_highlights_service import EPUBHighlightService
 from .highlights_service import HighlightsService
 from .notes_service import NotesService
 from .progress_service import ProgressService
@@ -19,5 +18,4 @@ __all__ = [
     "NotesService",
     "HighlightsService",
     "BaseDatabaseService",
-    "EPUBHighlightService",
 ]

@@ -16,12 +16,14 @@ from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.epub_service import EPUBService
+from ..services.highlights_service import HighlightsService
 from ..services.notes_service import NotesService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
     get_epub_service,
+    get_highlights_service,
     get_notes_service,
     get_progress_service,
     get_sessions_service,
@@ -541,11 +543,11 @@ def list_epubs(
     status: Optional[str] = Query(
         None, description="Filter by book status (new, reading, finished)"
     ),
-    db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     progress_service: ProgressService = Depends(get_progress_service),
     notes_service: NotesService = Depends(get_notes_service),
+    highlights_service: HighlightsService = Depends(get_highlights_service),
 ) -> List[EPUBListItem]:
     """
     List all EPUB files in the epubs directory with metadata, reading progress, and notes info.
@@ -572,7 +574,7 @@ def list_epubs(
             for p in progress_service.get_all_progress(DocumentType.EPUB)
         }
         all_notes = notes_service.get_notes_summary(DocumentType.EPUB)
-        all_highlights = db_service.get_epub_highlights_count_by_epub()
+        all_highlights = highlights_service.get_epub_highlights_summary()
 
         # Get all EPUB documents from database once (avoid N+1 query)
         all_epub_docs = documents_repository.list_all(DocumentType.EPUB)
@@ -612,12 +614,11 @@ def list_epubs(
                 notes_info = all_notes[filename].model_dump()
 
             # Prepare highlights information
-            # Note: all_highlights is keyed by epub_id (int), not filename
+            # Note: all_highlights is keyed by document id (int), not filename
             highlights_info = None
             if epub_id and epub_id in all_highlights:
-                highlights_data = all_highlights[epub_id]
                 highlights_info = {
-                    "highlights_count": highlights_data["highlights_count"],
+                    "highlights_count": all_highlights[epub_id].highlights_count,
                 }
 
             # Create EPUBListItem model
