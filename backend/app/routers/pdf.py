@@ -16,6 +16,7 @@ from ..models.pdf_responses import (
     AllReadingProgressResponse,
     BookDeletionResponse,
     CacheRefreshResponse,
+    DatabaseDeletionResults,
     DeletionResults,
     HighlightsInfo,
     NotesInfo,
@@ -28,14 +29,12 @@ from ..models.pdf_responses import (
     StatusCountsResponse,
     StatusUpdateResponse,
 )
-from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.highlights_service import HighlightsService
 from ..services.notes_service import NotesService
 from ..services.pdf_service import PDFService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
-    get_db_service,
     get_documents_repository,
     get_highlights_service,
     get_notes_service,
@@ -308,7 +307,9 @@ def delete_book_by_id(
     pdf_id: int,
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     pdf_service: PDFService = Depends(get_pdf_service),
-    db_service: DatabaseService = Depends(get_db_service),
+    progress_service: ProgressService = Depends(get_progress_service),
+    notes_service: NotesService = Depends(get_notes_service),
+    highlights_service: HighlightsService = Depends(get_highlights_service),
     sessions_service: SessionsService = Depends(get_sessions_service),
 ) -> BookDeletionResponse:
     """
@@ -343,7 +344,11 @@ def delete_book_by_id(
             logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
-        db_results = db_service.delete_all_book_data(filename, pdf_id)
+        db_results = DatabaseDeletionResults(
+            reading_progress=progress_service.delete_progress(pdf_id),
+            notes=notes_service.delete_notes_for_document(pdf_id),
+            highlights=highlights_service.delete_highlights_for_document(pdf_id),
+        )
 
         # Delete reading sessions tied to this PDF
         try:

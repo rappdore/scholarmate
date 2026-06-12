@@ -24,7 +24,6 @@ import app.routers.epub as epub_router
 import app.routers.notes as notes_router
 import app.routers.pdf as pdf_router
 from app.models.documents import EpubDocumentUpsert, PdfDocumentUpsert
-from app.models.pdf_responses import DatabaseDeletionResults
 from app.services.documents_repository import DocumentsRepository
 from app.services.registry import (
     get_dual_chat_service,
@@ -68,17 +67,17 @@ class TestPdfDeletePath:
         pdf_id = pdf_docs.upsert(PdfDocumentUpsert(filename="gone.pdf", num_pages=3))
 
         fake_pdf_service = Mock()
-        fake_db = Mock()
-        fake_db.delete_all_book_data.return_value = DatabaseDeletionResults(
-            reading_progress=True, notes=True, highlights=True
-        )
-
         fake_sessions = Mock()
+        fake_progress = Mock(**{"delete_progress.return_value": True})
+        fake_notes = Mock(**{"delete_notes_for_document.return_value": True})
+        fake_highlights = Mock(**{"delete_highlights_for_document.return_value": True})
         response = pdf_router.delete_book_by_id(
             pdf_id,
             documents_repository=pdf_docs,
             pdf_service=fake_pdf_service,
-            db_service=fake_db,
+            progress_service=fake_progress,
+            notes_service=fake_notes,
+            highlights_service=fake_highlights,
             sessions_service=fake_sessions,
         )
         return pdf_id, fake_pdf_service, fake_sessions, response
@@ -103,7 +102,9 @@ class TestPdfDeletePath:
                 99999,
                 documents_repository=pdf_docs,
                 pdf_service=Mock(),
-                db_service=Mock(),
+                progress_service=Mock(),
+                notes_service=Mock(),
+                highlights_service=Mock(),
                 sessions_service=Mock(),
             )
         assert exc_info.value.status_code == 404
@@ -116,20 +117,16 @@ class TestEpubDeletePath:
         epub_id = epub_docs.upsert(EpubDocumentUpsert(filename="gone.epub", chapters=3))
 
         fake_epub_service = Mock()
-        fake_db = Mock()
-        fake_db.delete_all_epub_data.return_value = {
-            "epub_progress": True,
-            "epub_chat_notes": True,
-            "epub_highlights": True,
-        }
         fake_sessions = Mock()
         fake_sessions.delete_sessions_for_document.return_value = True
 
         response = epub_router.delete_epub_book_by_id(
             epub_id,
-            db_service=fake_db,
             epub_service=fake_epub_service,
             documents_repository=epub_docs,
+            progress_service=Mock(),
+            notes_service=Mock(),
+            highlights_service=Mock(),
             sessions_service=fake_sessions,
         )
         return epub_id, fake_epub_service, fake_sessions, response
@@ -154,9 +151,11 @@ class TestEpubDeletePath:
         with pytest.raises(HTTPException) as exc_info:
             epub_router.delete_epub_book_by_id(
                 99999,
-                db_service=Mock(),
                 epub_service=Mock(),
                 documents_repository=epub_docs,
+                progress_service=Mock(),
+                notes_service=Mock(),
+                highlights_service=Mock(),
                 sessions_service=Mock(),
             )
         assert exc_info.value.status_code == 404

@@ -13,14 +13,12 @@ from ..models.documents import (
     EpubPosition,
 )
 from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
-from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.epub_service import EPUBService
 from ..services.highlights_service import HighlightsService
 from ..services.notes_service import NotesService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
-    get_db_service,
     get_documents_repository,
     get_epub_service,
     get_highlights_service,
@@ -438,9 +436,11 @@ def update_epub_book_status_by_id(
 @router.delete("/{epub_id:int}")
 def delete_epub_book_by_id(
     epub_id: int,
-    db_service: DatabaseService = Depends(get_db_service),
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
+    progress_service: ProgressService = Depends(get_progress_service),
+    notes_service: NotesService = Depends(get_notes_service),
+    highlights_service: HighlightsService = Depends(get_highlights_service),
     sessions_service: SessionsService = Depends(get_sessions_service),
 ) -> Dict[str, Any]:
     """
@@ -477,8 +477,13 @@ def delete_epub_book_by_id(
             logger.warning("Could not delete thumbnail for %s", filename, exc_info=True)
 
         # Delete all database data
-        db_deletion_results = db_service.delete_all_epub_data(filename, epub_id)
-        deletion_results.update(db_deletion_results)
+        deletion_results["epub_progress"] = progress_service.delete_progress(epub_id)
+        deletion_results["epub_chat_notes"] = notes_service.delete_notes_for_document(
+            epub_id
+        )
+        deletion_results["epub_highlights"] = (
+            highlights_service.delete_highlights_for_document(epub_id)
+        )
 
         # Delete reading sessions tied to this EPUB
         try:

@@ -1,21 +1,20 @@
 """
 Services Package
 
-This package contains database services for managing reading progress,
-chat notes, and highlights. It provides both specialized services for each
-domain and a unified facade service for backward compatibility.
+Database-backed domain services. Each service owns its tables and creates
+its complete schema on construction; the registry wires them together.
 """
 
 from .base_database_service import BaseDatabaseService
-from .database_service import DatabaseService
 from .highlights_service import HighlightsService
 from .notes_service import NotesService
 from .progress_service import ProgressService
+from .sessions_service import SessionsService
 
 __all__ = [
-    "DatabaseService",
     "ProgressService",
     "NotesService",
     "HighlightsService",
+    "SessionsService",
     "BaseDatabaseService",
 ]

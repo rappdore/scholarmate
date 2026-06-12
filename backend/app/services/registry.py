@@ -26,7 +26,6 @@ from dataclasses import dataclass
 
 from app.settings import Settings, get_settings
 
-from .database_service import DatabaseService
 from .documents_repository import DocumentsRepository
 from .dual_chat_service import DualChatService
 from .epub.epub_chat_context_service import EPUBChatContextService
@@ -47,7 +46,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ServiceRegistry:
     settings: Settings
-    db_service: DatabaseService
     documents_repository: DocumentsRepository
     progress_service: ProgressService
     notes_service: NotesService
@@ -85,7 +83,6 @@ def build_registry(settings: Settings) -> ServiceRegistry:
     request_tracking_service = RequestTrackingService()
     return ServiceRegistry(
         settings=settings,
-        db_service=DatabaseService(settings.db_path),
         documents_repository=DocumentsRepository(settings.db_path),
         progress_service=ProgressService(settings.db_path),
         notes_service=NotesService(settings.db_path),
@@ -128,10 +125,6 @@ def get_registry() -> ServiceRegistry:
 
 
 # FastAPI dependency accessors — use as Depends(get_pdf_service) etc.
-
-
-def get_db_service() -> DatabaseService:
-    return get_registry().db_service
 
 
 def get_documents_repository() -> DocumentsRepository:

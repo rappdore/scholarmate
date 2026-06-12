@@ -36,7 +36,6 @@ def registry(tmp_settings):
 
 class TestBuildRegistry:
     def test_services_share_the_configured_db_path(self, registry, tmp_settings):
-        assert registry.db_service.db_path == tmp_settings.db_path
         assert registry.documents_repository.db_path == tmp_settings.db_path
         assert registry.llm_config_service.db_path == tmp_settings.db_path
         assert registry.ollama_service.db_path == tmp_settings.db_path
