@@ -16,11 +16,11 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **C-1** — single-source-of-truth schema, fresh-install fixed, no migration framework per owner decision (`aa1b1bf`)
 - **C-2 + B-14** — path-traversal containment + legacy/dead routes removed (`b007792`)
 - **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16, all with regression tests; backend suite 155→270, frontend 20→48 (`2c17ca9`)
+- **C-5 + A-4** — single config module (`config.ts`: HTTP+WS base, `VITE_API_URL` override) + one shared axios client and one `streamSSE` helper (`http.ts`); HashRouter; dev proxy deleted; frontend suite 48→68
+- **C-6** — SettingsContext lazy hydration, regression tests
 
-**⬜ Open — next up (audit sequencing steps 6-10):**
-- **C-5 + A-4** — unified frontend config/API client; makes packaged Electron work ← **NEXT**
-- **C-6** — SettingsContext wipes saved settings (was NOT part of the burn-down; still unfixed)
-- **A-3** — settings module + DI (instances.py singletons from B-3 are a stepping stone)
+**⬜ Open — next up (audit sequencing steps 7-10):**
+- **A-3** — settings module + DI (instances.py singletons from B-3 are a stepping stone) ← **NEXT**
 - **C-4** — thread-offload parse/DB work in async endpoints
 - **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder)
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
@@ -87,14 +87,14 @@ The old `migration_service.py` was deleted (commit `0c273aa`), but the `reading_
 `pdfplumber` full-document parsing, `epub.read_epub()` (full ZIP+XML parse), and all `BaseDatabaseService` SQLite calls run synchronously on the event loop (FastAPI only thread-offloads sync `def` endpoints, and these are all `async def`). One chat request on a large book freezes all concurrent requests including in-flight SSE streams.
 **Fix:** `await asyncio.to_thread(...)` around parse/DB calls (pattern already exists in `tts_service.generate_audio_async`), or make endpoints sync `def` where they don't stream. *(M)*
 
-**C-5. Packaged Electron app is broken by app-code assumptions** — ⬜ OPEN (NEXT UP) — multiple files
+**C-5. Packaged Electron app is broken by app-code assumptions** — ✅ DONE (2026-06-12): `services/config.ts` is now the single config module (HTTP + WS base URLs, `VITE_API_URL` build-time override, default `http://127.0.0.1:8000`); all URL builders route through it (useStatistics, PDFViewer session update + react-pdf `file=`, ttsService WS, llmConfig); `main.tsx` switched to HashRouter; the Vite `/api` dev proxy was deleted (dev now uses the same absolute-URL + CORS path as Electron — backend already allows `localhost:5173` and `null` origins). Bonus fix found en route: `useEpubSessionTracking`'s `sendBeacon` flush always POSTs but the endpoint is PUT-only since C-2 — replaced with `fetch(..., {method:'PUT', keepalive:true})`. Original finding: — multiple files
 - `useStatistics.ts:42-46` uses bare `axios.get('/api/...')` (dev-proxy-only); `PDFViewer.tsx:202` hardcodes `fetch('/api/reading-statistics/session/update')` — both 404 under `file://`. Note: PDFViewer's `file=` URL for react-pdf is also `/api/...`-relative (left that way deliberately during C-2).
 - `ttsService.ts:38-43` builds `ws://${window.location.hostname}:8000` → `ws://:8000` under `file://`
 - `main.tsx:12` uses `BrowserRouter`; under `loadFile` the pathname is the file path, no route matches → likely blank window (`vite.config.ts` sets `base: './'` for exactly this case but the router wasn't switched)
 - Root cause: backend URL resolution is fragmented across 4 strategies/3 defaults (`services/config.ts`, `api/llmConfig.ts:16`, `ttsService.ts`, dev proxy)
 **Fix:** one config module exporting HTTP + WS base URLs with a `VITE_API_URL` override; route everything through it; switch to `HashRouter` (or conditionally in Electron). *(S/M)*
 
-**C-6. SettingsContext wipes saved settings** — ⬜ OPEN (was not in the burn-down batch; quick S-sized fix) — `frontend/src/contexts/SettingsContext.tsx:64-79`
+**C-6. SettingsContext wipes saved settings** — ✅ DONE (2026-06-12): lazy `useState(loadSettings)` initializer, load effect deleted; regression tests in `tests/contexts/SettingsContext.test.tsx` (StrictMode hydration, no default-overwrite, corrupt-JSON fallback). Original finding: `frontend/src/contexts/SettingsContext.tsx:64-79`
 Hydration happens in an effect while a save effect writes `defaultSettings` to localStorage before hydration flushes. Under `<StrictMode>` (on, `main.tsx:11`) user settings reset to defaults on every dev reload; in prod there's a loss window.
 **Fix:** lazy `useState(() => loadFromLocalStorage())`, delete the load effect (or gate first save behind a hydrated ref). *(S)*
 
@@ -208,7 +208,7 @@ Sequencing within A-1: documents table (M) → notes (M) → progress/status (M)
 **A-3. Lifespan-scoped dependency injection + a settings module** *(S/M)*
 Module-level singletons constructed at import time (DDL + backfills on import); 3 `PDFService` / 2 `EPUBService` independent instances (B-3); `EPUBDocumentsService` constructed in 5 routers; circular-import workarounds in the facade. No settings module: `"data/reading_progress.db"` hardcoded as default **23 times**; `pdfs`/`epubs`/`thumbnails`/`base_url` hardcoded; only env read in the backend is a PyTorch flag. One `pydantic-settings` `Settings` + FastAPI `Depends`/lifespan singletons fixes B-3 structurally.
 
-**A-4. Frontend API client consolidation** *(S/M)*
+**A-4. Frontend API client consolidation** — ✅ DONE with C-5 (2026-06-12): `services/http.ts` owns the one axios instance (dev-gated logging interceptors), `parseSSELine`, and a single `streamSSE` generator that replaced all five copy-pasted reader loops (analyze ×2, chat ×2, dual-chat); `highlightService` and `llmConfig.ts` converted from raw fetch to the shared client (404 semantics preserved); `epubService.ts`'s second axios instance deleted; `api.ts` 1,044→581 lines. Tests: `tests/services/http.test.ts` (streamSSE), `tests/services/config.test.ts`. Original finding:
 `api.ts` (1,044 lines) mixes axios-with-interceptors and raw fetch for the same backend; `epubService.ts` is a second axios instance without interceptors; the SSE reader loop is copy-pasted five times. One shared client + one `streamSSE` helper; single config module (ties into C-5).
 
 **A-5. Chat component dedup** *(M)*
@@ -237,8 +237,8 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 3. ✅ **C-1** — single-source-of-truth DDL per service, fresh-DB regression tests; no migration framework per owner decision (`aa1b1bf`).
 4. ✅ **C-2 + B-14** — path containment + legacy filename routes/fields deleted (`b007792`).
 5. ✅ **Bug burn-down** — B-1..B-13, B-15, F-1..F-10, F-14, F-16 with ~155 new regression tests (`2c17ca9`).
-6. ⬜ **C-5 + A-4** — unified frontend config/client; makes the Electron build actually work. Fold in **C-6** (small, same area). ← **NEXT**
-7. ⬜ **A-3** — settings + DI (services/instances.py from the burn-down is the stepping stone).
+6. ✅ **C-5 + A-4 + C-6** — unified frontend config/client (`config.ts` + `http.ts`), HashRouter, dev proxy removed, SettingsContext hydration fixed; +20 frontend tests (suite 68).
+7. ⬜ **A-3** — settings + DI (services/instances.py from the burn-down is the stepping stone). ← **NEXT**
 8. ⬜ **C-4** — thread-offload parse/DB work.
 9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder).
 10. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.

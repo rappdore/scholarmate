@@ -4,97 +4,10 @@ import type {
   Highlight,
   HighlightCoordinates,
   HighlightRequest,
-  HighlightResponse,
-  UpdateColorRequest,
   HighlightColor,
 } from '../types/highlights';
 import { API_BASE_URL } from './config';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
-
-// Verbose request/response logging is only enabled in development builds to
-// avoid dumping full payloads to the console in production.
-const devLog = (...args: unknown[]): void => {
-  if (import.meta.env.DEV) {
-    console.log(...args);
-  }
-};
-
-/**
- * Parse a single SSE line of the form `data: {...}`.
- * Returns the parsed payload, or null when the line is not a data line or
- * contains malformed JSON (malformed lines are logged and skipped so a single
- * bad chunk doesn't kill the stream).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function parseSSELine(line: string): Record<string, any> | null {
-  if (!line.startsWith('data: ')) {
-    return null;
-  }
-  try {
-    return JSON.parse(line.slice(6));
-  } catch (e) {
-    console.error('Error parsing SSE data:', e, line);
-    return null;
-  }
-}
-
-// Extensive logging interceptor
-api.interceptors.request.use(
-  config => {
-    devLog('🚀 [API REQUEST]', {
-      method: config.method?.toUpperCase(),
-      url: config.url,
-      fullURL: `${config.baseURL}${config.url}`,
-      headers: config.headers,
-      data: config.data,
-      timestamp: new Date().toISOString(),
-    });
-    return config;
-  },
-  error => {
-    console.error('❌ [API REQUEST ERROR]', {
-      message: error.message,
-      error: error,
-      timestamp: new Date().toISOString(),
-    });
-    return Promise.reject(error);
-  }
-);
-
-api.interceptors.response.use(
-  response => {
-    devLog('✅ [API RESPONSE]', {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.config.url,
-      fullURL: `${response.config.baseURL}${response.config.url}`,
-      data: response.data,
-      headers: response.headers,
-      timestamp: new Date().toISOString(),
-    });
-    return response;
-  },
-  error => {
-    console.error('❌ [API RESPONSE ERROR]', {
-      message: error.message,
-      url: error.config?.url,
-      fullURL: error.config
-        ? `${error.config.baseURL}${error.config.url}`
-        : 'unknown',
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      responseData: error.response?.data,
-      code: error.code,
-      isNetworkError: error.message === 'Network Error',
-      isTimeout: error.code === 'ECONNABORTED',
-      timestamp: new Date().toISOString(),
-    });
-    return Promise.reject(error);
-  }
-);
+import { api, devLog, streamSSE } from './http';
 
 export const pdfService = {
   listPDFs: async (status?: string): Promise<PDF[]> => {
@@ -179,6 +92,10 @@ export const pdfService = {
     return `${API_BASE_URL}/pdf/${pdfId}/thumbnail`;
   },
 
+  getFileUrl: (pdfId: number): string => {
+    return `${API_BASE_URL}/pdf/${pdfId}/file`;
+  },
+
   refreshPDFCache: async (): Promise<{
     success: boolean;
     cache_built_at: string;
@@ -186,6 +103,26 @@ export const pdfService = {
     message: string;
   }> => {
     const response = await api.post('/pdf/refresh-cache');
+    return response.data;
+  },
+
+  getReadingSessions: async (pdfId: number): Promise<any> => {
+    const response = await api.get(`/reading-statistics/sessions/pdf/${pdfId}`);
+    return response.data;
+  },
+
+  updateReadingSession: async (
+    sessionId: string,
+    pdfId: number,
+    pagesRead: number,
+    averageTimePerPage: number
+  ): Promise<any> => {
+    const response = await api.put('/reading-statistics/session/update', {
+      session_id: sessionId,
+      pdf_id: pdfId,
+      pages_read: pagesRead,
+      average_time_per_page: averageTimePerPage,
+    });
     return response.data;
   },
 };
@@ -275,107 +212,13 @@ export const aiService = {
     void,
     unknown
   > {
-    const url = `${API_BASE_URL}/ai/analyze/stream`;
-    devLog('🚀 [FETCH REQUEST - STREAM ANALYZE]', {
-      url,
-      method: 'POST',
-      pdfId,
-      pageNum,
-      context,
-      timestamp: new Date().toISOString(),
-    });
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pdf_id: pdfId,
-          page_num: pageNum,
-          context: context || '',
-        }),
+      yield* streamSSE('/ai/analyze/stream', {
+        pdf_id: pdfId,
+        page_num: pageNum,
+        context: context || '',
       });
-
-      devLog('✅ [FETCH RESPONSE - STREAM ANALYZE]', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-        timestamp: new Date().toISOString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [FETCH ERROR - STREAM ANALYZE]', {
-          url,
-          status: response.status,
-          statusText: response.statusText,
-          errorText,
-          timestamp: new Date().toISOString(),
-        });
-        throw new Error(
-          `HTTP error! status: ${response.status}, body: ${errorText}`
-        );
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        const error = 'Failed to get response reader';
-        console.error('❌ [STREAM ANALYZE ERROR]', {
-          error,
-          timestamp: new Date().toISOString(),
-        });
-        throw new Error(error);
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let chunkCount = 0;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          chunkCount++;
-
-          if (done) {
-            devLog('✅ [STREAM ANALYZE COMPLETE]', {
-              totalChunks: chunkCount,
-              timestamp: new Date().toISOString(),
-            });
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const data = parseSSELine(line);
-            if (data === null) {
-              continue;
-            }
-            devLog('📦 [STREAM CHUNK - ANALYZE]', {
-              chunkNum: chunkCount,
-              data,
-            });
-            yield data;
-            if (data.done) {
-              return;
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
     } catch (error) {
-      console.error('❌ [STREAM ANALYZE FAILED]', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString(),
-      });
       throw new Error(
         `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -405,57 +248,12 @@ export const aiService = {
     unknown
   > {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/ai/analyze-epub-section/stream`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            epub_id: epubId,
-            nav_id: navId,
-            scroll_position: scrollPosition,
-            context: context || '',
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to get response reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const data = parseSSELine(line);
-            if (data === null) {
-              continue;
-            }
-            yield data;
-            if (data.done) {
-              return;
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+      yield* streamSSE('/ai/analyze-epub-section/stream', {
+        epub_id: epubId,
+        nav_id: navId,
+        scroll_position: scrollPosition,
+        context: context || '',
+      });
     } catch (error) {
       throw new Error(
         `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -510,98 +308,18 @@ export const chatService = {
     void,
     unknown
   > {
-    const url = `${API_BASE_URL}/ai/chat`;
-    devLog('🚀 [FETCH REQUEST - STREAM CHAT]', {
-      url,
-      method: 'POST',
-      message,
-      pdfId,
-      pageNum,
-      isNewChat,
-      hasAbortSignal: !!abortSignal,
-      historyLength: chatHistory?.length || 0,
-      timestamp: new Date().toISOString(),
-    });
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      yield* streamSSE(
+        '/ai/chat',
+        {
           message,
           pdf_id: pdfId,
           page_num: pageNum,
           chat_history: chatHistory,
           is_new_chat: isNewChat || false,
-        }),
-        signal: abortSignal,
-      });
-
-      devLog('✅ [FETCH RESPONSE - STREAM CHAT]', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-        timestamp: new Date().toISOString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [FETCH ERROR - STREAM CHAT]', {
-          url,
-          status: response.status,
-          statusText: response.statusText,
-          errorText,
-          timestamp: new Date().toISOString(),
-        });
-        throw new Error(
-          `HTTP error! status: ${response.status}, body: ${errorText}`
-        );
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to get response reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            // Only JSON parsing is guarded (inside parseSSELine); backend
-            // errors must propagate to the generator's consumer.
-            const data = parseSSELine(line);
-            if (data === null) {
-              continue;
-            }
-
-            if (data.error) {
-              throw new Error(data.error);
-            }
-
-            // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
-            yield data;
-
-            if (data.done || data.cancelled) {
-              return;
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+        },
+        abortSignal
+      );
     } catch (error) {
       throw new Error(
         `Chat failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -636,66 +354,18 @@ export const chatService = {
     unknown
   > {
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/chat/epub`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      yield* streamSSE(
+        '/ai/chat/epub',
+        {
           message,
           epub_id: epubId,
           nav_id: navId,
           scroll_position: scrollPosition,
           chat_history: chatHistory,
           is_new_chat: isNewChat || false,
-        }),
-        signal: abortSignal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to get response reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            // Only JSON parsing is guarded (inside parseSSELine); backend
-            // errors must propagate to the generator's consumer.
-            const data = parseSSELine(line);
-            if (data === null) {
-              continue;
-            }
-
-            if (data.error) {
-              throw new Error(data.error);
-            }
-
-            // Yield the entire data object so the consumer can handle request_id, done, cancelled, etc.
-            yield data;
-
-            if (data.done || data.cancelled) {
-              return;
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+        },
+        abortSignal
+      );
     } catch (error) {
       throw new Error(
         `EPUB chat failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -703,6 +373,10 @@ export const chatService = {
     }
   },
 };
+
+/** True when the error is an axios error with the given HTTP status. */
+const isStatus = (error: unknown, status: number): boolean =>
+  axios.isAxiosError(error) && error.response?.status === status;
 
 // Real Highlight Service - Connects to backend API
 export const highlightService = {
@@ -739,64 +413,22 @@ export const highlightService = {
   createHighlight: async (
     highlightData: HighlightRequest
   ): Promise<Highlight> => {
-    const url = `${API_BASE_URL}/highlights/`;
-    devLog('🚀 [FETCH REQUEST - CREATE HIGHLIGHT]', {
-      url,
-      method: 'POST',
-      highlightData,
-      timestamp: new Date().toISOString(),
-    });
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pdf_id: highlightData.pdf_id,
-          page_number: highlightData.pageNumber,
-          selected_text: highlightData.selectedText,
-          start_offset: highlightData.startOffset,
-          end_offset: highlightData.endOffset,
-          color: highlightData.color,
-          coordinates: highlightData.coordinates,
-        }),
+      const response = await api.post('/highlights/', {
+        pdf_id: highlightData.pdf_id,
+        page_number: highlightData.pageNumber,
+        selected_text: highlightData.selectedText,
+        start_offset: highlightData.startOffset,
+        end_offset: highlightData.endOffset,
+        color: highlightData.color,
+        coordinates: highlightData.coordinates,
       });
-
-      devLog('✅ [FETCH RESPONSE - CREATE HIGHLIGHT]', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        timestamp: new Date().toISOString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [CREATE HIGHLIGHT ERROR]', {
-          url,
-          status: response.status,
-          errorText,
-          timestamp: new Date().toISOString(),
-        });
-        throw new Error(
-          `HTTP error! status: ${response.status}, body: ${errorText}`
-        );
-      }
-
-      const backendHighlight = await response.json();
-      const highlight =
-        highlightService._convertBackendHighlight(backendHighlight);
-
+      const highlight = highlightService._convertBackendHighlight(
+        response.data
+      );
       devLog('✅ [HIGHLIGHT CREATED]', highlight);
       return highlight;
     } catch (error) {
-      console.error('❌ [CREATE HIGHLIGHT FAILED]', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString(),
-      });
       throw new Error(
         `Failed to create highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -809,60 +441,13 @@ export const highlightService = {
   ): Promise<Highlight[]> => {
     const url =
       pageNumber !== undefined
-        ? `${API_BASE_URL}/highlights/pdf/${pdfId}/page/${pageNumber}`
-        : `${API_BASE_URL}/highlights/pdf/${pdfId}`;
-
-    devLog('🚀 [FETCH REQUEST - GET HIGHLIGHTS]', {
-      url,
-      pdfId,
-      pageNumber,
-      timestamp: new Date().toISOString(),
-    });
+        ? `/highlights/pdf/${pdfId}/page/${pageNumber}`
+        : `/highlights/pdf/${pdfId}`;
 
     try {
-      const response = await fetch(url);
-
-      devLog('✅ [FETCH RESPONSE - GET HIGHLIGHTS]', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        timestamp: new Date().toISOString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [GET HIGHLIGHTS ERROR]', {
-          url,
-          status: response.status,
-          errorText,
-          timestamp: new Date().toISOString(),
-        });
-        throw new Error(
-          `HTTP error! status: ${response.status}, body: ${errorText}`
-        );
-      }
-
-      const backendHighlights = await response.json();
-      const highlights = backendHighlights.map(
-        highlightService._convertBackendHighlight
-      );
-
-      devLog('✅ [HIGHLIGHTS RETRIEVED]', {
-        count: highlights.length,
-        pdfId,
-        pageNumber,
-        timestamp: new Date().toISOString(),
-      });
-      return highlights;
+      const response = await api.get(url);
+      return response.data.map(highlightService._convertBackendHighlight);
     } catch (error) {
-      console.error('❌ [GET HIGHLIGHTS FAILED]', {
-        pdfId,
-        pageNumber,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString(),
-      });
       throw new Error(
         `Failed to retrieve highlights: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -871,27 +456,13 @@ export const highlightService = {
 
   getHighlightById: async (highlightId: string): Promise<Highlight | null> => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/highlights/id/${highlightId}`
-      );
-
-      if (response.status === 404) {
+      const response = await api.get(`/highlights/id/${highlightId}`);
+      return highlightService._convertBackendHighlight(response.data);
+    } catch (error) {
+      if (isStatus(error, 404)) {
         devLog('Highlight not found:', highlightId);
         return null;
       }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const backendHighlight = await response.json();
-      const highlight =
-        highlightService._convertBackendHighlight(backendHighlight);
-
-      devLog('Retrieved highlight by ID:', highlight);
-      return highlight;
-    } catch (error) {
-      console.error('Error retrieving highlight by ID:', error);
       throw new Error(
         `Failed to retrieve highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -900,26 +471,14 @@ export const highlightService = {
 
   deleteHighlight: async (highlightId: string): Promise<boolean> => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/highlights/${highlightId}`,
-        {
-          method: 'DELETE',
-        }
-      );
-
-      if (response.status === 404) {
-        devLog('Highlight not found for deletion:', highlightId);
-        return false;
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
+      await api.delete(`/highlights/${highlightId}`);
       devLog('Deleted highlight:', highlightId);
       return true;
     } catch (error) {
-      console.error('Error deleting highlight:', error);
+      if (isStatus(error, 404)) {
+        devLog('Highlight not found for deletion:', highlightId);
+        return false;
+      }
       throw new Error(
         `Failed to delete highlight: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -931,32 +490,14 @@ export const highlightService = {
     color: HighlightColor
   ): Promise<boolean> => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/highlights/${highlightId}/color`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            color: color,
-          }),
-        }
-      );
-
-      if (response.status === 404) {
-        devLog('Highlight not found for color update:', highlightId);
-        return false;
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
+      await api.put(`/highlights/${highlightId}/color`, { color });
       devLog('Updated highlight color:', highlightId, color);
       return true;
     } catch (error) {
-      console.error('Error updating highlight color:', error);
+      if (isStatus(error, 404)) {
+        devLog('Highlight not found for color update:', highlightId);
+        return false;
+      }
       throw new Error(
         `Failed to update highlight color: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -966,17 +507,9 @@ export const highlightService = {
   // Get highlight statistics for all PDFs
   getHighlightStats: async (): Promise<Record<string, any>> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/highlights/stats/count`);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const stats = await response.json();
-      devLog('Retrieved highlight statistics:', stats);
-      return stats;
+      const response = await api.get('/highlights/stats/count');
+      return response.data;
     } catch (error) {
-      console.error('Error retrieving highlight statistics:', error);
       throw new Error(
         `Failed to retrieve highlight statistics: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -1046,5 +579,3 @@ export const epubNotesService = {
     return response.data;
   },
 };
-
-export default api;

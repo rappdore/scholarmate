@@ -10,6 +10,7 @@ import type {
 } from '../types/highlights';
 import HighlightOverlay from './HighlightOverlay';
 import { useHighlightsContext } from '../contexts/HighlightsContext';
+import { pdfService } from '../services/api';
 
 // Set up the worker for react-pdf v9 - use local copy instead of CDN for Electron compatibility
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -199,19 +200,12 @@ export default function PDFViewer({
 
       // Send reading session data to backend
       if (sessionId && pdfId) {
-        fetch('/api/reading-statistics/session/update', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: sessionId,
-            pdf_id: pdfId,
-            pages_read: newPagesRead,
-            average_time_per_page: newAverage,
-          }),
-        }).catch(error => {
-          console.error('Failed to update reading statistics:', error);
-          // Don't block the UI on statistics update failures
-        });
+        pdfService
+          .updateReadingSession(sessionId, pdfId, newPagesRead, newAverage)
+          .catch(error => {
+            console.error('Failed to update reading statistics:', error);
+            // Don't block the UI on statistics update failures
+          });
       }
     } else if (currentPage < previousPage) {
       // Backward navigation - reset timer and blank out display
@@ -761,7 +755,7 @@ export default function PDFViewer({
         ) : (
           <div className="flex justify-center p-4 relative">
             <Document
-              file={`/api/pdf/${pdfId}/file`}
+              file={pdfId !== undefined ? pdfService.getFileUrl(pdfId) : null}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={

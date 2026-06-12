@@ -1,8 +1,7 @@
 /**
  * Dual Chat Service - Handles communication with backend for dual LLM chat
  */
-import { API_BASE_URL } from './config';
-import { parseSSELine } from './api';
+import { api, streamSSE } from './http';
 
 /** Structured chunk for one LLM within a dual-chat SSE event (mirrors the
  * backend StreamParser events: thinking/response/metadata). */
@@ -50,12 +49,9 @@ export const dualChatService = {
     isNewChat?: boolean
   ): AsyncGenerator<DualChatStreamEvent, void, unknown> {
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/dual-chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      yield* streamSSE(
+        '/ai/dual-chat',
+        {
           message,
           pdf_id: pdfId,
           page_num: pageNum,
@@ -64,54 +60,9 @@ export const dualChatService = {
           primary_llm_id: primaryLLMId,
           secondary_llm_id: secondaryLLMId,
           is_new_chat: isNewChat || false,
-        }),
-        signal: abortSignal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to get response reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            // Only JSON parsing is guarded (inside parseSSELine); backend
-            // errors must propagate to the generator's consumer.
-            const data = parseSSELine(line);
-            if (data === null) {
-              continue;
-            }
-
-            if (data.error) {
-              throw new Error(data.error);
-            }
-
-            // Yield the entire data object
-            yield data;
-
-            if (data.done) {
-              return;
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+        },
+        abortSignal
+      );
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         // Request was aborted
@@ -130,16 +81,7 @@ export const dualChatService = {
    */
   stopDualChat: async (requestId: string): Promise<void> => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/ai/dual-chat/stop/${requestId}`,
-        {
-          method: 'POST',
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to stop dual chat: ${response.status}`);
-      }
+      await api.post(`/ai/dual-chat/stop/${requestId}`);
     } catch (error) {
       console.error('Error stopping dual chat:', error);
       throw error;

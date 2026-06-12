@@ -3,6 +3,7 @@
  */
 
 import { audioPlayer } from '../utils/audioPlayer';
+import { WS_BASE_URL } from './config';
 
 // TTS configuration - change this to adjust default playback speed
 export const DEFAULT_TTS_SPEED = 1.5;
@@ -36,10 +37,7 @@ class TTSService {
   private cleanupPromise: Promise<void> | null = null;
 
   private getWsUrl(): string {
-    // Use environment variable if available, otherwise derive from current location
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const backendPort = import.meta.env.VITE_BACKEND_PORT || '8000';
-    return `${wsProtocol}//${window.location.hostname}:${backendPort}/ws/tts`;
+    return `${WS_BASE_URL}/ws/tts`;
   }
 
   setHandlers(handlers: TTSEventHandlers) {

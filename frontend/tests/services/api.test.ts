@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { parseSSELine, chatService } from '../../src/services/api';
+import { chatService } from '../../src/services/api';
+import { parseSSELine } from '../../src/services/http';
 import { dualChatService } from '../../src/services/dualChatService';
 
 /**

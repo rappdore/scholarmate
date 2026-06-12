@@ -3,7 +3,6 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
 import type {
   SessionsResponse,
   AggregateStats,
@@ -13,7 +12,6 @@ import type {
 import type { Document } from '../types/document';
 import type { BookStatus } from '../types/pdf';
 import { pdfService } from '../services/api';
-import { epubService } from '../services/epubService';
 import {
   calculateAggregateStats,
   calculateStreak,
@@ -44,11 +42,8 @@ export function useStatistics(pdfId: number | undefined) {
         setError(null);
 
         // Fetch session data and document info in parallel using pdfId
-        const sessionUrl = `/api/reading-statistics/sessions/pdf/${pdfId}`;
-        console.log('[useStatistics] Fetching from URL:', sessionUrl);
-
         const [sessionResponse, documentData] = await Promise.all([
-          axios.get<SessionsResponse>(sessionUrl),
+          pdfService.getReadingSessions(pdfId) as Promise<SessionsResponse>,
           // Fetch PDF info and progress using pdfId
           // Need to fetch both info and progress since /info doesn't include reading_progress
           Promise.all([
@@ -94,11 +89,8 @@ export function useStatistics(pdfId: number | undefined) {
             .catch(() => null),
         ]);
 
-        console.log('[useStatistics] Session Response:', sessionResponse.data);
-        console.log('[useStatistics] Document Info:', documentData);
-
         if (cancelled) return;
-        setSessionsData(sessionResponse.data);
+        setSessionsData(sessionResponse);
         setDocumentInfo(documentData);
       } catch (err) {
         console.error('[useStatistics] Error fetching statistics:', err);

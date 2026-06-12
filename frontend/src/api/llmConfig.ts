@@ -4,6 +4,7 @@
  * Functions for interacting with the LLM configuration endpoints
  */
 
+import axios from 'axios';
 import type {
   LLMConfiguration,
   LLMConfigCreate,
@@ -12,33 +13,44 @@ import type {
   LLMActivateResponse,
   LLMTestResponse,
 } from '../types/llm';
+import { api } from '../services/http';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+/** Backend `detail` message from an axios error, when present. */
+function errorDetail(error: unknown): string | undefined {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') {
+      return detail;
+    }
+  }
+  return undefined;
+}
 
 /**
  * List all LLM configurations
  */
 export async function listLLMConfigurations(): Promise<LLMConfiguration[]> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/list`);
-  if (!response.ok) {
+  try {
+    const response = await api.get<LLMConfigListResponse>('/llm-config/list');
+    return response.data.configurations;
+  } catch {
     throw new Error('Failed to fetch LLM configurations');
   }
-  const data: LLMConfigListResponse = await response.json();
-  return data.configurations;
 }
 
 /**
  * Get the active LLM configuration
  */
 export async function getActiveLLMConfiguration(): Promise<LLMConfiguration> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/active`);
-  if (!response.ok) {
-    if (response.status === 404) {
+  try {
+    const response = await api.get<LLMConfiguration>('/llm-config/active');
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
       throw new Error('No active LLM configuration found');
     }
     throw new Error('Failed to fetch active LLM configuration');
   }
-  return response.json();
 }
 
 /**
@@ -47,11 +59,12 @@ export async function getActiveLLMConfiguration(): Promise<LLMConfiguration> {
 export async function getLLMConfiguration(
   id: number
 ): Promise<LLMConfiguration> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/${id}`);
-  if (!response.ok) {
+  try {
+    const response = await api.get<LLMConfiguration>(`/llm-config/${id}`);
+    return response.data;
+  } catch {
     throw new Error(`Failed to fetch LLM configuration ${id}`);
   }
-  return response.json();
 }
 
 /**
@@ -60,20 +73,12 @@ export async function getLLMConfiguration(
 export async function createLLMConfiguration(
   config: LLMConfigCreate
 ): Promise<LLMConfiguration> {
-  const response = await fetch(`${API_BASE_URL}/llm-config`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(config),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to create LLM configuration');
+  try {
+    const response = await api.post<LLMConfiguration>('/llm-config', config);
+    return response.data;
+  } catch (error) {
+    throw new Error(errorDetail(error) || 'Failed to create LLM configuration');
   }
-
-  return response.json();
 }
 
 /**
@@ -83,20 +88,15 @@ export async function updateLLMConfiguration(
   id: number,
   updates: LLMConfigUpdate
 ): Promise<LLMConfiguration> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(updates),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to update LLM configuration');
+  try {
+    const response = await api.put<LLMConfiguration>(
+      `/llm-config/${id}`,
+      updates
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(errorDetail(error) || 'Failed to update LLM configuration');
   }
-
-  return response.json();
 }
 
 /**
@@ -105,29 +105,26 @@ export async function updateLLMConfiguration(
 export async function activateLLMConfiguration(
   id: number
 ): Promise<LLMActivateResponse> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/${id}/activate`, {
-    method: 'PUT',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to activate LLM configuration');
+  try {
+    const response = await api.put<LLMActivateResponse>(
+      `/llm-config/${id}/activate`
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      errorDetail(error) || 'Failed to activate LLM configuration'
+    );
   }
-
-  return response.json();
 }
 
 /**
  * Delete an LLM configuration (cannot delete active)
  */
 export async function deleteLLMConfiguration(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/${id}`, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to delete LLM configuration');
+  try {
+    await api.delete(`/llm-config/${id}`);
+  } catch (error) {
+    throw new Error(errorDetail(error) || 'Failed to delete LLM configuration');
   }
 }
 
@@ -135,13 +132,10 @@ export async function deleteLLMConfiguration(id: number): Promise<void> {
  * Test connection to an LLM configuration
  */
 export async function testLLMConnection(id: number): Promise<LLMTestResponse> {
-  const response = await fetch(`${API_BASE_URL}/llm-config/${id}/test`, {
-    method: 'POST',
-  });
-
-  if (!response.ok) {
+  try {
+    const response = await api.post<LLMTestResponse>(`/llm-config/${id}/test`);
+    return response.data;
+  } catch {
     throw new Error('Failed to test LLM connection');
   }
-
-  return response.json();
 }

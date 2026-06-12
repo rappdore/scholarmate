@@ -205,7 +205,6 @@ export function useEpubSessionTracking({
 
       if (wordsRead === 0 && timeSpentSeconds < 5) return;
 
-      // Use navigator.sendBeacon for reliable delivery on page unload
       const data = JSON.stringify({
         session_id: sessionId,
         epub_id: epubIdRef.current,
@@ -213,23 +212,16 @@ export function useEpubSessionTracking({
         time_spent_seconds: timeSpentSeconds,
       });
 
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = `${API_BASE_URL}/epub/reading-statistics/session/update`;
-
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, blob);
-        console.log('[EPUB Session] Sent final update via beacon');
-      } else {
-        // Fallback: try async (may not complete)
-        fetch(url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: data,
-          keepalive: true,
-        }).catch(() => {
-          // Ignore errors on unmount
-        });
-      }
+      // keepalive lets the request survive page unload. sendBeacon can't be
+      // used here: it always POSTs and the endpoint is PUT-only.
+      fetch(`${API_BASE_URL}/epub/reading-statistics/session/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true,
+      }).catch(() => {
+        // Ignore errors on unmount
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);

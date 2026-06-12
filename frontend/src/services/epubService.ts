@@ -1,7 +1,7 @@
-import axios from 'axios';
 import type { EPUBDocument, EPUBDocumentInfo } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
 import { API_BASE_URL } from './config';
+import { api } from './http';
 
 export interface EPUBNavigationItem {
   id: string;
@@ -29,10 +29,6 @@ export interface EPUBNavigationResponse {
   spine_length: number;
   has_toc: boolean;
 }
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
 
 // EPUB Progress interfaces
 export interface EPUBProgressRequest {

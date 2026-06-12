@@ -57,21 +57,24 @@ const SettingsContext = createContext<SettingsContextValue | undefined>(
 
 const SETTINGS_KEY = 'scholarmate-settings';
 
-export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-
-  // Load settings from localStorage on mount
-  useEffect(() => {
+/** Read saved settings synchronously so the first render is already hydrated. */
+function loadSettings(): AppSettings {
+  try {
     const savedSettings = localStorage.getItem(SETTINGS_KEY);
     if (savedSettings) {
-      try {
-        const parsed = JSON.parse(savedSettings);
-        setSettings({ ...defaultSettings, ...parsed });
-      } catch (error) {
-        console.warn('Error loading settings:', error);
-      }
+      return { ...defaultSettings, ...JSON.parse(savedSettings) };
     }
-  }, []);
+  } catch (error) {
+    console.warn('Error loading settings:', error);
+  }
+  return defaultSettings;
+}
+
+export function SettingsProvider({ children }: { children: ReactNode }) {
+  // Lazy initializer instead of a load effect: the old effect-based hydration
+  // raced the save effect, which could persist defaults over saved settings
+  // before the load flushed.
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
 
   // Save settings to localStorage whenever they change
   useEffect(() => {
