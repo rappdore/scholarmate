@@ -204,6 +204,10 @@ async def tts_websocket(
                                 }
                             )
                         current_task = None
+                        # Without this break the loop condition re-evaluates
+                        # None.done(), killing the websocket after every
+                        # completed playback
+                        break
 
             elif message.get("type") == "stop":
                 # Stop requested but no task running
