@@ -36,11 +36,11 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 **⬜ Open — next up:**
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
 
-**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), TabbedRightPanel mounting. Resolved 2026-06-12: highlights = two tables behind one service; migrations = none, one-time scripts only; statistics = unified storage, format semantics in consumers; plaintext LLM api_key = accepted (single-user local app).
+**❓ Decisions still needed:** none — all open questions resolved 2026-06-12: highlights = two tables behind one service; migrations = none, one-time scripts only; statistics = unified storage, format semantics in consumers; plaintext LLM api_key = accepted (single-user local app); F-15 = wired up (Stop button shipped); TabbedRightPanel eager mounting = keep (state preservation is the point; documented in the component).
 
 ### Pickup notes for the next session
 
-Done through step 10 (A-1 complete both sides, A-2 complete, mypy + eslint gated, TTS websocket bug fixed). Remaining: A-5 (chat dedup — `markdownComponents` ×4, `useChatStream`), A-6 (component decomposition — EPUBViewer 1,651 lines), A-7 (EPUB parse caching). Open decisions: F-15 (DualChat Stop), TabbedRightPanel mounting.
+Done through step 10 (A-1 complete both sides, A-2 complete, mypy + eslint gated, TTS websocket bug fixed, F-15 Stop button wired). Remaining: A-5 (chat dedup — `markdownComponents` ×4, `useChatStream`), A-6 (component decomposition — EPUBViewer 1,651 lines), A-7 (EPUB parse caching). No open decisions.
 
 New frontend landmarks: `types/highlights.ts` (canonical color model), `contexts/createHighlightsStore.tsx` (generic store factory), `hooks/useAsyncData.ts`, `utils/readingStreak.ts`, `services/documentApi.ts` (type dispatch for format-agnostic ops).
 
@@ -220,7 +220,7 @@ Remove the lot. *(S)*
 
 **F-14. `extractChapterIdFromNavId` can produce `"foo_undefined"`** — `epubHighlights.ts:557-560`. *(S)*
 
-**F-15. DualChat Stop machinery is dead — the feature is missing** — `DualChatInterface.tsx:95-97, 282, 313-314` + `dualChatService.stopDualChat` (`:119`, never called): plumbing 90% exists, no Stop button. Decide: wire it up or delete it. *(S)*
+**F-15. DualChat Stop machinery is dead — the feature is missing** — ✅ DONE (owner decision: wire it up; 2026-06-12). Stop button + Cmd/Ctrl+Enter stop wired exactly like ChatInterface's (backend `stopDualChat` + AbortController fallback); component tests drive a streaming session and assert the stop call and abort. Original finding: `DualChatInterface.tsx:95-97, 282, 313-314` + `dualChatService.stopDualChat` (`:119`, never called): plumbing 90% exists, no Stop button. *(S)*
 
 **F-16. Logging interceptors dump full request/response bodies unconditionally** — `api.ts:17-70`, prod included. Gate behind `import.meta.env.DEV`. *(S)*
 
@@ -290,7 +290,7 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 
 1. ~~**Highlights storage under A-1**~~ — ✅ RESOLVED (owner, 2026-06-12): two tables behind one `HighlightsService` interface; anchors are genuinely structurally different (page+rect vs XPath range), a union column would just be a JSON blob.
 2. ~~**Migrations**~~ — ✅ RESOLVED (owner, 2026-06-12): neither. No migration framework, ever — single-user app; schema changes must be backwards compatible, and genuinely breaking moves get a one-time disposable script (pattern: `scripts/migrate_to_unified_documents.py` — backup → copy with remap → drop legacy).
-3. **DualChat Stop (F-15):** wire up the missing Stop button (plumbing exists) or delete the dead machinery?
+3. ~~**DualChat Stop (F-15)**~~ — ✅ RESOLVED (owner, 2026-06-12): wired up. Stop button shipped with component tests.
 4. ~~**Security posture**~~ — ✅ RESOLVED. Traversal and CORS fixed in C-2/B-13. `llm_configurations.api_key` stored plaintext: **accepted** (owner, 2026-06-12) — single-user local app, the DB never leaves the machine; no encryption at rest. If the app ever becomes multi-user or syncs the DB anywhere, revisit.
 5. ~~**Statistics unification**~~ — ✅ RESOLVED (owner, 2026-06-12): unified storage (`document_sessions`: `units_read` + `time_spent_seconds`) confirmed by schema inspection — both old tables held only counters, no positions; pages-vs-words semantics stay in consumers.
-6. **TabbedRightPanel mounts all panels permanently** (state preservation vs eager fetching) — keep or lazy-mount?
+6. ~~**TabbedRightPanel mounts all panels permanently**~~ — ✅ RESOLVED (owner, 2026-06-12): keep eager mounting; preserving chat streams / drafts / scroll across tab switches is the intended behavior. Documented in the component so it doesn't get "optimized" away.

@@ -72,7 +72,12 @@ export default function TabbedRightPanel({
         ))}
       </div>
 
-      {/* Tab Content */}
+      {/* Tab Content.
+          All panels stay mounted and inactive ones are hidden with CSS —
+          deliberate (owner decision, 2026-06-12): switching tabs must preserve
+          in-progress chat streams, draft input, and scroll positions, which
+          unmounting would destroy. The cost is that every panel fetches on
+          reader open. Do not convert to lazy mounting. */}
       <div className="flex-1 overflow-hidden">
         <div className={`h-full ${activeTab === 'ai' ? '' : 'hidden'}`}>
           <AIPanel

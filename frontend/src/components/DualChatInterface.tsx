@@ -92,8 +92,9 @@ export default function DualChatInterface({
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
-  const [, setAbortController] = useState<AbortController | null>(null);
-  const [, setCurrentRequestId] = useState<string | null>(null);
+  const [abortController, setAbortController] =
+    useState<AbortController | null>(null);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
 
   // Save note dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -209,6 +210,28 @@ export default function DualChatInterface({
   const handleSelectSecondaryLLM = (llm: LLMConfiguration) => {
     setSecondaryLLM(llm);
     setShowLLMModal(false);
+  };
+
+  const stopMessage = async () => {
+    if (currentRequestId) {
+      try {
+        // Call backend stop API (cancels both LLM streams)
+        await dualChatService.stopDualChat(currentRequestId);
+      } catch (error) {
+        console.error('Failed to stop dual chat:', error);
+      }
+    }
+
+    // Also abort the fetch request as fallback
+    if (abortController) {
+      abortController.abort();
+    }
+
+    // Clean up state
+    setAbortController(null);
+    setCurrentRequestId(null);
+    setLoading(false);
+    setStreaming(false);
   };
 
   const sendMessage = async () => {
@@ -823,6 +846,8 @@ export default function DualChatInterface({
                 e.preventDefault();
                 if (!streaming && inputText.trim() && pdfId && !loading) {
                   sendMessage();
+                } else if (streaming) {
+                  stopMessage();
                 }
               }
             }}
@@ -836,11 +861,19 @@ export default function DualChatInterface({
             className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 text-gray-200 placeholder-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-700 disabled:text-gray-500 resize-y min-h-[76px]"
           />
           <button
-            onClick={sendMessage}
-            disabled={!inputText.trim() || !pdfId || loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+            onClick={streaming ? stopMessage : sendMessage}
+            disabled={
+              streaming
+                ? false // Always enable stop button when streaming
+                : !inputText.trim() || !pdfId || loading
+            }
+            className={`px-4 py-2 text-white rounded-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors ${
+              streaming
+                ? 'bg-red-600 hover:bg-red-500'
+                : 'bg-blue-600 hover:bg-blue-500'
+            }`}
           >
-            {loading ? 'Sending...' : 'Send'}
+            {streaming ? 'Stop' : loading ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>
