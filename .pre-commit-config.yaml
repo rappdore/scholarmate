@@ -35,6 +35,12 @@ repos:
   # Run tests before commit
   - repo: local
     hooks:
+      - id: frontend-typecheck
+        name: frontend typecheck
+        entry: bash -c 'cd frontend && npm run typecheck'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
       - id: frontend-tests
         name: frontend tests
         entry: bash -c 'cd frontend && npm run test'

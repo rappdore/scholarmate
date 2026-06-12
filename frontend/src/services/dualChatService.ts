@@ -3,6 +3,26 @@
  */
 import { API_BASE_URL } from './config';
 
+/** Structured chunk for one LLM within a dual-chat SSE event (mirrors the
+ * backend StreamParser events: thinking/response/metadata). */
+export interface DualChatLLMChunk {
+  type?: 'thinking' | 'response' | 'metadata';
+  content?: string | null;
+  metadata?: { thinking_complete?: boolean };
+  error?: string;
+  done?: boolean;
+  cancelled?: boolean;
+}
+
+/** One SSE event from POST /ai/dual-chat. */
+export interface DualChatStreamEvent {
+  llm1?: DualChatLLMChunk;
+  llm2?: DualChatLLMChunk;
+  request_id?: string;
+  done?: boolean;
+  error?: string;
+}
+
 export const dualChatService = {
   /**
    * Stream responses from both LLMs simultaneously (PDF only)
@@ -27,15 +47,7 @@ export const dualChatService = {
     secondaryLLMId: number,
     abortSignal?: AbortSignal,
     isNewChat?: boolean
-  ): AsyncGenerator<
-    {
-      llm1?: { content?: string; done?: boolean; error?: string };
-      llm2?: { content?: string; done?: boolean; error?: string };
-      request_id?: string;
-    },
-    void,
-    unknown
-  > {
+  ): AsyncGenerator<DualChatStreamEvent, void, unknown> {
     try {
       const response = await fetch(`${API_BASE_URL}/ai/dual-chat`, {
         method: 'POST',

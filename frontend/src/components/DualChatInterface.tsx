@@ -569,7 +569,7 @@ export default function DualChatInterface({
     messages: DualMessage[],
     llmName: string,
     llmModel: string,
-    containerRef: React.RefObject<HTMLDivElement>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
     borderColor: string
   ) => (
     <div className="flex flex-col h-full">
@@ -663,8 +663,9 @@ export default function DualChatInterface({
     </div>
   );
 
-  // Show empty state if no secondary LLM selected
-  if (!secondaryLLM) {
+  // Show empty state if either LLM is missing. primaryLLM can become null
+  // after a failed config refetch, so the main render must not assume it.
+  if (!primaryLLM || !secondaryLLM) {
     return (
       <div className="h-full flex flex-col bg-gray-900">
         {/* Header */}

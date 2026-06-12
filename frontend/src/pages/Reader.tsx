@@ -6,11 +6,7 @@ import TabbedRightPanel from '../components/TabbedRightPanel';
 import SimpleResizablePanels from '../components/SimpleResizablePanels';
 import { pdfService } from '../services/api';
 import { epubService } from '../services/epubService';
-import type {
-  DocumentType,
-  PDFDocumentInfo,
-  EPUBDocumentInfo,
-} from '../types/document';
+import type { DocumentType, EPUBDocumentInfo } from '../types/document';
 import type { EPUBHighlight } from '../utils/epubHighlights';
 
 interface DocumentInfo {
@@ -67,7 +63,7 @@ export default function Reader() {
 
         // Load the appropriate document type
         if (type === 'pdf') {
-          const pdfInfo: PDFDocumentInfo = await pdfService.getPDFInfo(id);
+          const pdfInfo = await pdfService.getPDFInfo(id);
           setDocumentInfo({
             id,
             filename: pdfInfo.filename,

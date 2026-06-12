@@ -2,12 +2,10 @@ import type { Document } from '../../types/document';
 import { getBookStatus } from '../../utils/bookStatus';
 
 interface StatisticsHeaderProps {
-  pdfId: number | undefined;
   documentInfo: Document | null;
 }
 
 export default function StatisticsHeader({
-  pdfId,
   documentInfo,
 }: StatisticsHeaderProps) {
   const getStatusBadge = () => {

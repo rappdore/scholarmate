@@ -68,7 +68,7 @@ The old `migration_service.py` was deleted (commit `0c273aa`), but the `reading_
 `get_pdf_path()` does `self.pdf_dir / filename` with only a suffix check; the EPUB variant URL-decodes *first*, so double-encoded `..%252F` traversal works. Two audit passes found this independently. The legacy `filename` body fields are never sent by the frontend (verified across all clients), so they are pure attack surface.
 **Fix:** containment check (`resolve()` + `is_relative_to(base)`) in both services; delete the legacy filename body fields and make `pdf_id`/`epub_id` required (see B-14 dead-endpoint list); convert `/pdf/{filename}/file` to id-based. *(S)*
 
-**C-3. `npm run build` fails; no type/lint gate anywhere** — `frontend/package.json:12`
+**C-3. `npm run build` fails; no type/lint gate anywhere** — `frontend/package.json:12` — ✅ DONE except eslint (2026-06-12): all tsc errors fixed, build restored, `typecheck` script added and gated in pre-commit; dead files F-17/F-18/F-19 deleted; F-2 null guard and F-12 stream-event type fixed along the way. Remaining: eslint has 47 errors — burn down during the bug-fix pass, then gate it; mypy gating tracked under A-2.
 `tsc -b` reports ~18 real errors; Vite (dev and electron-forge) only transpiles, pre-commit runs only prettier/ruff/pytest/vitest (no tsc, no eslint, no mypy despite CLAUDE.md requiring mypy), and there is no CI. Error clusters:
 - `DualChatInterface.tsx` — stale yield type in `dualChatService.ts:30-38` missing the `type`/`metadata`/`done` fields the backend actually sends (F-12), React 19 `RefObject<T | null>` mismatches, and a *genuine* null crash (F-2)
 - `useHighlights.ts:27` — dead file, delete (F-19)

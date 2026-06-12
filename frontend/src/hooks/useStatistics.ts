@@ -11,6 +11,7 @@ import type {
   CalendarDay,
 } from '../types/statistics';
 import type { Document } from '../types/document';
+import type { BookStatus } from '../types/pdf';
 import { pdfService } from '../services/api';
 import { epubService } from '../services/epubService';
 import {
@@ -72,7 +73,7 @@ export function useStatistics(pdfId: number | undefined) {
                         100
                     ),
                     last_updated: readingProgress.last_updated || '',
-                    status: readingProgress.status,
+                    status: (readingProgress.status ?? 'new') as BookStatus,
                     status_updated_at: readingProgress.status_updated_at || '',
                     manually_set: readingProgress.manually_set || false,
                   }

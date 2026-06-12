@@ -116,7 +116,6 @@ export default function TabbedRightPanel({
             filename={filename}
             currentPage={currentPage}
             currentNavId={currentNavId}
-            currentChapterId={currentChapterId}
             currentChapterTitle={currentChapterTitle}
             documentType={documentType === 'pdf' ? 'pdf' : 'epub'}
           />

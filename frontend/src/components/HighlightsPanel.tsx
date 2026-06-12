@@ -4,7 +4,21 @@ import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
 import type { Highlight } from '../types/highlights';
 import { HighlightColor } from '../types/highlights';
 import type { DocumentType } from '../types/document';
-import type { EPUBHighlight } from '../utils/epubHighlights';
+import type {
+  EPUBHighlight,
+  HighlightColor as EPUBHighlightColor,
+} from '../utils/epubHighlights';
+
+// The PDF and EPUB highlight systems use different color models (hex enum vs
+// named union; see audit F-13). Map the shared colors; unmapped hues fall
+// back to yellow.
+const PDF_TO_EPUB_COLOR: Partial<Record<HighlightColor, EPUBHighlightColor>> = {
+  [HighlightColor.YELLOW]: 'yellow',
+  [HighlightColor.GREEN]: 'green',
+  [HighlightColor.BLUE]: 'blue',
+  [HighlightColor.PINK]: 'pink',
+  [HighlightColor.ORANGE]: 'orange',
+};
 
 interface HighlightsPanelProps {
   pdfId?: number;
@@ -194,7 +208,7 @@ export default function HighlightsPanel({
       // EPUB highlight color update - use context
       const success = await updateEpubHighlightColor(
         Number(highlightId),
-        newColor
+        PDF_TO_EPUB_COLOR[newColor] ?? 'yellow'
       );
       if (success) {
         console.log('EPUB highlight color updated:', highlightId, newColor);

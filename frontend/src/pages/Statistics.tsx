@@ -17,7 +17,7 @@ export default function Statistics() {
     <div className="min-h-screen px-4 py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <StatisticsHeader pdfId={pdfId} documentInfo={documentInfo} />
+        <StatisticsHeader documentInfo={documentInfo} />
 
         {/* Loading State */}
         {loading && (

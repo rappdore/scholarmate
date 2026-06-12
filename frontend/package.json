@@ -10,6 +10,7 @@
     "dev": "vite",
     "dev:electron": "electron-forge start",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",

@@ -40,7 +40,6 @@ interface NotesPanelProps {
   filename?: string;
   currentPage: number;
   currentNavId?: string; // For EPUBs
-  currentChapterId?: string; // For EPUB chapter identification
   currentChapterTitle?: string; // For EPUB chapter display
   documentType: 'pdf' | 'epub';
 }
@@ -51,7 +50,6 @@ export default function NotesPanel({
   filename,
   currentPage,
   currentNavId,
-  currentChapterId,
   currentChapterTitle,
   documentType,
 }: NotesPanelProps) {
