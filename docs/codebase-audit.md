@@ -8,7 +8,7 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 
 ---
 
-## STATUS DASHBOARD (last updated 2026-06-12, after commit 2c17ca9)
+## STATUS DASHBOARD (last updated 2026-06-12, after commit 7d4ff0c)
 
 **✅ Done (commits on main):**
 - **K** — knowledge/concepts feature removed (`38fa2fd`)
@@ -20,13 +20,16 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **C-6** — SettingsContext lazy hydration, regression tests
 - **A-3** — pydantic-settings `Settings` + lifespan-scoped `ServiceRegistry`; all 11 routers on `Depends`; zero import-time side effects; backend suite 270→281
 - **C-4** — sync-work endpoints converted to `def` (threadpool-offloaded); parse/DB work in the remaining async endpoints wrapped in `asyncio.to_thread`; backend suite 281→289
+- **A-1 backend (DB layer + services), 7 slices** (`9503157`..`7d4ff0c`, 2026-06-12): one `documents` registry (typed `DocumentRecord`, type-filtered `get_by_id`); `document_progress` with `PdfPosition|EpubPosition` union; `document_notes` with anchor union; `document_sessions` (units_read + time_spent_seconds; PDF `average_time_per_page` derived); highlights as two anchor-specific tables behind one `HighlightsService` (owner decision — anchors structurally differ); 1,073-line `DatabaseService` facade deleted, routers on typed services via `Depends`. **Wire shapes unchanged — frontend untouched.** One-time migration executed on the live DB (backup at `data/reading_progress.db.bak-pre-unified-*`; 6 orphan rows for previously-deleted books dropped); all 10 legacy tables gone. Deliberate semantics fix: incoming non-NULL `nav_metadata` now replaces stored value (old COALESCE order made word-count extraction unable to persist). Suite 289→253 (≈90 twin-table tests superseded by unified-service tests).
+- **A-2 (largely)** — twin services were the `dict[str, Any]` hotspot; all unified services are fully typed end-to-end. mypy 125→65 errors (remaining: `ollama_service` 22, `routers/tts` 9, `services/epub/` ~20 — pre-existing files untouched by A-1).
 
-**⬜ Open — next up (audit sequencing steps 9-10):**
-- **A-1 + A-2** — PDF/EPUB document unification + typed models (includes F-11, F-13 remainder) ← **NEXT**
+**⬜ Open — next up:**
+- **A-1 frontend remainder** — unified `documentApi` client + parameterized notes/highlights/statistics hooks; optional `/documents/{id}` router unification (wire change; decide whether worth it). Includes **F-11** (EPUBHighlight type split) and **F-13** (single color model).
+- **A-2 tail** — mypy burn-down in ollama/tts/epub-package (65 errors), then gate mypy in pre-commit.
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
-- **Tooling:** eslint at 45 errors/27 warnings (gate after burn-down to zero); mypy not yet gated (tracked under A-2)
+- **Tooling:** eslint burn-down then gate.
 
-**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), highlights storage shape under A-1, statistics unification scope, TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?).
+**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), statistics unification scope ~~(resolved: unified storage, format semantics in consumers)~~, TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?).
 
 ---
 

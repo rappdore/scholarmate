@@ -132,6 +132,7 @@ class NotesService(BaseDatabaseService):
         """Save a note anchored at the given position. Returns the note id."""
         try:
             now = self.get_current_timestamp()
+            params: tuple
             if isinstance(anchor, PdfNoteAnchor):
                 query = """
                     INSERT INTO document_notes

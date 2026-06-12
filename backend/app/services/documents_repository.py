@@ -131,7 +131,28 @@ class DocumentsRepository:
             The document id (integer primary key).
         """
         metadata_json = json.dumps(data.metadata) if data.metadata else None
-        is_epub = isinstance(data, EpubDocumentUpsert)
+        # (num_pages, creator, producer, chapters, publisher, language)
+        format_fields: tuple[
+            int | None, str | None, str | None, int | None, str | None, str | None
+        ]
+        if isinstance(data, EpubDocumentUpsert):
+            format_fields = (
+                None,
+                None,
+                None,
+                data.chapters,
+                data.publisher,
+                data.language,
+            )
+        else:
+            format_fields = (
+                data.num_pages,
+                data.creator,
+                data.producer,
+                None,
+                None,
+                None,
+            )
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -169,12 +190,7 @@ class DocumentsRepository:
                     data.title,
                     data.author,
                     data.subject,
-                    None if is_epub else data.num_pages,
-                    None if is_epub else data.creator,
-                    None if is_epub else data.producer,
-                    data.chapters if is_epub else None,
-                    data.publisher if is_epub else None,
-                    data.language if is_epub else None,
+                    *format_fields,
                     data.file_size,
                     data.file_path,
                     data.thumbnail_path,
@@ -183,7 +199,7 @@ class DocumentsRepository:
                     metadata_json,
                 ),
             )
-            document_id = cursor.fetchone()["id"]
+            document_id: int = cursor.fetchone()["id"]
             conn.commit()
             logger.info(
                 "Saved %s document: %s (ID: %s)",
@@ -208,7 +224,7 @@ class DocumentsRepository:
                 "DELETE FROM documents WHERE filename = ?", (filename,)
             )
             conn.commit()
-            return cursor.rowcount > 0
+            return bool(cursor.rowcount > 0)
 
     def list_all(self, doc_type: DocumentType | None = None) -> list[DocumentRecord]:
         """List documents (optionally one format), most recently accessed first."""
