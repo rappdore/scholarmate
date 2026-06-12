@@ -16,11 +16,13 @@ from ..models.epub_responses import EPUBDetailResponse, EPUBListItem
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
 from ..services.epub_service import EPUBService
+from ..services.notes_service import NotesService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
     get_epub_service,
+    get_notes_service,
     get_progress_service,
 )
 
@@ -540,6 +542,7 @@ def list_epubs(
     epub_service: EPUBService = Depends(get_epub_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     progress_service: ProgressService = Depends(get_progress_service),
+    notes_service: NotesService = Depends(get_notes_service),
 ) -> List[EPUBListItem]:
     """
     List all EPUB files in the epubs directory with metadata, reading progress, and notes info.
@@ -565,7 +568,7 @@ def list_epubs(
             p.filename: _progress_to_dict(p)
             for p in progress_service.get_all_progress(DocumentType.EPUB)
         }
-        all_notes = db_service.get_epub_notes_count_by_epub()
+        all_notes = notes_service.get_notes_summary(DocumentType.EPUB)
         all_highlights = db_service.get_epub_highlights_count_by_epub()
 
         # Get all EPUB documents from database once (avoid N+1 query)
@@ -603,12 +606,7 @@ def list_epubs(
             # Prepare notes information
             notes_info = None
             if filename and filename in all_notes:
-                notes_data = all_notes[filename]
-                notes_info = {
-                    "notes_count": notes_data["notes_count"],
-                    "latest_note_date": notes_data["latest_note_date"],
-                    "latest_note_title": notes_data["latest_note_title"],
-                }
+                notes_info = all_notes[filename].model_dump()
 
             # Prepare highlights information
             # Note: all_highlights is keyed by epub_id (int), not filename

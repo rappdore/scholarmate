@@ -195,17 +195,17 @@ class TestNotes404NotSwallowed:
     """B-1: HTTPException(404) must not be converted into a 500."""
 
     def test_get_note_missing_is_404(self):
-        fake_db = Mock()
-        fake_db.get_chat_note_by_id.return_value = None
+        fake_notes = Mock()
+        fake_notes.get_note_by_id.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
-            notes_router.get_chat_note_by_id(12345, db_service=fake_db)
+            notes_router.get_chat_note_by_id(12345, notes_service=fake_notes)
         assert exc_info.value.status_code == 404
 
     def test_delete_note_missing_is_404(self):
-        fake_db = Mock()
-        fake_db.delete_chat_note.return_value = False
+        fake_notes = Mock()
+        fake_notes.delete_note.return_value = False
 
         with pytest.raises(HTTPException) as exc_info:
-            notes_router.delete_chat_note(12345, db_service=fake_db)
+            notes_router.delete_chat_note(12345, notes_service=fake_notes)
         assert exc_info.value.status_code == 404

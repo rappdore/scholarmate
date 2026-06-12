@@ -30,11 +30,13 @@ from ..models.pdf_responses import (
 )
 from ..services.database_service import DatabaseService
 from ..services.documents_repository import DocumentsRepository
+from ..services.notes_service import NotesService
 from ..services.pdf_service import PDFService
 from ..services.progress_service import ProgressService
 from ..services.registry import (
     get_db_service,
     get_documents_repository,
+    get_notes_service,
     get_pdf_service,
     get_progress_service,
 )
@@ -401,6 +403,7 @@ def list_pdfs(
     db_service: DatabaseService = Depends(get_db_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
     progress_service: ProgressService = Depends(get_progress_service),
+    notes_service: NotesService = Depends(get_notes_service),
 ) -> list[PDFListItemEnriched]:
     """
     List all PDFs in the pdfs directory with metadata, reading progress, and notes info.
@@ -426,7 +429,7 @@ def list_pdfs(
             p.filename: _to_reading_progress(p)
             for p in progress_service.get_all_progress(DocumentType.PDF)
         }
-        all_notes = db_service.get_notes_count_by_pdf()
+        all_notes = notes_service.get_notes_summary(DocumentType.PDF)
         all_highlights = db_service.get_highlights_count_by_pdf()
 
         # Build enriched list
@@ -443,7 +446,7 @@ def list_pdfs(
 
             # Get notes info and convert to NotesInfo if exists
             notes_data = all_notes.get(pdf.filename)
-            notes_info = NotesInfo(**notes_data) if notes_data else None
+            notes_info = NotesInfo(**notes_data.model_dump()) if notes_data else None
 
             # Get highlights info and convert to HighlightsInfo if exists
             highlights_data = all_highlights.get(pdf.filename)

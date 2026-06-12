@@ -32,6 +32,7 @@ from .dual_chat_service import DualChatService
 from .epub.epub_chat_context_service import EPUBChatContextService
 from .epub_service import EPUBService
 from .llm_config_service import LLMConfigService
+from .notes_service import NotesService
 from .ollama_service import OllamaService
 from .pdf_service import PDFService
 from .progress_service import ProgressService
@@ -47,6 +48,7 @@ class ServiceRegistry:
     db_service: DatabaseService
     documents_repository: DocumentsRepository
     progress_service: ProgressService
+    notes_service: NotesService
     pdf_service: PDFService
     epub_service: EPUBService
     epub_chat_context_service: EPUBChatContextService
@@ -82,6 +84,7 @@ def build_registry(settings: Settings) -> ServiceRegistry:
         db_service=DatabaseService(settings.db_path),
         documents_repository=DocumentsRepository(settings.db_path),
         progress_service=ProgressService(settings.db_path),
+        notes_service=NotesService(settings.db_path),
         pdf_service=pdf_service,
         epub_service=epub_service,
         epub_chat_context_service=EPUBChatContextService(
@@ -131,6 +134,10 @@ def get_documents_repository() -> DocumentsRepository:
 
 def get_progress_service() -> ProgressService:
     return get_registry().progress_service
+
+
+def get_notes_service() -> NotesService:
+    return get_registry().notes_service
 
 
 def get_pdf_service() -> PDFService:

@@ -16,11 +16,10 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from ..models.epub_highlights import EPUBHighlight, EPUBHighlightCreate
-from .chat_notes_service import ChatNotesService
-from .epub_chat_notes_service import EPUBChatNotesService
 from .epub_highlights_service import EPUBHighlightService
 from .epub_reading_statistics_service import EPUBReadingStatisticsService
 from .highlights_service import HighlightsService
+from .notes_service import NotesService
 from .progress_service import ProgressService
 from .reading_statistics_service import ReadingStatisticsService
 
@@ -38,8 +37,7 @@ class DatabaseService:
     This class coordinates specialized services for different data domains while maintaining
     the same public API for backward compatibility. It delegates operations to:
     - ProgressService: unified reading progress/status tracking (used here for deletion)
-    - ChatNotesService: for conversation notes linked to PDF pages
-    - EPUBChatNotesService: for conversation notes linked to EPUB navigation sections
+    - NotesService: unified chat notes for both formats (used here for deletion)
     - HighlightsService: for text highlights with coordinates
 
     The database is automatically initialized with the required schema on first use.
@@ -60,8 +58,7 @@ class DatabaseService:
         # creates its complete schema on construction; there is deliberately
         # no schema definition in this facade.
         self.progress = ProgressService(db_path)
-        self.chat_notes = ChatNotesService(db_path)
-        self.epub_chat_notes = EPUBChatNotesService(db_path)
+        self.notes = NotesService(db_path)
         self.highlights = HighlightsService(db_path)
         self.epub_highlights = EPUBHighlightService(db_path)
         self.reading_statistics = ReadingStatisticsService(db_path)
@@ -77,216 +74,6 @@ class DatabaseService:
         data_dir = os.path.dirname(self.db_path)
         if data_dir and not os.path.exists(data_dir):
             os.makedirs(data_dir)
-
-    # ========================================
-    # CHAT NOTES METHODS
-    # ========================================
-
-    def save_chat_note(
-        self, pdf_filename: str, page_number: int, title: str, chat_content: str
-    ) -> int | None:
-        """
-        Save a chat conversation as a note linked to a specific PDF page.
-
-        This method stores conversation notes that users create while reading PDFs.
-        Each note is associated with a specific page and can have an optional title.
-
-        Args:
-            pdf_filename (str): Name of the PDF file this note belongs to
-            page_number (int): Page number this note is associated with
-            title (str): Title for the note (can be empty)
-            chat_content (str): The actual conversation or note content
-
-        Returns:
-            int | None: The ID of the newly created note, or None if creation failed
-        """
-        return self.chat_notes.save_note(pdf_filename, page_number, title, chat_content)
-
-    def get_chat_notes_for_pdf(
-        self, pdf_filename: str, page_number: int | None = None
-    ) -> list[dict[str, Any]]:
-        """
-        Retrieve chat notes for a PDF document, optionally filtered by page number.
-
-        This method can return either:
-        1. All notes for a PDF (when page_number is None)
-        2. Notes for a specific page (when page_number is provided)
-
-        Args:
-            pdf_filename (str): Name of the PDF file to get notes for
-            page_number (int | None): Specific page number to filter by, or None for all pages
-
-        Returns:
-            list[dict[str, Any]]: List of note dictionaries, each containing:
-                - id: Unique note identifier
-                - pdf_filename: PDF file name
-                - page_number: Associated page number
-                - title: Note title
-                - chat_content: Note content
-                - created_at: Creation timestamp
-                - updated_at: Last update timestamp
-        """
-        return self.chat_notes.get_notes_for_pdf(pdf_filename, page_number)
-
-    def get_chat_note_by_id(self, note_id: int) -> dict[str, Any] | None:
-        """
-        Retrieve a specific chat note by its unique ID.
-
-        This method is useful for getting the full details of a specific note
-        when you have its ID (e.g., for editing or viewing a particular note).
-
-        Args:
-            note_id (int): Unique identifier of the note to retrieve
-
-        Returns:
-            dict[str, Any] | None: Note dictionary with all fields, or None if not found
-        """
-        return self.chat_notes.get_note_by_id(note_id)
-
-    def delete_chat_note(self, note_id: int) -> bool:
-        """
-        Delete a specific chat note by its ID.
-
-        This permanently removes a note from the database. The operation
-        cannot be undone, so it should be used with caution.
-
-        Args:
-            note_id (int): Unique identifier of the note to delete
-
-        Returns:
-            bool: True if a note was deleted, False if no note was found or deletion failed
-        """
-        return self.chat_notes.delete_note(note_id)
-
-    def get_notes_count_by_pdf(self) -> dict[str, dict[str, Any]]:
-        """
-        Get summary statistics about notes for all PDF documents.
-
-        This method provides an overview of note activity across all PDFs,
-        including the total number of notes and information about the most recent note.
-        This is useful for dashboard views or summary displays.
-
-        Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping PDF filenames to their note statistics:
-                {
-                    "filename.pdf": {
-                        "notes_count": int,           # Total number of notes for this PDF
-                        "latest_note_date": str,      # Timestamp of the most recent note
-                        "latest_note_title": str      # Title of the most recent note
-                    }
-                }
-        """
-        return self.chat_notes.get_notes_count_by_pdf()
-
-    # ========================================
-    # EPUB CHAT NOTES METHODS
-    # ========================================
-
-    def save_epub_chat_note(
-        self,
-        epub_filename: str,
-        nav_id: str,
-        chapter_id: str,
-        chapter_title: str,
-        title: str,
-        chat_content: str,
-        context_sections: list[str] = None,
-        scroll_position: int = 0,
-    ) -> int | None:
-        """
-        Save an EPUB chat conversation as a note linked to a navigation section.
-
-        Args:
-            epub_filename (str): Name of the EPUB file this note belongs to
-            nav_id (str): Precise navigation section identifier
-            chapter_id (str): Chapter identifier for grouping/display
-            chapter_title (str): Human-readable chapter title
-            title (str): Title for the note (can be empty)
-            chat_content (str): The actual conversation or note content
-            context_sections (list[str]): List of section IDs that provided context
-            scroll_position (int): Scroll position within the section
-
-        Returns:
-            int | None: The ID of the newly created note, or None if creation failed
-        """
-        return self.epub_chat_notes.save_note(
-            epub_filename,
-            nav_id,
-            chapter_id,
-            chapter_title,
-            title,
-            chat_content,
-            context_sections,
-            scroll_position,
-        )
-
-    def get_epub_chat_notes(
-        self,
-        epub_filename: str,
-        nav_id: str | None = None,
-        chapter_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Retrieve chat notes for an EPUB document, with fine-grained or chapter-level filtering.
-
-        Args:
-            epub_filename (str): Name of the EPUB file to get notes for
-            nav_id (str | None): Specific navigation section to filter by
-            chapter_id (str | None): Specific chapter to filter by
-
-        Returns:
-            list[dict[str, Any]]: List of note dictionaries with navigation context
-        """
-        return self.epub_chat_notes.get_notes_for_epub(
-            epub_filename, nav_id, chapter_id
-        )
-
-    def get_epub_chat_notes_by_chapter(
-        self, epub_filename: str
-    ) -> dict[str, list[dict[str, Any]]]:
-        """
-        Get EPUB chat notes grouped by chapter for UI display.
-
-        Args:
-            epub_filename (str): Name of the EPUB file to get notes for
-
-        Returns:
-            dict[str, list[dict[str, Any]]]: Dictionary mapping chapter IDs to their notes
-        """
-        return self.epub_chat_notes.get_notes_grouped_by_chapter(epub_filename)
-
-    def get_epub_chat_note_by_id(self, note_id: int) -> dict[str, Any] | None:
-        """
-        Retrieve a specific EPUB chat note by its unique ID.
-
-        Args:
-            note_id (int): Unique identifier of the note to retrieve
-
-        Returns:
-            dict[str, Any] | None: Note dictionary with all fields, or None if not found
-        """
-        return self.epub_chat_notes.get_note_by_id(note_id)
-
-    def delete_epub_chat_note(self, note_id: int) -> bool:
-        """
-        Delete a specific EPUB chat note by its ID.
-
-        Args:
-            note_id (int): Unique identifier of the note to delete
-
-        Returns:
-            bool: True if a note was deleted, False if no note was found or deletion failed
-        """
-        return self.epub_chat_notes.delete_note(note_id)
-
-    def get_epub_notes_count_by_epub(self) -> dict[str, dict[str, Any]]:
-        """
-        Get summary statistics about notes for all EPUB documents.
-
-        Returns:
-            dict[str, dict[str, Any]]: Dictionary mapping EPUB filenames to their note statistics
-        """
-        return self.epub_chat_notes.get_notes_count_by_epub()
 
     # ========================================
     # HIGHLIGHT METHODS
@@ -445,18 +232,7 @@ class DatabaseService:
         reading_progress_deleted = self.progress.delete_progress(document_id)
 
         # Delete notes
-        notes_deleted = False
-        try:
-            with self.chat_notes.get_connection() as conn:
-                cursor = conn.execute(
-                    "DELETE FROM chat_notes WHERE pdf_filename = ?", (pdf_filename,)
-                )
-                conn.commit()
-                notes_deleted = (
-                    cursor.rowcount >= 0
-                )  # Consider successful even if no rows were deleted
-        except Exception as e:
-            logger.error(f"Error deleting notes for {pdf_filename}: {e}")
+        notes_deleted = self.notes.delete_notes_for_document(document_id)
 
         # Delete highlights
         highlights_deleted = False
@@ -497,19 +273,7 @@ class DatabaseService:
         results["epub_progress"] = self.progress.delete_progress(document_id)
 
         # Delete EPUB chat notes
-        try:
-            with self.epub_chat_notes.get_connection() as conn:
-                cursor = conn.execute(
-                    "DELETE FROM epub_chat_notes WHERE epub_filename = ?",
-                    (epub_filename,),
-                )
-                conn.commit()
-                results["epub_chat_notes"] = (
-                    cursor.rowcount >= 0
-                )  # Consider successful even if no rows were deleted
-        except Exception as e:
-            logger.error(f"Error deleting EPUB chat notes for {epub_filename}: {e}")
-            results["epub_chat_notes"] = False
+        results["epub_chat_notes"] = self.notes.delete_notes_for_document(document_id)
 
         # Delete EPUB highlights (keyed by the document id)
         try:

@@ -3,10 +3,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..models.documents import DocumentType
-from ..services.database_service import DatabaseService
+from ..models.documents import DocumentType, NoteRecord, PdfNoteAnchor
 from ..services.documents_repository import DocumentsRepository
-from ..services.registry import get_db_service, get_documents_repository
+from ..services.notes_service import NotesService
+from ..services.registry import get_documents_repository, get_notes_service
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -28,10 +28,23 @@ class ChatNoteResponse(BaseModel):
     updated_at: str
 
 
+def _to_response(note: NoteRecord) -> ChatNoteResponse:
+    assert isinstance(note.anchor, PdfNoteAnchor)
+    return ChatNoteResponse(
+        id=note.id,
+        pdf_filename=note.filename,
+        page_number=note.anchor.page_number,
+        title=note.title or "",
+        chat_content=note.chat_content,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
 @router.post("/chat", response_model=Dict[str, Any])
 def save_chat_note(
     note: ChatNoteRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> Dict[str, Any]:
     """
@@ -41,11 +54,10 @@ def save_chat_note(
         pdf_doc = documents_repository.get_by_id(note.pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
-        pdf_filename = pdf_doc.filename
 
-        note_id = db_service.save_chat_note(
-            pdf_filename=pdf_filename,
-            page_number=note.page_number,
+        note_id = notes_service.save_note(
+            document_id=note.pdf_id,
+            anchor=PdfNoteAnchor(page_number=note.page_number),
             title=note.title,
             chat_content=note.chat_content,
         )
@@ -65,29 +77,23 @@ def save_chat_note(
         raise HTTPException(status_code=500, detail=f"Error saving chat note: {str(e)}")
 
 
-# ========================================
-# ID-BASED ENDPOINTS (Phase 5)
-# ========================================
-
-
 @router.get("/chat/pdf/{pdf_id:int}", response_model=List[ChatNoteResponse])
 def get_chat_notes_for_pdf_by_id(
     pdf_id: int,
     page_number: Optional[int] = None,
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> List[ChatNoteResponse]:
     """
     Get chat notes for a PDF by ID, optionally filtered by page
     """
     try:
-        # Lookup filename from ID
         pdf_doc = documents_repository.get_by_id(pdf_id, DocumentType.PDF)
         if not pdf_doc:
             raise HTTPException(status_code=404, detail="PDF not found")
 
-        notes = db_service.get_chat_notes_for_pdf(pdf_doc.filename, page_number)
-        return [ChatNoteResponse(**note) for note in notes]
+        notes = notes_service.get_pdf_notes(pdf_id, page_number)
+        return [_to_response(note) for note in notes]
     except HTTPException:
         raise
     except Exception as e:
@@ -98,15 +104,15 @@ def get_chat_notes_for_pdf_by_id(
 
 @router.get("/chat/id/{note_id}", response_model=ChatNoteResponse)
 def get_chat_note_by_id(
-    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+    note_id: int, notes_service: NotesService = Depends(get_notes_service)
 ) -> ChatNoteResponse:
     """
     Get a specific chat note by ID
     """
     try:
-        note = db_service.get_chat_note_by_id(note_id)
-        if note:
-            return ChatNoteResponse(**note)
+        note = notes_service.get_note_by_id(note_id)
+        if note and note.doc_type == DocumentType.PDF:
+            return _to_response(note)
         else:
             raise HTTPException(status_code=404, detail="Chat note not found")
     except HTTPException:
@@ -119,13 +125,13 @@ def get_chat_note_by_id(
 
 @router.delete("/chat/{note_id}")
 def delete_chat_note(
-    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+    note_id: int, notes_service: NotesService = Depends(get_notes_service)
 ) -> Dict[str, Any]:
     """
     Delete a chat note
     """
     try:
-        success = db_service.delete_chat_note(note_id)
+        success = notes_service.delete_note(note_id)
         if success:
             return {
                 "success": True,

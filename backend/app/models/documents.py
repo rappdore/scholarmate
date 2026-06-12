@@ -123,6 +123,50 @@ class EpubPosition(BaseModel):
 DocumentPosition = PdfPosition | EpubPosition
 
 
+class PdfNoteAnchor(BaseModel):
+    """Where a note attaches in a PDF: a page."""
+
+    kind: Literal["pdf"] = "pdf"
+    page_number: int
+
+
+class EpubNoteAnchor(BaseModel):
+    """Where a note attaches in an EPUB: a navigation section + context."""
+
+    kind: Literal["epub"] = "epub"
+    nav_id: str
+    chapter_id: str | None = None
+    chapter_title: str | None = None
+    scroll_position: int = 0
+    context_sections: list[str] | None = None
+
+
+NoteAnchor = PdfNoteAnchor | EpubNoteAnchor
+
+
+class NoteRecord(BaseModel):
+    """A row of the unified ``document_notes`` table (joined with documents
+    for filename/doc_type)."""
+
+    id: int
+    document_id: int
+    doc_type: DocumentType
+    filename: str
+    anchor: PdfNoteAnchor | EpubNoteAnchor
+    title: str | None = None
+    chat_content: str
+    created_at: str
+    updated_at: str
+
+
+class NotesSummary(BaseModel):
+    """Per-document note statistics for list views."""
+
+    notes_count: int
+    latest_note_date: str | None = None
+    latest_note_title: str | None = None
+
+
 class DocumentProgress(BaseModel):
     """A row of the unified ``document_progress`` table (joined with documents
     for filename/doc_type)."""

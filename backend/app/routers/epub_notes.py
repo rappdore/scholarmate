@@ -1,7 +1,7 @@
 """
 EPUB Notes API Routes
 
-Handles EPUB-specific note operations, completely separate from PDF notes.
+Handles EPUB-specific note operations on the unified notes service.
 Provides endpoints for saving, retrieving, and managing chat notes linked to EPUB navigation sections.
 """
 
@@ -11,10 +11,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..models.documents import DocumentRecord, DocumentType
-from ..services.database_service import DatabaseService
+from ..models.documents import (
+    DocumentRecord,
+    DocumentType,
+    EpubNoteAnchor,
+    NoteRecord,
+)
 from ..services.documents_repository import DocumentsRepository
-from ..services.registry import get_db_service, get_documents_repository
+from ..services.notes_service import NotesService
+from ..services.registry import get_documents_repository, get_notes_service
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -28,15 +33,6 @@ def get_epub_doc_or_404(
 ) -> DocumentRecord:
     """
     Look up EPUB document by ID and return it, or raise HTTPException(404) if not found.
-
-    Args:
-        epub_id: The EPUB document ID
-
-    Returns:
-        The EPUB DocumentRecord
-
-    Raises:
-        HTTPException: 404 if EPUB not found
     """
     if epub_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid EPUB ID: must be positive")
@@ -75,47 +71,57 @@ class EPUBChatNoteResponse(BaseModel):
     updated_at: str
 
 
+def _to_response(note: NoteRecord) -> EPUBChatNoteResponse:
+    assert isinstance(note.anchor, EpubNoteAnchor)
+    return EPUBChatNoteResponse(
+        id=note.id,
+        epub_filename=note.filename,
+        nav_id=note.anchor.nav_id,
+        chapter_id=note.anchor.chapter_id or "",
+        chapter_title=note.anchor.chapter_title or "",
+        title=note.title or "",
+        chat_content=note.chat_content,
+        context_sections=note.anchor.context_sections,
+        scroll_position=note.anchor.scroll_position,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
 @router.post("/chat", response_model=dict[str, Any])
 def save_epub_chat_note(
     note: EPUBChatNoteRequest,
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> dict[str, Any]:
     """
     Save EPUB chat conversation as a note
-
-    Args:
-        note: EPUB chat note data with navigation context
-
-    Returns:
-        Dict containing note ID and success message
-
-    Raises:
-        HTTPException: If note creation fails
     """
     try:
-        # Resolve epub_id to epub_filename
         epub_doc = get_epub_doc_or_404(note.epub_id, documents_repository)
-        epub_filename = epub_doc.filename
 
-        note_id = db_service.save_epub_chat_note(
-            epub_filename=epub_filename,
-            nav_id=note.nav_id,
-            chapter_id=note.chapter_id,
-            chapter_title=note.chapter_title,
+        note_id = notes_service.save_note(
+            document_id=note.epub_id,
+            anchor=EpubNoteAnchor(
+                nav_id=note.nav_id,
+                chapter_id=note.chapter_id,
+                chapter_title=note.chapter_title,
+                scroll_position=note.scroll_position or 0,
+                context_sections=note.context_sections,
+            ),
             title=note.title,
             chat_content=note.chat_content,
-            context_sections=note.context_sections,
-            scroll_position=note.scroll_position or 0,
         )
 
         if note_id:
-            logger.info(f"EPUB chat note saved with ID {note_id} for {epub_filename}")
+            logger.info(
+                f"EPUB chat note saved with ID {note_id} for {epub_doc.filename}"
+            )
             return {
                 "note_id": note_id,
                 "message": "EPUB chat note saved successfully",
                 "epub_id": note.epub_id,
-                "epub_filename": epub_filename,
+                "epub_filename": epub_doc.filename,
                 "nav_id": note.nav_id,
                 "chapter_id": note.chapter_id,
             }
@@ -135,30 +141,17 @@ def get_epub_chat_notes(
     epub_id: int,
     nav_id: str | None = None,
     chapter_id: str | None = None,
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> list[EPUBChatNoteResponse]:
     """
-    Get EPUB chat notes with optional filtering
-
-    Args:
-        epub_id: ID of the EPUB document
-        nav_id: Optional specific navigation section to filter by
-        chapter_id: Optional specific chapter to filter by
-
-    Returns:
-        List of EPUB chat notes
-
-    Raises:
-        HTTPException: If retrieval fails
+    Get EPUB chat notes with optional filtering by section or chapter
     """
     try:
-        # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
-        epub_filename = epub_doc.filename
+        get_epub_doc_or_404(epub_id, documents_repository)
 
-        notes = db_service.get_epub_chat_notes(epub_filename, nav_id, chapter_id)
-        return [EPUBChatNoteResponse(**note) for note in notes]
+        notes = notes_service.get_epub_notes(epub_id, nav_id, chapter_id)
+        return [_to_response(note) for note in notes]
     except HTTPException:
         raise
     except Exception as e:
@@ -174,32 +167,20 @@ def get_epub_chat_notes(
 )
 def get_epub_chat_notes_by_chapter(
     epub_id: int,
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
     documents_repository: DocumentsRepository = Depends(get_documents_repository),
 ) -> dict[str, list[EPUBChatNoteResponse]]:
     """
     Get EPUB chat notes grouped by chapter for UI display
-
-    Args:
-        epub_id: ID of the EPUB document
-
-    Returns:
-        Dictionary mapping chapter IDs to their notes
-
-    Raises:
-        HTTPException: If retrieval fails
     """
     try:
-        # Resolve epub_id to epub_filename
-        epub_doc = get_epub_doc_or_404(epub_id, documents_repository)
-        epub_filename = epub_doc.filename
+        get_epub_doc_or_404(epub_id, documents_repository)
 
-        notes_by_chapter = db_service.get_epub_chat_notes_by_chapter(epub_filename)
-
-        # Convert to response models
-        result = {}
-        for chapter_id, notes in notes_by_chapter.items():
-            result[chapter_id] = [EPUBChatNoteResponse(**note) for note in notes]
+        result: dict[str, list[EPUBChatNoteResponse]] = {}
+        for note in notes_service.get_epub_notes(epub_id):
+            assert isinstance(note.anchor, EpubNoteAnchor)
+            chapter_key = note.anchor.chapter_id or "unknown"
+            result.setdefault(chapter_key, []).append(_to_response(note))
 
         return result
     except HTTPException:
@@ -214,24 +195,15 @@ def get_epub_chat_notes_by_chapter(
 
 @router.get("/chat/id/{note_id}", response_model=EPUBChatNoteResponse)
 def get_epub_chat_note_by_id(
-    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+    note_id: int, notes_service: NotesService = Depends(get_notes_service)
 ) -> EPUBChatNoteResponse:
     """
     Get specific EPUB chat note by ID
-
-    Args:
-        note_id: Unique identifier of the note
-
-    Returns:
-        EPUB chat note details
-
-    Raises:
-        HTTPException: If note not found or retrieval fails
     """
     try:
-        note = db_service.get_epub_chat_note_by_id(note_id)
-        if note:
-            return EPUBChatNoteResponse(**note)
+        note = notes_service.get_note_by_id(note_id)
+        if note and note.doc_type == DocumentType.EPUB:
+            return _to_response(note)
         else:
             raise HTTPException(status_code=404, detail="EPUB chat note not found")
     except HTTPException:
@@ -245,22 +217,13 @@ def get_epub_chat_note_by_id(
 
 @router.delete("/chat/{note_id}")
 def delete_epub_chat_note(
-    note_id: int, db_service: DatabaseService = Depends(get_db_service)
+    note_id: int, notes_service: NotesService = Depends(get_notes_service)
 ) -> dict[str, Any]:
     """
     Delete EPUB chat note
-
-    Args:
-        note_id: Unique identifier of the note to delete
-
-    Returns:
-        Success confirmation message
-
-    Raises:
-        HTTPException: If note not found or deletion fails
     """
     try:
-        success = db_service.delete_epub_chat_note(note_id)
+        success = notes_service.delete_note(note_id)
         if success:
             logger.info(f"EPUB chat note {note_id} deleted successfully")
             return {
@@ -281,20 +244,14 @@ def delete_epub_chat_note(
 
 @router.get("/stats", response_model=dict[str, dict[str, Any]])
 def get_epub_notes_statistics(
-    db_service: DatabaseService = Depends(get_db_service),
+    notes_service: NotesService = Depends(get_notes_service),
 ) -> dict[str, dict[str, Any]]:
     """
     Get summary statistics about notes for all EPUB documents
-
-    Returns:
-        Dictionary mapping EPUB filenames to their note statistics
-
-    Raises:
-        HTTPException: If retrieval fails
     """
     try:
-        stats = db_service.get_epub_notes_count_by_epub()
-        return stats
+        stats = notes_service.get_notes_summary(DocumentType.EPUB)
+        return {filename: summary.model_dump() for filename, summary in stats.items()}
     except Exception as e:
         logger.error(f"Error getting EPUB notes statistics: {e}")
         raise HTTPException(

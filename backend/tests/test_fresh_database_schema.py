@@ -62,8 +62,7 @@ class TestFreshSchemaIsComplete:
     def test_all_tables_created(self, db_service, db_path):
         expected = {
             "document_progress",
-            "chat_notes",
-            "epub_chat_notes",
+            "document_notes",
             "highlights",
             "epub_highlights",
             "reading_sessions",
@@ -93,9 +92,8 @@ class TestFreshSchemaIsComplete:
         } <= columns
 
     def test_id_columns_present_everywhere(self, db_service, db_path):
-        assert "pdf_id" in _columns(db_path, "chat_notes")
+        assert "document_id" in _columns(db_path, "document_notes")
         assert "pdf_id" in _columns(db_path, "highlights")
-        assert "epub_id" in _columns(db_path, "epub_chat_notes")
 
     def test_llm_config_table_complete_with_trigger(self, db_service, db_path):
         assert "always_starts_with_thinking" in _columns(db_path, "llm_configurations")
