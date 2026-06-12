@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
@@ -119,13 +120,17 @@ async def tts_websocket(
                     generate_tts(websocket, text, voice, speed, tts_service)
                 )
 
-                # Use asyncio.wait to listen for either task completion or new messages
-                while not current_task.done():
+                # Use asyncio.wait to listen for either task completion or new messages.
+                # mypy cannot prove current_task is non-None on this loop's
+                # back-edge; the cast is a runtime no-op and `task` aliases the
+                # same object for the rest of the iteration.
+                while not (task := cast("asyncio.Task[None]", current_task)).done():
                     # Create a task for receiving the next message
                     receive_task = asyncio.create_task(websocket.receive_text())
 
+                    wait_tasks: list[asyncio.Task[Any]] = [task, receive_task]
                     done, _pending = await asyncio.wait(
-                        [current_task, receive_task],
+                        wait_tasks,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
 
@@ -137,9 +142,9 @@ async def tts_websocket(
 
                             if new_message.get("type") == "stop":
                                 # Cancel the TTS task
-                                current_task.cancel()
+                                task.cancel()
                                 try:
-                                    await current_task
+                                    await task
                                 except asyncio.CancelledError:
                                     pass
                                 await websocket.send_json({"type": "stopped"})
@@ -148,9 +153,9 @@ async def tts_websocket(
 
                             elif new_message.get("type") == "start":
                                 # New start request - cancel current and restart
-                                current_task.cancel()
+                                task.cancel()
                                 try:
-                                    await current_task
+                                    await task
                                 except asyncio.CancelledError:
                                     pass
 
@@ -190,8 +195,8 @@ async def tts_websocket(
                             pass
 
                         # Check if TTS task raised an exception
-                        if current_task.done() and current_task.exception():
-                            exc = current_task.exception()
+                        if task.done() and task.exception():
+                            exc = task.exception()
                             await websocket.send_json(
                                 {
                                     "type": "error",

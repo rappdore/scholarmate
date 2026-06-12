@@ -47,6 +47,12 @@ repos:
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
+      - id: backend-typecheck
+        name: backend typecheck
+        entry: bash -c 'cd backend && uv run mypy .'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
       - id: backend-tests
         name: backend tests
         entry: bash -c 'cd backend && uv run pytest'

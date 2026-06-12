@@ -525,7 +525,7 @@ class LLMConfigService:
                 cursor = conn.execute(
                     "SELECT COUNT(*) as count FROM llm_configurations"
                 )
-                return cursor.fetchone()["count"]
+                return int(cursor.fetchone()["count"])
         except Exception as e:
             logger.error(f"Error counting configurations: {e}")
             raise

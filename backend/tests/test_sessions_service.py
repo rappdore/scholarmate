@@ -37,7 +37,9 @@ def service(db_path, repo):
     return SessionsService(db_path=db_path)
 
 
-def _tracked_pdf(db_path, repo, filename="book.pdf", status="reading") -> int:
+def _tracked_pdf(
+    db_path, repo: DocumentsRepository, filename="book.pdf", status="reading"
+) -> int:
     doc_id = repo.upsert(PdfDocumentUpsert(filename=filename, num_pages=100))
     progress = ProgressService(db_path)
     progress.save_pdf_progress(doc_id, 1, 100)
@@ -46,7 +48,9 @@ def _tracked_pdf(db_path, repo, filename="book.pdf", status="reading") -> int:
     return doc_id
 
 
-def _tracked_epub(db_path, repo, filename="book.epub", status="reading") -> int:
+def _tracked_epub(
+    db_path, repo: DocumentsRepository, filename="book.epub", status="reading"
+) -> int:
     doc_id = repo.upsert(EpubDocumentUpsert(filename=filename, chapters=3))
     progress = ProgressService(db_path)
     progress.save_epub_progress(

@@ -4,6 +4,7 @@ import os
 import threading
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
+from typing import cast
 
 from pysbd import Segmenter
 
@@ -174,7 +175,7 @@ class TTSService:
         """
         try:
             audio_array = chunk.audio.cpu().numpy()
-            return audio_array.tobytes()
+            return cast(bytes, audio_array.tobytes())
         except Exception as e:
             logger.error(f"Failed to convert audio tensor to bytes: {e}")
             raise AudioConversionError(f"Audio conversion failed: {e}") from e

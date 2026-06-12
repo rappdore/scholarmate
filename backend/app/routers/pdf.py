@@ -576,7 +576,8 @@ def refresh_pdf_cache(
         try:
             return CacheRefreshResponse(
                 success=True,
-                **cache_info,
+                cache_built_at=cache_info["cache_built_at"],
+                pdf_count=cache_info["pdf_count"],
                 message=f"Cache refreshed successfully. {cache_info['pdf_count']} PDFs cached.",
             )
         except Exception as validation_error:

@@ -2,6 +2,7 @@ import io
 import logging
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import ebooklib
 from ebooklib import epub
@@ -58,7 +59,7 @@ class EPUBImageService:
             if cover_image:
                 # Convert image data to PIL Image
                 image_data = io.BytesIO(cover_image.get_content())
-                img = Image.open(image_data)
+                img: Image.Image = Image.open(image_data)
 
                 if strategy == "fill":
                     # Fill strategy: crop to exact aspect ratio, then resize
@@ -146,7 +147,7 @@ class EPUBImageService:
                 or item.get_name().endswith(image_path)
                 or item.get_name().endswith(normalized_path)
             ):
-                return item.get_content()
+                return cast(bytes, item.get_content())
 
         # If not found, try fallback matching by filename only
         target_filename = (
@@ -163,7 +164,7 @@ class EPUBImageService:
             )
 
             if item_filename == target_filename:
-                return item.get_content()
+                return cast(bytes, item.get_content())
 
         raise FileNotFoundError(f"Image {image_path} not found in EPUB")
 
@@ -179,7 +180,7 @@ class EPUBImageService:
 
         return images
 
-    def _find_cover_image(self, book, epub_path: str = None):
+    def _find_cover_image(self, book, epub_path: str | None = None):
         """
         Find cover image using EPUB specification methods:
         1. Parse OPF directly to find cover metadata and manifest

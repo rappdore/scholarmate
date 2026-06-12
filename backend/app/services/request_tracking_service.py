@@ -8,7 +8,7 @@ It maintains a registry of active requests with their associated tasks for grace
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -23,13 +23,9 @@ class ActiveRequest:
     document_type: str  # 'pdf' or 'epub'
     page_num: int | None = None  # For PDF
     nav_id: str | None = None  # For EPUB
-    created_at: datetime = None
+    created_at: datetime = field(default_factory=datetime.now)
     task: asyncio.Task | None = None
     cancelled: bool = False
-
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
 
 
 class RequestTrackingService:
@@ -183,8 +179,9 @@ class RequestTrackingService:
                 to_remove.append(request_id)
 
         for request_id in to_remove:
-            if self._active_requests[request_id].task:
-                self._active_requests[request_id].task.cancel()
+            stale_task = self._active_requests[request_id].task
+            if stale_task:
+                stale_task.cancel()
             del self._active_requests[request_id]
 
         if to_remove:

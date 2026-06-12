@@ -46,7 +46,7 @@ class EPUBMetadataExtractor:
         """
         List all EPUB files in the epubs directory with metadata
         """
-        epubs = []
+        epubs: list[dict[str, Any]] = []
 
         for file_path in self.epub_dir.glob("*.epub"):
             try:

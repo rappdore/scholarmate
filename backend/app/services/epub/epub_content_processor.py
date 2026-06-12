@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, cast
 
 import ebooklib
 from bs4 import BeautifulSoup, Doctype, Tag
@@ -175,8 +175,8 @@ class EPUBContentProcessor:
     def _resolve_navigation_entry(
         self, nav_id: str, navigation_index: dict[str, Any], book
     ) -> dict[str, Any] | None:
-        nav_lookup = navigation_index.get("by_id", {})
-        flat_nav = navigation_index.get("flat", [])
+        nav_lookup: dict[str, dict[str, Any]] = navigation_index.get("by_id", {})
+        flat_nav: list[dict[str, Any]] = navigation_index.get("flat", [])
 
         if nav_id in nav_lookup:
             return nav_lookup[nav_id]
@@ -412,15 +412,16 @@ class EPUBContentProcessor:
         for item_id in nav_entry.get("spine_item_ids", []) or []:
             item = book.get_item_with_id(item_id)
             if self._is_document_item(item):
-                return (
+                return cast(
+                    str,
                     item.get_name()
                     .replace(".xhtml", "")
                     .replace(".html", "")
                     .replace("_", " ")
-                    .title()
+                    .title(),
                 )
 
-        return nav_entry.get("id", "")
+        return cast(str, nav_entry.get("id", ""))
 
     def _is_document_item(self, item) -> bool:
         if not item:

@@ -1,7 +1,9 @@
 import logging
 from collections.abc import AsyncGenerator
+from typing import cast
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from app.models.llm_types import LLMConfiguration
 from app.models.stream_types import StreamChunk
@@ -30,10 +32,12 @@ class OllamaService:
         # Shared tracker injected by the registry so cancellation requests
         # made through the routers are visible to in-flight streams here.
         self._request_tracking = request_tracking
-        self.client: AsyncOpenAI | None = None
-        self.model: str | None = None
-        self.base_url: str | None = None
-        self.api_key: str | None = None
+        # Always assigned by _load_active_configuration() below (both its
+        # success and fallback paths), so these are never None after __init__.
+        self.client: AsyncOpenAI
+        self.model: str
+        self.base_url: str
+        self.api_key: str
         self.always_starts_with_thinking: bool = False
         # Session storage for reasoning traces, keyed by filename
         self._reasoning_sessions: dict[str, list] = {}
@@ -213,7 +217,8 @@ Provide a helpful analysis that will aid in understanding this content."""
                 temperature=0.7,
             )
 
-            return response.choices[0].message.content.strip()
+            # content is only None for tool-call responses, which we never request
+            return cast(str, response.choices[0].message.content).strip()
 
         except Exception as e:
             raise Exception(f"Failed to analyze page: {str(e)}")
@@ -273,7 +278,8 @@ Provide a helpful analysis that will aid in understanding this content."""
                 temperature=0.7,
             )
 
-            return response.choices[0].message.content.strip()
+            # content is only None for tool-call responses, which we never request
+            return cast(str, response.choices[0].message.content).strip()
 
         except Exception as e:
             raise Exception(f"Failed to analyze EPUB section: {str(e)}")
@@ -319,7 +325,9 @@ You should:
 
 Keep responses conversational but informative. When explaining a concept, emphasize intuition. Rigor is important, but not at the expense of clarity. Why something makes intuitive sense is just as important as the technical details. If explaining math, use LaTeX to format equations."""
 
-        messages = [{"role": "system", "content": system_prompt}]
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system_prompt}
+        ]
 
         # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:
@@ -452,7 +460,9 @@ You should:
 
 Keep responses conversational but informative."""
 
-        messages = [{"role": "system", "content": system_prompt}]
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system_prompt}
+        ]
 
         # Add chat history if provided, reconstructing with reasoning_details
         if chat_history:

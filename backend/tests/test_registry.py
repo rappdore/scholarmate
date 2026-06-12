@@ -20,7 +20,9 @@ from app.settings import Settings
 
 @pytest.fixture
 def tmp_settings(tmp_path) -> Settings:
-    return Settings(
+    # _env_file is a real pydantic-settings init kwarg, but mypy only sees the
+    # dataclass_transform-synthesized signature built from the model fields.
+    return Settings(  # type: ignore[call-arg]
         _env_file=None,
         db_path=str(tmp_path / "test.db"),
         pdf_dir=str(tmp_path / "pdfs"),

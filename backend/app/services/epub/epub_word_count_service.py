@@ -171,7 +171,7 @@ class EPUBWordCountService:
             fragment = None
 
         # Find the item in the book
-        spine_item_id = None
+        spine_item_id: str | None = None
         for item in book.get_items():
             if not self._is_document_item(item):
                 continue

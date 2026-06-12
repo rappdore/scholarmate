@@ -164,7 +164,7 @@ async def analyze_page(
             text=page_text,
             filename=filename,
             page_num=request.page_num,
-            context=request.context,
+            context=request.context or "",
         )
 
         return {
@@ -226,7 +226,7 @@ async def analyze_epub_section(
             epub_context=epub_context,
             filename=filename,
             nav_id=request.nav_id,
-            context=request.context,
+            context=request.context or "",
         )
 
         return {

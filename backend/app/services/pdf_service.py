@@ -8,7 +8,7 @@ from PyPDF2 import PdfReader
 
 from app.models.pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
 
-from .pdf_cache import PDFCache
+from .pdf_cache import PDFCache, PDFCacheInfo
 
 
 class PDFService:
@@ -104,8 +104,8 @@ class PDFService:
                             f"Page {page_num} is out of range. PDF has {len(reader.pages)} pages."
                         )
 
-                    page = reader.pages[page_num - 1]
-                    text = page.extract_text()
+                    fallback_page = reader.pages[page_num - 1]
+                    text = fallback_page.extract_text()
 
                     return text or ""
             except Exception as fallback_error:
@@ -192,14 +192,14 @@ class PDFService:
             # Fallback: generate if not in cache (shouldn't happen normally)
             return self.generate_thumbnail(filename)
 
-    def refresh_cache(self) -> dict[str, object]:
+    def refresh_cache(self) -> PDFCacheInfo:
         """
         Refresh the PDF cache by rebuilding from filesystem
         """
         self.cache.refresh()
         return self.cache.get_cache_info()
 
-    def get_cache_info(self) -> dict[str, object]:
+    def get_cache_info(self) -> PDFCacheInfo:
         """
         Get metadata about the PDF cache
         """

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
@@ -345,7 +345,8 @@ def get_epub_progress_by_id(
                     # Save updated nav_metadata back to database
                     progress_service.save_epub_progress(
                         document_id=epub_id,
-                        position=progress.position,
+                        # An EPUB document's progress always carries an EpubPosition
+                        position=cast(EpubPosition, progress.position),
                         progress_percentage=progress.progress_percentage,
                         nav_metadata=updated_nav_metadata,
                     )

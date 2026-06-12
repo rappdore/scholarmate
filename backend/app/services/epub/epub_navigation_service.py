@@ -73,11 +73,13 @@ class EPUBNavigationService:
                 )
         return spine_items
 
-    def _process_toc_items(self, toc_items, book, level=1):
+    def _process_toc_items(
+        self, toc_items, book, level: int = 1
+    ) -> list[dict[str, Any]]:
         """
         Recursively process table of contents items
         """
-        processed_items = []
+        processed_items: list[dict[str, Any]] = []
 
         for item in toc_items:
             if isinstance(item, tuple):
@@ -286,7 +288,7 @@ class EPUBNavigationService:
         Find which spine positions correspond to a navigation item.
         A nav item might span multiple spine items or be contained within one.
         """
-        positions = []
+        positions: list[int] = []
         nav_href = nav_item.get("href", "")
 
         if not nav_href:
@@ -329,7 +331,7 @@ class EPUBNavigationService:
         current_title = current_nav_entry.get("title", "")
 
         # Collect all spine positions for this logical chapter
-        chapter_positions = []
+        chapter_positions: list[int] = []
 
         # Start from the current position and look forward
         for spine_pos in range(start_position, len(book.spine)):

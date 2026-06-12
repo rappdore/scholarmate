@@ -10,9 +10,10 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, cast
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from app.models.llm_types import LLMConfiguration
 
@@ -290,7 +291,9 @@ class DualChatService:
 
             # Make streaming request
             stream = await client.chat.completions.create(
-                model=llm_config.model_name, messages=messages, stream=True
+                model=llm_config.model_name,
+                messages=cast(list[ChatCompletionMessageParam], messages),
+                stream=True,
             )
 
             # Stream chunks

@@ -1,6 +1,8 @@
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from PyPDF2 import PdfReader
 
@@ -9,7 +11,19 @@ from app.models.pdf_metadata import PDFBasicMetadata, PDFExtendedMetadata
 
 from .documents_repository import DocumentsRepository
 
+if TYPE_CHECKING:
+    # Imported only for typing to avoid a circular import with pdf_service.
+    from .pdf_service import PDFService
+
 logger = logging.getLogger(__name__)
+
+
+class PDFCacheInfo(TypedDict):
+    """Metadata about the in-memory PDF cache."""
+
+    cache_built_at: str
+    pdf_count: int
+    cached_files: list[str]
 
 
 class PDFCache:
@@ -30,7 +44,7 @@ class PDFCache:
         self,
         pdf_dir: Path,
         thumbnails_dir: Path,
-        pdf_service: object,
+        pdf_service: "PDFService",
         db_path: str = "data/reading_progress.db",
     ) -> None:
         """
@@ -53,8 +67,8 @@ class PDFCache:
         # Starts with PDFBasicMetadata, upgraded to PDFExtendedMetadata on get_pdf_info()
         self._cache: dict[str, PDFBasicMetadata | PDFExtendedMetadata] = {}
 
-        # Cache metadata
-        self._cache_built_at: str | None = None
+        # Cache metadata (always set by the _build_cache() call below)
+        self._cache_built_at: str = ""
         self._cache_pdf_count: int = 0
 
         # Build cache on initialization
@@ -156,7 +170,7 @@ class PDFCache:
                         num_pages = len(reader.pages)
 
                         # Try to get metadata
-                        metadata = reader.metadata or {}
+                        metadata: Mapping[str, Any] = reader.metadata or {}
                         title = metadata.get("/Title", file_path.stem)
                         author = metadata.get("/Author", "Unknown")
 
@@ -295,7 +309,7 @@ class PDFCache:
 
             with open(file_path, "rb") as file:
                 reader = PdfReader(file)
-                metadata = reader.metadata or {}
+                metadata: Mapping[str, Any] = reader.metadata or {}
 
                 # Create extended metadata object
                 extended_info = PDFExtendedMetadata(
@@ -396,7 +410,7 @@ class PDFCache:
         self._build_cache()
         logger.info("PDF cache refresh complete")
 
-    def get_cache_info(self) -> dict[str, object]:
+    def get_cache_info(self) -> PDFCacheInfo:
         """
         Get metadata about the cache itself.
 
