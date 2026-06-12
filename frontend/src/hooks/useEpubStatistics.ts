@@ -2,7 +2,7 @@
  * Custom hook for fetching and calculating EPUB reading statistics
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import type {
   EpubSessionsResponse,
   EpubAggregateStats,
@@ -16,6 +16,7 @@ import {
   calculateEpubStreak,
   groupEpubByDay,
 } from '../utils/epubStatisticsCalculations';
+import { useAsyncData } from './useAsyncData';
 
 interface UseEpubStatisticsReturn {
   sessions: EpubSessionsResponse | null;
@@ -28,70 +29,26 @@ interface UseEpubStatisticsReturn {
   error: string | null;
 }
 
+async function fetchEpubStatistics(epubId: number) {
+  // Fetch session data, document info, and progress in parallel
+  const [sessions, documentInfo, progress] = await Promise.all([
+    epubService.getReadingSessions(epubId),
+    epubService.getEPUBInfo(epubId).catch(() => null),
+    epubService.getEPUBProgress(epubId).catch(() => null),
+  ]);
+  return { sessions, documentInfo, progress };
+}
+
 export function useEpubStatistics(
   epubId: number | undefined
 ): UseEpubStatisticsReturn {
-  const [sessionsData, setSessionsData] = useState<EpubSessionsResponse | null>(
-    null
+  const { data, loading, error } = useAsyncData(
+    epubId,
+    fetchEpubStatistics,
+    'Failed to load statistics'
   );
-  const [documentInfo, setDocumentInfo] = useState<EPUBDocumentInfo | null>(
-    null
-  );
-  const [progress, setProgress] = useState<EPUBProgress | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Cancellation guard: a slow response for a previous epubId must not
-    // overwrite newer state (and no setState after unmount).
-    let cancelled = false;
-
-    const fetchStatistics = async () => {
-      if (epubId === undefined) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Fetch session data, document info, and progress in parallel
-        const [sessionsResponse, epubInfo, epubProgress] = await Promise.all([
-          epubService.getReadingSessions(epubId),
-          epubService.getEPUBInfo(epubId).catch(() => null),
-          epubService.getEPUBProgress(epubId).catch(() => null),
-        ]);
-
-        console.log('[useEpubStatistics] Sessions Response:', sessionsResponse);
-        console.log('[useEpubStatistics] Document Info:', epubInfo);
-        console.log('[useEpubStatistics] Progress:', epubProgress);
-
-        if (cancelled) return;
-        setSessionsData(sessionsResponse);
-        setDocumentInfo(epubInfo);
-        setProgress(epubProgress);
-      } catch (err) {
-        console.error('[useEpubStatistics] Error fetching statistics:', err);
-        if (cancelled) return;
-        setError('Failed to load statistics');
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    if (epubId !== undefined) {
-      fetchStatistics();
-    } else {
-      setLoading(false);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [epubId]);
+  const sessionsData = (data?.sessions as EpubSessionsResponse | null) ?? null;
 
   // Calculate derived data using memoization
   const aggregateStats = useMemo<EpubAggregateStats | null>(() => {
@@ -111,8 +68,8 @@ export function useEpubStatistics(
 
   return {
     sessions: sessionsData,
-    documentInfo,
-    progress,
+    documentInfo: data?.documentInfo ?? null,
+    progress: data?.progress ?? null,
     aggregateStats,
     streakData,
     calendarData,

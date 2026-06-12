@@ -2,6 +2,8 @@
  * Type definitions for EPUB reading statistics
  */
 
+import type { StreakData } from './statistics';
+
 export interface EpubReadingSession {
   session_id: string;
   session_start: string; // ISO timestamp
@@ -24,11 +26,8 @@ export interface EpubAggregateStats {
   estimated_pages_read: number; // based on 250 words/page
 }
 
-export interface EpubStreakData {
-  current_streak: number;
-  longest_streak: number;
-  reading_days: string[];
-}
+// Streaks are unit-agnostic; the EPUB shape is identical to the PDF one.
+export type EpubStreakData = StreakData;
 
 export interface EpubCalendarDay {
   date: string;
@@ -43,11 +42,6 @@ export interface EpubSessionsResponse {
   sessions: EpubReadingSession[];
 }
 
-export interface SectionProgress {
-  navId: string;
-  scrollProgress: number; // 0.0 - 1.0
-}
-
 export interface NavSection {
   id: string;
   title: string;
@@ -56,19 +50,4 @@ export interface NavSection {
   level?: number;
   parent_id?: string | null;
   order?: number;
-}
-
-export interface EpubSessionTrackingState {
-  sessionId: string;
-  trackingEnabled: boolean;
-  sectionProgress: Map<string, number>; // navId -> scrollProgress (0.0 - 1.0)
-  sessionStartTime: number;
-  lastUpdateTime: number;
-}
-
-export interface EpubSessionUpdateRequest {
-  session_id: string;
-  epub_id: number;
-  words_read: number;
-  time_spent_seconds: number;
 }
