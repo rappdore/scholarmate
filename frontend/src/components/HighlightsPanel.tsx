@@ -168,16 +168,9 @@ export default function HighlightsPanel({
   // Handle highlight deletion
   const handleDeleteHighlight = async (highlightId: string | number) => {
     if (documentType === 'pdf') {
-      const success = await deletePdfHighlight(String(highlightId));
-      if (success) {
-        console.log('PDF highlight deleted from panel:', highlightId);
-      }
+      await deletePdfHighlight(String(highlightId));
     } else {
-      // EPUB highlight deletion - use context
-      const success = await deleteEpubHighlight(Number(highlightId));
-      if (success) {
-        console.log('EPUB highlight deleted from panel:', highlightId);
-      }
+      await deleteEpubHighlight(Number(highlightId));
     }
   };
 
@@ -187,22 +180,9 @@ export default function HighlightsPanel({
     newColor: HighlightColor
   ) => {
     if (documentType === 'pdf') {
-      const success = await updatePdfHighlightColor(
-        String(highlightId),
-        newColor
-      );
-      if (success) {
-        console.log('PDF highlight color updated:', highlightId, newColor);
-      }
+      await updatePdfHighlightColor(String(highlightId), newColor);
     } else {
-      // EPUB highlight color update - use context
-      const success = await updateEpubHighlightColor(
-        Number(highlightId),
-        newColor
-      );
-      if (success) {
-        console.log('EPUB highlight color updated:', highlightId, newColor);
-      }
+      await updateEpubHighlightColor(Number(highlightId), newColor);
     }
   };
 

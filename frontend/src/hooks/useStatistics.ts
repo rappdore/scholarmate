@@ -31,7 +31,6 @@ async function fetchDocumentInfo(pdfId: number): Promise<Document | null> {
     // Get status from reading progress or default to 'new'
     // The backend already computes and stores the status
     const status = (readingProgress?.status || 'new') as BookStatus;
-    const computed_status = status;
     const manual_status = readingProgress?.manually_set ? status : undefined;
 
     // Convert reading progress to the format expected by Document type
@@ -45,7 +44,7 @@ async function fetchDocumentInfo(pdfId: number): Promise<Document | null> {
               100
           ),
           last_updated: readingProgress.last_updated || '',
-          status: (readingProgress.status ?? 'new') as BookStatus,
+          status,
           status_updated_at: readingProgress.status_updated_at || '',
           manually_set: readingProgress.manually_set || false,
         }
@@ -54,7 +53,7 @@ async function fetchDocumentInfo(pdfId: number): Promise<Document | null> {
     return {
       ...pdfInfo,
       type: 'pdf' as const,
-      computed_status,
+      computed_status: status,
       manual_status,
       reading_progress,
     };
