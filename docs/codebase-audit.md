@@ -21,7 +21,7 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **A-3** — pydantic-settings `Settings` + lifespan-scoped `ServiceRegistry`; all 11 routers on `Depends`; zero import-time side effects; backend suite 270→281
 - **C-4** — sync-work endpoints converted to `def` (threadpool-offloaded); parse/DB work in the remaining async endpoints wrapped in `asyncio.to_thread`; backend suite 281→289
 - **A-1 backend (DB layer + services), 7 slices** (`9503157`..`7d4ff0c`, 2026-06-12): one `documents` registry (typed `DocumentRecord`, type-filtered `get_by_id`); `document_progress` with `PdfPosition|EpubPosition` union; `document_notes` with anchor union; `document_sessions` (units_read + time_spent_seconds; PDF `average_time_per_page` derived); highlights as two anchor-specific tables behind one `HighlightsService` (owner decision — anchors structurally differ); 1,073-line `DatabaseService` facade deleted, routers on typed services via `Depends`. **Wire shapes unchanged — frontend untouched.** One-time migration executed on the live DB (backup at `data/reading_progress.db.bak-pre-unified-*`; 6 orphan rows for previously-deleted books dropped); all 10 legacy tables gone. Deliberate semantics fix: incoming non-NULL `nav_metadata` now replaces stored value (old COALESCE order made word-count extraction unable to persist). Suite 289→253 (≈90 twin-table tests superseded by unified-service tests).
-- **A-2** — twin services were the `dict[str, Any]` hotspot; all unified services are fully typed end-to-end. mypy burned to **0 errors** (`007dd0e`, 2026-06-12) and **gated in pre-commit**. One latent bug found and deliberately preserved during the typing pass: `routers/tts.py` websocket loop sets `current_task = None` on normal completion without `break`, relying on the outer exception handler to end the stream — worth a follow-up fix.
+- **A-2** — twin services were the `dict[str, Any]` hotspot; all unified services are fully typed end-to-end. mypy burned to **0 errors** (`007dd0e`, 2026-06-12) and **gated in pre-commit**. The latent TTS websocket bug found during the typing pass (`current_task = None` on completion without `break` → `None.done()` AttributeError → spurious error frame + socket close after every playback) is **fixed with regression tests** (`f4b52fa`; tests carry pytest-timeout marks because the regression manifests as a client-side hang).
 - **A-1 frontend remainder** — DONE 2026-06-12 (commits `a46f001`, `a236376`, `149ba31`, `1f4a5d2`):
   - **F-13** — one canonical color model (`HIGHLIGHT_COLORS` in `types/highlights.ts`: 8 named colors + hex + label). In-app code uses names; the PDF API boundary converts name↔hex (wire + existing rows stay hex), EPUB wire/CSS stay name-keyed. EPUB gained purple/red/cyan CSS classes in all three themes; the lossy PDF→EPUB color fallback is gone. Legacy hex `defaultHighlightColor` in saved settings normalizes on load.
   - **F-11** — `EPUBHighlight` is now the snake_case API record only; `EPUBTextRange` remains the camelCase DOM-range type. Dead helpers/types deleted.
@@ -31,16 +31,16 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
   - Frontend suite 68→96 tests.
 - **`/documents/{id}` route unification** — DECIDED 2026-06-12 (owner): not doing it. Backend keeps per-format routes; frontend unification happened client-side in `documentApi`.
 
+- **eslint** — burned 65→0 and gated in pre-commit at `--max-warnings 0` (`0307506`). Wire shapes got real interfaces; each exhaustive-deps site individually fixed or disabled-with-reason.
+
 **⬜ Open — next up:**
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
-- **TTS websocket loop latent bug** (see A-2 note above) — small fix + test.
-- **Tooling:** eslint burn-down then gate (in progress 2026-06-12).
 
 **❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?). Resolved 2026-06-12: highlights = two tables behind one service; migrations = none, one-time scripts only; statistics = unified storage, format semantics in consumers.
 
 ### Pickup notes for the next session
 
-Done through step 10 (A-1 complete both sides, A-2 complete, mypy gated). Remaining: A-5 (chat dedup — `markdownComponents` ×4, `useChatStream`), A-6 (component decomposition — EPUBViewer 1,651 lines), A-7 (EPUB parse caching), the TTS websocket latent bug, and the eslint gate if the burn-down session didn't finish it. Open decisions: F-15 (DualChat Stop), TabbedRightPanel mounting, plaintext api_key.
+Done through step 10 (A-1 complete both sides, A-2 complete, mypy + eslint gated, TTS websocket bug fixed). Remaining: A-5 (chat dedup — `markdownComponents` ×4, `useChatStream`), A-6 (component decomposition — EPUBViewer 1,651 lines), A-7 (EPUB parse caching). Open decisions: F-15 (DualChat Stop), TabbedRightPanel mounting, plaintext api_key.
 
 New frontend landmarks: `types/highlights.ts` (canonical color model), `contexts/createHighlightsStore.tsx` (generic store factory), `hooks/useAsyncData.ts`, `utils/readingStreak.ts`, `services/documentApi.ts` (type dispatch for format-agnostic ops).
 
