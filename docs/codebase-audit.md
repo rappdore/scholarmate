@@ -8,7 +8,7 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 
 ---
 
-## STATUS DASHBOARD (last updated 2026-06-12, after commit 7d4ff0c)
+## STATUS DASHBOARD (last updated 2026-06-12, after commit 645ebbd)
 
 **✅ Done (commits on main):**
 - **K** — knowledge/concepts feature removed (`38fa2fd`)
@@ -29,7 +29,30 @@ Finding IDs (`K-`, `C-`, `B-`, `F-`, `A-`, `X-`) are for review discussion.
 - **A-5 / A-6 / A-7** — chat dedup, component decomposition, EPUB parse caching
 - **Tooling:** eslint burn-down then gate.
 
-**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), statistics unification scope ~~(resolved: unified storage, format semantics in consumers)~~, TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?).
+**❓ Decisions still needed (see open questions at end):** F-15 (DualChat Stop: wire or delete), TabbedRightPanel mounting, plaintext LLM api_key (accept-and-document?). Resolved 2026-06-12: highlights = two tables behind one service; migrations = none, one-time scripts only; statistics = unified storage, format semantics in consumers.
+
+### Pickup notes for the next session (A-1 frontend remainder)
+
+State of the world: the backend data layer is fully unified (commits `9503157`..`645ebbd`); the frontend was deliberately left untouched because every wire shape was preserved. The app works end-to-end right now — the remaining work is dedup/typing, not repair.
+
+Where things live after the backend refactor:
+- Models: `backend/app/models/documents.py` — `DocumentType`, `DocumentRecord`, `Pdf/EpubDocumentUpsert`, `BookStatus` (moved here; re-exported from `pdf_responses`), `Pdf/EpubPosition`, `DocumentProgress`, `Pdf/EpubNoteAnchor`, `NoteRecord`, `NotesSummary`, `PdfHighlightRecord`, `HighlightsSummary`, `ReadingSessionRecord`, `SessionsPage`.
+- Services: `documents_repository.py`, `progress_service.py`, `notes_service.py`, `sessions_service.py`, `highlights_service.py` (one class, two tables) — all typed, all mypy-clean, each owns its DDL. `DatabaseService` facade and all eight twin services are gone.
+- Tables: `documents`, `document_progress`, `document_notes`, `document_sessions`, `document_highlights_pdf`, `document_highlights_epub`, `llm_configurations`. Nothing else.
+- Migration: `backend/scripts/migrate_to_unified_documents.py` ran 2026-06-12 (disposable now); backup at `backend/data/reading_progress.db.bak-pre-unified-*`.
+
+Concrete next steps, in suggested order:
+1. **F-11** — split `frontend/src/utils/epubHighlights.ts` `EPUBHighlight` into an API model (snake_case, mirrors backend `EPUBHighlight`) and a DOM-range type; convert at the fetch boundary.
+2. **F-13** — one canonical highlight color model (hex enum in `types/highlights.ts` vs name union in `utils/epubHighlights.ts`; PDFViewer's hardcoded palette at `PDFViewer.tsx:827-836`).
+3. **A-1 frontend dedup** — one `documentApi` parameterized by `DocumentType`; merge `HighlightsContext`/`EPUBHighlightsContext`, `useStatistics`/`useEpubStatistics` (the two stats endpoints now differ only in field names `pages_read`+`average_time_per_page` vs `words_read`+`time_spent_seconds`); ~54 `documentType` branch sites are the cleanup target.
+4. **`/documents/{id}` route unification** — optional, decide first: backend duality is gone, so the only payoff is fewer routes; it forces frontend churn in the same change.
+5. **A-2 tail** — mypy 65 errors: `ollama_service` (22), `routers/tts` (9), `services/epub/` (~20), misc (rest). Gate mypy in pre-commit when ≈0. Then eslint burn-down + gate (45 errors/27 warnings at last count).
+
+Gotchas for whoever picks this up:
+- Document ids changed during migration (old per-format id spaces overlapped). Anything cached client-side (localStorage reader positions keyed by id?) was not migrated — filenames are the stable key. Verify `SimpleResizablePanels`/reader localStorage keys if odd behavior appears.
+- PDF wire field `average_time_per_page` is now *derived* (`time_spent_seconds / units_read`) — values can differ in the last decimal place from what the old table stored.
+- EPUB `nav_metadata` semantics changed deliberately: a non-NULL incoming value now replaces the stored one (word-count extraction persists); `None` still never erases. Test pins this in `test_progress_service.py`.
+- Backend suite is 253 tests (≈90 twin-table tests were superseded, 60 unified-service tests added). All flat under `backend/tests/`.
 
 ---
 
@@ -192,7 +215,8 @@ Remove the lot. *(S)*
 
 ## A. Architecture
 
-**A-1. Unify the PDF/EPUB duality (the big one)** *(L overall, decomposable into S/M steps)*
+**A-1. Unify the PDF/EPUB duality (the big one)** — ✅ BACKEND DONE in 7 slices (2026-06-12, commits `9503157`..`7d4ff0c` + simplifier pass `645ebbd`); ⬜ frontend remainder open (see Pickup notes in the dashboard).
+Implemented largely as proposed below, with these deltas: highlights got **two tables behind one service** (owner decision, open question 1); locators are stored as nullable columns (not a JSON column) but parse into the proposed discriminated unions (`PdfPosition|EpubPosition`, `PdfNoteAnchor|EpubNoteAnchor`); sessions unified as `units_read` + `time_spent_seconds` with the PDF `average_time_per_page` derived; **router paths and wire shapes were kept stable** (the `/documents/{id}` route unification was deferred — optional now that the duality is gone below the routers); the AI `ContentProvider` interface was not needed. Data migrated via one-time script (now disposable); legacy tables dropped. Original proposal:
 Measured duplication: `pdf_documents` vs `epub_documents` services **91%** similar; chat-notes pair **69%** (same lifecycle, same N+1, same stale TODOs); caches **69%**; statistics **62%**; 4 near-identical router pairs (~1,300 of ~2,300 router lines); `ai.py` duplicates chat/analyze/stop per format internally; frontend mirrors all of it (two contexts, two stats hooks, two stats pages, split API clients, **54** `documentType` branch sites). Drift between twins already caused real bugs (B-5, B-15 trivia, divergent `get_..._doc_or_404` copies). Addressing has already converged on integer ids at the API level — the duality survives mainly in the DB layer and legacy routes.
 
 Proposed shape:
@@ -205,7 +229,7 @@ Proposed shape:
 
 Sequencing within A-1: documents table (M) → notes (M) → progress/status (M) → sessions (S) → highlights (M) → routers (M) → frontend client (M). **Requires C-1 (migrations) first.**
 
-**A-2. Typed models instead of `dict[str, Any]`** *(M; largely subsumed by A-1)*
+**A-2. Typed models instead of `dict[str, Any]`** — ✅ LARGELY DONE via A-1 (2026-06-12): the untyped EPUB twins were the hotspot and are gone; every unified service is typed end-to-end and mypy-clean. mypy overall 125→65 errors; remaining hotspots are pre-existing files A-1 didn't touch (`ollama_service` 22, `routers/tts` 9, `services/epub/` ~20). ⬜ Remaining: burn those down, then gate mypy in pre-commit. Original finding:
 134 occurrences in `backend/app/`; the EPUB side is systematically untyped end-to-end (`EPUBProgressService` — every method; `EPUBDocumentsService` returns raw dicts where its 91%-twin returns `PDFDocumentRecord`; chat-notes hand-built dicts; `epub.py` router has no `response_model` anywhere, with two hand-built progress dict shapes that can drift). mypy: **125 errors in 30 files** (hotspots: `ollama_service` 22, `epub_progress_service` 12, `routers/tts` 9). Start with `EPUBDocumentRecord` (template exists), then EPUB progress/notes models; add mypy to pre-commit once the count is near zero.
 
 **A-3. Lifespan-scoped dependency injection + a settings module** — ✅ DONE (2026-06-12): `app/settings.py` (pydantic-settings, `SCHOLARMATE_` env prefix + `.env`, defaults for db_path/pdf_dir/epub_dir/thumbnails_dir/base_url) and `app/services/registry.py` (a `ServiceRegistry` dataclass built once in `main.py`'s FastAPI lifespan; `get_*` accessors for `Depends`; `init_services`/`reset_services` for tests). All module-level singletons deleted (`db_service`, `ollama_service`, `dual_chat_service`, `tts_service`, `request_tracking_service`, `instances.py`); all 11 routers converted to `Depends` with parameter names matching the old globals (bodies unchanged); router helpers (`get_epub_doc_or_404`, `_resolve_*_filename`) take the service explicitly. Circular-import workarounds replaced by constructor injection: `DualChatService(db_path, pdf_service)`, `OllamaService(db_path, request_tracking)`. Verified: importing `main` creates no files and runs no DDL; everything constructs in `init_services()`. Tests: `test_settings.py`, `test_registry.py` (+11; suite 281). Original finding:
@@ -243,14 +267,15 @@ Module-level singletons constructed at import time (DDL + backfills on import); 
 6. ✅ **C-5 + A-4 + C-6** — unified frontend config/client (`config.ts` + `http.ts`), HashRouter, dev proxy removed, SettingsContext hydration fixed; +20 frontend tests (suite 68).
 7. ✅ **A-3** — pydantic-settings + lifespan service registry; routers on `Depends`; import-time side effects eliminated; +11 backend tests (suite 281).
 8. ✅ **C-4** — sync endpoints to `def` (threadpool), `asyncio.to_thread` for blocking work in async paths; +8 backend tests (suite 289).
-9. ⬜ **A-1 + A-2** — the document-unification refactor, one slice at a time, tests per slice (includes F-11 and the F-13 color-model remainder). ← **NEXT**
-10. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.
+9. ✅ **A-1 + A-2 backend** — document-unification refactor in 7 tested slices + live-DB migration (`9503157`..`7d4ff0c`); unified services fully typed, facade deleted, wire shapes preserved. Backend suite 253.
+10. ⬜ **A-1 frontend remainder + A-2 tail** — F-11, F-13, unified `documentApi`/hooks, mypy burn-down (65) then gate. ← **NEXT** (see Pickup notes in the dashboard)
+11. ⬜ **A-5 / A-6 / A-7** — dedup and decomposition, opportunistically or after unification settles. Then gate eslint + mypy in pre-commit.
 
 ## Open questions for review
 
-1. **Highlights storage under A-1:** one table with a discriminated-union anchor column, or two tables behind one service interface? (Anchors are genuinely structurally different.)
-2. **Migrations:** hand-rolled ordered SQL scripts (lighter, matches current style) or Alembic+SQLAlchemy (heavier, more conventional)? A-1's table merges make this choice load-bearing.
+1. ~~**Highlights storage under A-1**~~ — ✅ RESOLVED (owner, 2026-06-12): two tables behind one `HighlightsService` interface; anchors are genuinely structurally different (page+rect vs XPath range), a union column would just be a JSON blob.
+2. ~~**Migrations**~~ — ✅ RESOLVED (owner, 2026-06-12): neither. No migration framework, ever — single-user app; schema changes must be backwards compatible, and genuinely breaking moves get a one-time disposable script (pattern: `scripts/migrate_to_unified_documents.py` — backup → copy with remap → drop legacy).
 3. **DualChat Stop (F-15):** wire up the missing Stop button (plumbing exists) or delete the dead machinery?
 4. **Security posture:** ~~traversal and CORS~~ (fixed in C-2/B-13). Remaining: `llm_configurations.api_key` stored plaintext — accept-and-document for a local-first app, or encrypt at rest?
-5. **Statistics unification:** A-1 proposes unified session storage with format-specific semantics (pages vs words). OK, or keep statistics fully separate?
+5. ~~**Statistics unification**~~ — ✅ RESOLVED (owner, 2026-06-12): unified storage (`document_sessions`: `units_read` + `time_spent_seconds`) confirmed by schema inspection — both old tables held only counters, no positions; pages-vs-words semantics stay in consumers.
 6. **TabbedRightPanel mounts all panels permanently** (state preservation vs eager fetching) — keep or lazy-mount?
