@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { BookStatus } from '../types/pdf';
 import type { Document } from '../types/document';
 import { isPDFDocument } from '../types/document';
@@ -17,6 +18,7 @@ const BookActionMenu: React.FC<BookActionMenuProps> = ({
   isVisible,
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const navigate = useNavigate();
 
   const statusOptions: { value: BookStatus; label: string; icon: string }[] = [
     { value: 'new', label: 'Mark as New', icon: '📚' },
@@ -102,7 +104,7 @@ const BookActionMenu: React.FC<BookActionMenuProps> = ({
       {/* Statistics Option */}
       <div className="px-2 py-1">
         <button
-          onClick={() => window.open(getStatisticsUrl(), '_blank')}
+          onClick={() => navigate(getStatisticsUrl())}
           className="w-full text-left px-2 py-1 rounded text-sm flex items-center space-x-2 transition-colors hover:bg-slate-700/50 text-slate-200 hover:text-slate-100"
         >
           <span>📊</span>
