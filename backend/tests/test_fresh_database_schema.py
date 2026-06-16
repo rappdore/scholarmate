@@ -98,6 +98,7 @@ class TestFreshSchemaIsComplete:
             "last_page",
             "total_pages",
             "current_nav_id",
+            "epub_cfi",
             "nav_metadata",
             "progress_percentage",
         } <= columns

@@ -71,6 +71,7 @@ class ProgressService(BaseDatabaseService):
                     chapter_title TEXT,
                     scroll_position INTEGER DEFAULT 0,
                     total_sections INTEGER,
+                    epub_cfi TEXT,
                     nav_metadata TEXT,          -- JSON navigation/word-count metadata
 
                     -- Shared
