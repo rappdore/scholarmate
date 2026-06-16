@@ -1,8 +1,34 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
+const DEFAULT_LEFT_WIDTH = 50;
+const MIN_LEFT_WIDTH = 20;
+const MAX_LEFT_WIDTH = 80;
+const STORAGE_KEY = 'pdf-reader-simple-left-width';
+
 interface SimpleResizablePanelsProps {
   leftPanel: React.ReactNode;
   rightPanel: React.ReactNode;
+}
+
+function clampLeftWidth(width: number): number {
+  return Math.max(MIN_LEFT_WIDTH, Math.min(MAX_LEFT_WIDTH, width));
+}
+
+function getSavedLeftWidth(): number {
+  try {
+    const savedLeftWidth = localStorage.getItem(STORAGE_KEY);
+    if (savedLeftWidth === null || savedLeftWidth.trim() === '') {
+      return DEFAULT_LEFT_WIDTH;
+    }
+
+    const parsed = Number(savedLeftWidth);
+    return Number.isFinite(parsed)
+      ? clampLeftWidth(parsed)
+      : DEFAULT_LEFT_WIDTH;
+  } catch (error) {
+    console.warn('Error reading saved reader split width:', error);
+    return DEFAULT_LEFT_WIDTH;
+  }
 }
 
 export default function SimpleResizablePanels({
@@ -10,30 +36,20 @@ export default function SimpleResizablePanels({
   rightPanel,
 }: SimpleResizablePanelsProps) {
   // Panel sizes as percentages
-  const [leftWidth, setLeftWidth] = useState(50); // Left panel width (0-100)
+  const [leftWidth, setLeftWidth] = useState(getSavedLeftWidth); // Left panel width (0-100)
 
   // Dragging states
   const [isDragging, setIsDragging] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load saved sizes from localStorage
-  useEffect(() => {
-    const savedLeftWidth = localStorage.getItem('pdf-reader-simple-left-width');
-
-    if (savedLeftWidth) {
-      const parsed = Number(savedLeftWidth);
-      // Guard against corrupted values (NaN/Infinity would yield `width: NaN%`);
-      // clamp to the same 20-80% range the splitter enforces
-      if (Number.isFinite(parsed)) {
-        setLeftWidth(Math.max(20, Math.min(80, parsed)));
-      }
-    }
-  }, []);
-
   // Save sizes to localStorage
   useEffect(() => {
-    localStorage.setItem('pdf-reader-simple-left-width', leftWidth.toString());
+    try {
+      localStorage.setItem(STORAGE_KEY, leftWidth.toString());
+    } catch (error) {
+      console.warn('Error saving reader split width:', error);
+    }
   }, [leftWidth]);
 
   // Handle splitter
@@ -50,7 +66,7 @@ export default function SimpleResizablePanels({
       const containerRect = containerRef.current.getBoundingClientRect();
       const newLeftWidth =
         ((e.clientX - containerRect.left) / containerRect.width) * 100;
-      setLeftWidth(Math.max(20, Math.min(80, newLeftWidth))); // Clamp between 20% and 80%
+      setLeftWidth(clampLeftWidth(newLeftWidth)); // Clamp between 20% and 80%
     },
     [isDragging]
   );
@@ -81,6 +97,7 @@ export default function SimpleResizablePanels({
     <div ref={containerRef} className="flex-1 flex h-full">
       {/* Left Panel */}
       <div
+        data-testid="reader-left-panel"
         className="border-r border-gray-700 flex flex-col"
         style={{ width: `${leftWidth}%` }}
       >
@@ -89,6 +106,7 @@ export default function SimpleResizablePanels({
 
       {/* Vertical Splitter */}
       <div
+        data-testid="reader-splitter"
         className="w-1 bg-gray-700 hover:bg-gray-600 cursor-ew-resize flex-shrink-0 relative group"
         onMouseDown={handleMouseDown}
       >
@@ -97,7 +115,11 @@ export default function SimpleResizablePanels({
       </div>
 
       {/* Right Panel */}
-      <div className="flex flex-col" style={{ width: `${100 - leftWidth}%` }}>
+      <div
+        data-testid="reader-right-panel"
+        className="flex flex-col"
+        style={{ width: `${100 - leftWidth}%` }}
+      >
         <div className="h-full overflow-auto">{rightPanel}</div>
       </div>
     </div>
