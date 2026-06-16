@@ -1,6 +1,15 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, screen } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import {
+  getBrowserWindowBounds,
+  getWindowStateFilePath,
+  loadWindowState,
+  manageWindowState,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  restoreWindowState,
+} from './windowState';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS-only module loaded at Electron main startup; the standard electron-squirrel-startup idiom
@@ -52,11 +61,16 @@ function stopBackend(): void {
 }
 
 function createWindow(): void {
+  const windowStateFilePath = getWindowStateFilePath(app.getPath('userData'));
+  const windowState = loadWindowState(
+    windowStateFilePath,
+    screen.getAllDisplays()
+  );
+
   const mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    ...getBrowserWindowBounds(windowState),
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -66,6 +80,9 @@ function createWindow(): void {
     trafficLightPosition: { x: 15, y: 15 },
     show: false, // Don't show until ready
   });
+
+  restoreWindowState(mainWindow, windowState);
+  manageWindowState(mainWindow, windowStateFilePath);
 
   // Show window when ready to prevent visual flash
   mainWindow.once('ready-to-show', () => {
