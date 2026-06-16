@@ -62,6 +62,7 @@ class EPUBProgressRequest(BaseModel):
     chapter_title: Optional[str] = None
     scroll_position: int = 0
     total_sections: Optional[int] = None
+    epub_cfi: Optional[str] = None
     progress_percentage: float = 0.0
     nav_metadata: Optional[Dict[str, Any]] = None
 
@@ -82,6 +83,7 @@ def _progress_to_dict(progress: DocumentProgress) -> Dict[str, Any]:
         "chapter_title": progress.position.chapter_title,
         "scroll_position": progress.position.scroll_position,
         "total_sections": progress.position.total_sections,
+        "epub_cfi": progress.position.epub_cfi,
         "progress_percentage": progress.progress_percentage,
         "last_updated": progress.last_updated,
         "status": progress.status.value,
@@ -288,9 +290,11 @@ def save_epub_progress_by_id(
                 chapter_title=progress.chapter_title,
                 scroll_position=progress.scroll_position,
                 total_sections=progress.total_sections,
+                epub_cfi=progress.epub_cfi,
             ),
             progress_percentage=progress.progress_percentage,
             nav_metadata=progress.nav_metadata,
+            update_epub_cfi="epub_cfi" in progress.model_fields_set,
         )
 
         if success:
@@ -371,6 +375,7 @@ def get_epub_progress_by_id(
                 "chapter_title": None,
                 "scroll_position": 0,
                 "total_sections": None,
+                "epub_cfi": None,
                 "progress_percentage": 0.0,
                 "last_updated": None,
                 "status": "new",

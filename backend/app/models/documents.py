@@ -118,6 +118,7 @@ class EpubPosition(BaseModel):
     chapter_title: str | None = None
     scroll_position: int = 0
     total_sections: int | None = None
+    epub_cfi: str | None = None
 
 
 DocumentPosition = PdfPosition | EpubPosition

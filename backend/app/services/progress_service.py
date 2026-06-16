@@ -36,7 +36,7 @@ _SELECT = """
     SELECT p.document_id, d.doc_type, d.filename,
            p.last_page, p.total_pages,
            p.current_nav_id, p.chapter_id, p.chapter_title,
-           p.scroll_position, p.total_sections, p.nav_metadata,
+           p.scroll_position, p.total_sections, p.epub_cfi, p.nav_metadata,
            p.progress_percentage, p.last_updated,
            p.status, p.status_updated_at, p.manually_set
     FROM document_progress p
@@ -109,6 +109,7 @@ class ProgressService(BaseDatabaseService):
                 chapter_title=row["chapter_title"],
                 scroll_position=row["scroll_position"] or 0,
                 total_sections=row["total_sections"],
+                epub_cfi=row["epub_cfi"],
             )
 
         nav_metadata = None
@@ -176,28 +177,40 @@ class ProgressService(BaseDatabaseService):
         position: EpubPosition,
         progress_percentage: float = 0.0,
         nav_metadata: dict | None = None,
+        update_epub_cfi: bool | None = None,
     ) -> bool:
         """
         Save/update EPUB reading position.
 
         Status is auto-derived from progress_percentage unless manually set;
         a stored non-NULL nav_metadata is never erased by an incoming None.
+        update_epub_cfi lets API callers distinguish an omitted CFI field
+        from an explicit null that should clear the stored locator.
         """
         try:
             nav_metadata_json = json.dumps(nav_metadata) if nav_metadata else None
+            should_update_epub_cfi = (
+                position.epub_cfi is not None
+                if update_epub_cfi is None
+                else update_epub_cfi
+            )
             query = """
                 INSERT INTO document_progress
                     (document_id, current_nav_id, chapter_id, chapter_title,
-                     scroll_position, total_sections, nav_metadata,
+                     scroll_position, total_sections, epub_cfi, nav_metadata,
                      progress_percentage, last_updated,
                      status, status_updated_at, manually_set)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)
                 ON CONFLICT(document_id) DO UPDATE SET
                     current_nav_id = excluded.current_nav_id,
                     chapter_id = excluded.chapter_id,
                     chapter_title = excluded.chapter_title,
                     scroll_position = excluded.scroll_position,
                     total_sections = excluded.total_sections,
+                    epub_cfi = CASE
+                        WHEN ? THEN excluded.epub_cfi
+                        ELSE epub_cfi
+                    END,
                     nav_metadata = COALESCE(excluded.nav_metadata, nav_metadata),
                     progress_percentage = excluded.progress_percentage,
                     last_updated = excluded.last_updated,
@@ -225,11 +238,13 @@ class ProgressService(BaseDatabaseService):
                     position.chapter_title,
                     position.scroll_position,
                     position.total_sections,
+                    position.epub_cfi,
                     nav_metadata_json,
                     progress_percentage,
                     now,
                     "reading" if progress_percentage > 0 else "new",
                     now,
+                    should_update_epub_cfi,
                 ),
             )
             if result:

@@ -107,6 +107,48 @@ class TestEpubProgress:
         assert progress.position.chapter_title == "Chapter Two"
         assert progress.progress_percentage == 12.5
 
+    def test_epub_cfi_roundtrip_preserve_and_clear(self, service, epub_id):
+        cfi = "epubcfi(/4/2[preface]!/4/2/8:42)"
+        assert (
+            service.save_epub_progress(
+                epub_id,
+                EpubPosition(current_nav_id="section_1", epub_cfi=cfi),
+            )
+            is True
+        )
+        progress = service.get_progress(epub_id)
+        assert progress is not None
+        assert isinstance(progress.position, EpubPosition)
+        assert progress.position.epub_cfi == cfi
+
+        assert (
+            service.save_epub_progress(
+                epub_id,
+                EpubPosition(current_nav_id="section_2", scroll_position=80),
+                update_epub_cfi=False,
+            )
+            is True
+        )
+        progress = service.get_progress(epub_id)
+        assert progress is not None
+        assert isinstance(progress.position, EpubPosition)
+        assert progress.position.current_nav_id == "section_2"
+        assert progress.position.scroll_position == 80
+        assert progress.position.epub_cfi == cfi
+
+        assert (
+            service.save_epub_progress(
+                epub_id,
+                EpubPosition(current_nav_id="section_2", epub_cfi=None),
+                update_epub_cfi=True,
+            )
+            is True
+        )
+        progress = service.get_progress(epub_id)
+        assert progress is not None
+        assert isinstance(progress.position, EpubPosition)
+        assert progress.position.epub_cfi is None
+
     def test_status_auto_updates_with_progress(self, service, epub_id):
         service.save_epub_progress(epub_id, EpubPosition(), progress_percentage=0.0)
         assert service.get_progress(epub_id).status == BookStatus.NEW
