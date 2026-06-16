@@ -8,6 +8,7 @@ import React, {
 import {
   epubService,
   type EPUBProgress,
+  type EPUBProgressRequest,
   type EPUBNavigationResponse,
   type EPUBFlatNavigationItem,
   type EPUBNavigationItem,
@@ -31,6 +32,11 @@ import {
   type TextPositionMap,
   buildTextPositionMap,
 } from '../utils/textPositionMap';
+import {
+  captureVisibleEpubCfi,
+  resolveEpubCfi,
+  scrollRangeIntoEpubContainer,
+} from '../utils/epubCfi';
 import { useEpubSessionTracking } from '../hooks/useEpubSessionTracking';
 import type { NavSection } from '../types/epubStatistics';
 import { useEPUBHighlightsContext } from '../contexts/EPUBHighlightsContext';
@@ -347,8 +353,14 @@ export default function EPUBViewer({
         contentData?.progress_percentage ||
         calculateProgressFromNavMetadata(navId, navMetadata) ||
         0;
+      const cfiCaptureContainer = contentContainerRef.current;
+      const canCaptureCfi =
+        cfiCaptureContainer !== null && navId === currentNavId;
+      const capturedCfi = canCaptureCfi
+        ? captureVisibleEpubCfi(cfiCaptureContainer)
+        : null;
 
-      const progressData = {
+      const progressData: EPUBProgressRequest = {
         current_nav_id: navId,
         chapter_id: chapterInfo.chapterId,
         chapter_title: chapterInfo.chapterTitle,
@@ -357,6 +369,11 @@ export default function EPUBViewer({
         progress_percentage: progressPercentage,
         nav_metadata: navMetadata,
       };
+      if (capturedCfi) {
+        progressData.epub_cfi = capturedCfi.cfi;
+      } else if (!canCaptureCfi) {
+        progressData.epub_cfi = null;
+      }
 
       await epubService.saveEPUBProgress(epubId, progressData);
       // Also update the local state to ensure UI is consistent
@@ -402,10 +419,12 @@ export default function EPUBViewer({
   const getCurrentChapterInfo = (navId: string, contentData?: ContentData) => {
     // Try to find chapter info from current content
     if (contentData) {
-      const chapterTitle = getCurrentChapterTitle();
+      const chapterTitle =
+        chapterOptions.find(option => option.id === navId)?.title ||
+        contentData.title;
       return {
         chapterId: extractChapterIdFromNavId(navId),
-        chapterTitle: chapterTitle || contentData.title,
+        chapterTitle,
       };
     }
 
@@ -699,7 +718,7 @@ export default function EPUBViewer({
       // Enable scroll restoration only if we have a saved position for this nav_id
       if (
         savedProgress?.current_nav_id === navIdToLoad &&
-        savedProgress?.scroll_position > 0
+        (savedProgress.epub_cfi || savedProgress.scroll_position > 0)
       ) {
         shouldRestoreScrollRef.current = true;
       }
@@ -726,10 +745,30 @@ export default function EPUBViewer({
       contentContainerRef.current &&
       shouldRestoreScrollRef.current
     ) {
+      if (scrollRestoreTimerRef.current) {
+        clearTimeout(scrollRestoreTimerRef.current);
+      }
       // Small delay to ensure content is rendered
-      const timeoutId = setTimeout(() => {
-        if (contentContainerRef.current && savedProgress.scroll_position > 0) {
-          contentContainerRef.current.scrollTop = savedProgress.scroll_position;
+      scrollRestoreTimerRef.current = setTimeout(() => {
+        const container = contentContainerRef.current;
+        if (!container) {
+          return;
+        }
+
+        if (savedProgress.epub_cfi) {
+          const resolved = resolveEpubCfi(savedProgress.epub_cfi, container);
+          if (resolved) {
+            scrollRangeIntoEpubContainer(container, resolved.range);
+            setScrollPosition(container.scrollTop);
+            console.log('Restored EPUB CFI position:', {
+              textMatched: resolved.textMatched,
+            });
+            return;
+          }
+        }
+
+        if (savedProgress.scroll_position > 0) {
+          container.scrollTop = savedProgress.scroll_position;
           setScrollPosition(savedProgress.scroll_position);
           console.log(
             'Restored scroll position:',
@@ -740,7 +779,11 @@ export default function EPUBViewer({
       // Only restore once
       shouldRestoreScrollRef.current = false;
 
-      return () => clearTimeout(timeoutId);
+      return () => {
+        if (scrollRestoreTimerRef.current) {
+          clearTimeout(scrollRestoreTimerRef.current);
+        }
+      };
     }
   }, [currentContent, savedProgress]);
 
@@ -896,19 +939,7 @@ export default function EPUBViewer({
         setScrollPosition(0); // Reset scroll position
       }
 
-      // Restore scroll position if it's an initial load with saved progress
-      if (isInitialLoad && savedProgress?.scroll_position) {
-        // Use a timeout to allow the content to render before scrolling
-        if (scrollRestoreTimerRef.current) {
-          clearTimeout(scrollRestoreTimerRef.current);
-        }
-        scrollRestoreTimerRef.current = setTimeout(() => {
-          if (contentContainerRef.current) {
-            contentContainerRef.current.scrollTop =
-              savedProgress.scroll_position;
-          }
-        }, 100);
-      } else if (contentContainerRef.current) {
+      if (!isInitialLoad && contentContainerRef.current) {
         // Otherwise, scroll to top for new sections
         contentContainerRef.current.scrollTop = 0;
       }
