@@ -84,6 +84,7 @@ export interface EPUBProgressRequest {
   chapter_title?: string;
   scroll_position?: number;
   total_sections?: number;
+  epub_cfi?: string | null;
   progress_percentage?: number;
   nav_metadata?: Record<string, unknown>;
 }
@@ -96,6 +97,7 @@ export interface EPUBProgress {
   chapter_title?: string;
   scroll_position: number;
   total_sections?: number;
+  epub_cfi: string | null;
   progress_percentage: number;
   last_updated: string | null;
   status: string;
@@ -157,7 +159,7 @@ export const epubService = {
   },
 
   getAllEPUBProgress: async (): Promise<{
-    epub_progress: Record<string, unknown>;
+    epub_progress: Record<string, EPUBProgress>;
   }> => {
     const response = await api.get('/epub/progress/all');
     return response.data;
