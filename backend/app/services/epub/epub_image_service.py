@@ -26,6 +26,7 @@ class EPUBImageService:
         height: int = 280,
         background_color: str = "white",
         strategy: str = "center",
+        force: bool = False,
     ) -> Path:
         """
         Generate a thumbnail image of the EPUB cover
@@ -43,7 +44,7 @@ class EPUBImageService:
         thumbnail_path = self.thumbnails_dir / thumbnail_filename
 
         # Check if thumbnail already exists and is newer than the EPUB
-        if thumbnail_path.exists():
+        if thumbnail_path.exists() and not force:
             epub_mtime = file_path.stat().st_mtime
             thumb_mtime = thumbnail_path.stat().st_mtime
             if thumb_mtime > epub_mtime:

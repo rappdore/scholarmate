@@ -114,7 +114,11 @@ class PDFService:
                 )
 
     def generate_thumbnail(
-        self, filename: str, width: int = 200, height: int = 280
+        self,
+        filename: str,
+        width: int = 200,
+        height: int = 280,
+        force: bool = False,
     ) -> Path:
         """
         Generate a thumbnail image of the first page of the PDF
@@ -127,7 +131,7 @@ class PDFService:
         thumbnail_path = self.thumbnails_dir / thumbnail_filename
 
         # Check if thumbnail already exists and is newer than the PDF
-        if thumbnail_path.exists():
+        if thumbnail_path.exists() and not force:
             pdf_mtime = file_path.stat().st_mtime
             thumb_mtime = thumbnail_path.stat().st_mtime
             if thumb_mtime > pdf_mtime:
@@ -192,11 +196,11 @@ class PDFService:
             # Fallback: generate if not in cache (shouldn't happen normally)
             return self.generate_thumbnail(filename)
 
-    def refresh_cache(self) -> PDFCacheInfo:
+    def refresh_cache(self, force_thumbnails: bool = True) -> PDFCacheInfo:
         """
         Refresh the PDF cache by rebuilding from filesystem
         """
-        self.cache.refresh()
+        self.cache.refresh(force_thumbnails=force_thumbnails)
         return self.cache.get_cache_info()
 
     def get_cache_info(self) -> PDFCacheInfo:

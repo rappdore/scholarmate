@@ -149,6 +149,16 @@ describe('documentApi type dispatch', () => {
     expect(documentApi.thumbnailUrl('epub', 1)).toBe('/epub-thumb');
   });
 
+  it('adds an optional thumbnail cache-busting version', () => {
+    vi.mocked(pdfService.getThumbnailUrl).mockReturnValue('/pdf-thumb');
+    vi.mocked(epubService.getThumbnailUrl).mockReturnValue('/epub-thumb');
+
+    expect(documentApi.thumbnailUrl('pdf', 1, 'cache refresh')).toBe(
+      '/pdf-thumb?v=cache%20refresh'
+    );
+    expect(documentApi.thumbnailUrl('epub', 1, 123)).toBe('/epub-thumb?v=123');
+  });
+
   it('routes note reads and deletes by document type', async () => {
     vi.mocked(notesService.getChatNotesForPdf).mockResolvedValue([]);
     vi.mocked(epubNotesService.getChatNotesForEpub).mockResolvedValue([]);

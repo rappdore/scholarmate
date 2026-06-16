@@ -83,10 +83,20 @@ export const documentApi = {
   deleteDocument: (type: DocumentType, id: number): Promise<unknown> =>
     type === 'pdf' ? pdfService.deleteBook(id) : epubService.deleteEPUBBook(id),
 
-  thumbnailUrl: (type: DocumentType, id: number): string =>
-    type === 'pdf'
-      ? pdfService.getThumbnailUrl(id)
-      : epubService.getThumbnailUrl(id),
+  thumbnailUrl: (
+    type: DocumentType,
+    id: number,
+    version?: string | number
+  ): string => {
+    const baseUrl =
+      type === 'pdf'
+        ? pdfService.getThumbnailUrl(id)
+        : epubService.getThumbnailUrl(id);
+    if (version === undefined || version === '') {
+      return baseUrl;
+    }
+    return `${baseUrl}?v=${encodeURIComponent(String(version))}`;
+  },
 
   /** Refresh both backend caches; returns the per-format document counts. */
   refreshCaches: async (): Promise<{

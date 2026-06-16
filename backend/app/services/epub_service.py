@@ -90,6 +90,7 @@ class EPUBService:
         height: int = 280,
         background_color: str = "white",
         strategy: str = "center",
+        force: bool = False,
     ) -> Path:
         """
         Generate a thumbnail image of the EPUB cover
@@ -97,7 +98,7 @@ class EPUBService:
         """
         file_path = self.get_epub_path(filename)
         return self.image_service.generate_thumbnail(
-            file_path, width, height, background_color, strategy
+            file_path, width, height, background_color, strategy, force=force
         )
 
     def get_thumbnail_path(
@@ -187,11 +188,11 @@ class EPUBService:
         book = epub.read_epub(str(file_path))
         return self.image_service.get_epub_images_list(book)
 
-    def refresh_cache(self) -> dict[str, Any]:
+    def refresh_cache(self, force_thumbnails: bool = True) -> dict[str, Any]:
         """
         Refresh the EPUB cache by rebuilding from filesystem
         """
-        self.cache.refresh()
+        self.cache.refresh(force_thumbnails=force_thumbnails)
         return self.cache.get_cache_info()
 
     def get_cache_info(self) -> dict[str, Any]:

@@ -21,6 +21,9 @@ export default function Library() {
   // same numeric id, so keying by id alone would open both hover menus
   const [hoveredBook, setHoveredBook] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [thumbnailVersion, setThumbnailVersion] = useState(() =>
+    Date.now().toString()
+  );
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
     new: 0,
@@ -129,6 +132,7 @@ export default function Library() {
       console.log('Refreshing library cache (PDFs and EPUBs)...');
 
       const { pdf_count, epub_count } = await documentApi.refreshCaches();
+      setThumbnailVersion(Date.now().toString());
 
       // Reload documents and status counts
       await loadDocuments();
@@ -192,7 +196,11 @@ export default function Library() {
   };
 
   const getThumbnailUrl = (document: Document): string => {
-    return documentApi.thumbnailUrl(document.type, document.id);
+    return documentApi.thumbnailUrl(
+      document.type,
+      document.id,
+      thumbnailVersion
+    );
   };
 
   const getStatusBadge = (document: Document) => {

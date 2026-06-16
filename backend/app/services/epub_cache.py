@@ -95,7 +95,7 @@ class EPUBCache:
         except Exception:
             return ""
 
-    def _build_cache(self) -> None:
+    def _build_cache(self, force_thumbnails: bool = False) -> None:
         """
         Build the cache by scanning filesystem and loading from database when possible.
         Only extracts metadata and generates thumbnails for new EPUBs not in database.
@@ -131,9 +131,15 @@ class EPUBCache:
                 thumbnail_path_str = db_record.thumbnail_path or ""
 
                 # Only generate thumbnail if DB has no path or file doesn't exist
-                if not thumbnail_path_str or not Path(thumbnail_path_str).exists():
+                if (
+                    force_thumbnails
+                    or not thumbnail_path_str
+                    or not Path(thumbnail_path_str).exists()
+                ):
                     try:
-                        thumbnail_path = self.epub_service.generate_thumbnail(filename)
+                        thumbnail_path = self.epub_service.generate_thumbnail(
+                            filename, force=force_thumbnails
+                        )
                         thumbnail_path_str = str(thumbnail_path)
 
                         # Update database with new thumbnail path
@@ -224,7 +230,7 @@ class EPUBCache:
                     # Pre-generate thumbnail
                     try:
                         thumbnail_path = self.epub_service.generate_thumbnail(
-                            file_path.name
+                            file_path.name, force=force_thumbnails
                         )
                         thumbnail_path_str = str(thumbnail_path)
                     except Exception as thumb_error:
@@ -446,13 +452,13 @@ class EPUBCache:
         logger.info(f"Removed {filename} from EPUB cache")
         return True
 
-    def refresh(self) -> None:
+    def refresh(self, force_thumbnails: bool = True) -> None:
         """
         Refresh the cache by rebuilding from filesystem.
         Clears all cached data (including extended metadata) and regenerates.
         """
         logger.info("Refreshing EPUB cache...")
-        self._build_cache()
+        self._build_cache(force_thumbnails=force_thumbnails)
         logger.info("EPUB cache refresh complete")
 
     def get_cache_info(self) -> dict[str, Any]:

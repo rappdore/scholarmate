@@ -123,6 +123,51 @@ class TestAtomicRebuild:
 
         assert observed["mid_rebuild_keys"] == {"book.pdf"}
 
+    def test_refresh_forces_thumbnail_regeneration(self, temp_dirs, mock_pdf_service):
+        (temp_dirs["pdf_dir"] / "book.pdf").write_bytes(b"%PDF-1.4")
+        thumb = temp_dirs["thumb_dir"] / "book_thumb.png"
+        thumb.write_bytes(b"old png")
+        mock_pdf_service.generate_thumbnail.return_value = thumb
+
+        docs = DocumentsRepository(temp_dirs["db_path"])
+        docs.upsert(
+            PdfDocumentUpsert(
+                filename="book.pdf",
+                num_pages=1,
+                thumbnail_path=str(thumb),
+            )
+        )
+
+        cache = _build_cache(temp_dirs, mock_pdf_service)
+        mock_pdf_service.generate_thumbnail.assert_not_called()
+
+        cache.refresh()
+
+        mock_pdf_service.generate_thumbnail.assert_called_with("book.pdf", force=True)
+
+    def test_refresh_can_skip_forced_thumbnail_regeneration(
+        self, temp_dirs, mock_pdf_service
+    ):
+        (temp_dirs["pdf_dir"] / "book.pdf").write_bytes(b"%PDF-1.4")
+        thumb = temp_dirs["thumb_dir"] / "book_thumb.png"
+        thumb.write_bytes(b"old png")
+
+        docs = DocumentsRepository(temp_dirs["db_path"])
+        docs.upsert(
+            PdfDocumentUpsert(
+                filename="book.pdf",
+                num_pages=1,
+                thumbnail_path=str(thumb),
+            )
+        )
+
+        cache = _build_cache(temp_dirs, mock_pdf_service)
+        mock_pdf_service.generate_thumbnail.reset_mock()
+
+        cache.refresh(force_thumbnails=False)
+
+        mock_pdf_service.generate_thumbnail.assert_not_called()
+
 
 class TestNullDatabaseFields:
     def test_db_record_with_null_fields_builds_entry(self, temp_dirs, mock_pdf_service):

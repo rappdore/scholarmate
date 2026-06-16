@@ -741,6 +741,65 @@ class TestAtomicRebuild:
         assert "book.epub" in old_cache
         assert "book.epub" in cache._cache
 
+    def test_refresh_forces_thumbnail_regeneration(
+        self, temp_dirs, temp_db, mock_epub_service
+    ):
+        epub_file = temp_dirs["epub_dir"] / "book.epub"
+        epub_file.write_bytes(b"epub")
+        thumb = temp_dirs["thumb_dir"] / "book_thumb_200x280.png"
+        thumb.write_bytes(b"old png")
+        mock_epub_service.generate_thumbnail.return_value = thumb
+
+        docs = DocumentsRepository(temp_db)
+        docs.upsert(
+            EpubDocumentUpsert(
+                filename="book.epub",
+                chapters=1,
+                thumbnail_path=str(thumb),
+            )
+        )
+
+        cache = EPUBCache(
+            epub_dir=temp_dirs["epub_dir"],
+            thumbnails_dir=temp_dirs["thumb_dir"],
+            epub_service=mock_epub_service,
+            db_path=temp_db,
+        )
+        mock_epub_service.generate_thumbnail.assert_not_called()
+
+        cache.refresh()
+
+        mock_epub_service.generate_thumbnail.assert_called_with("book.epub", force=True)
+
+    def test_refresh_can_skip_forced_thumbnail_regeneration(
+        self, temp_dirs, temp_db, mock_epub_service
+    ):
+        epub_file = temp_dirs["epub_dir"] / "book.epub"
+        epub_file.write_bytes(b"epub")
+        thumb = temp_dirs["thumb_dir"] / "book_thumb_200x280.png"
+        thumb.write_bytes(b"old png")
+
+        docs = DocumentsRepository(temp_db)
+        docs.upsert(
+            EpubDocumentUpsert(
+                filename="book.epub",
+                chapters=1,
+                thumbnail_path=str(thumb),
+            )
+        )
+
+        cache = EPUBCache(
+            epub_dir=temp_dirs["epub_dir"],
+            thumbnails_dir=temp_dirs["thumb_dir"],
+            epub_service=mock_epub_service,
+            db_path=temp_db,
+        )
+        mock_epub_service.generate_thumbnail.reset_mock()
+
+        cache.refresh(force_thumbnails=False)
+
+        mock_epub_service.generate_thumbnail.assert_not_called()
+
 
 class TestEdgeCases:
     """Test edge cases and error scenarios"""
